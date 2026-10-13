@@ -1,0 +1,12 @@
+{
+  "scope": "Module C only; integrate A/B/D before full competition submission",
+  "excluded": [
+    "private keys",
+    "node databases",
+    "tool binaries",
+    "virtualenv",
+    "Git metadata",
+    "local progress notes"
+  ],
+  "redactions": []
+}

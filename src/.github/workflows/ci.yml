@@ -1,0 +1,29 @@
+name: Module C contract and RPC checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  module-c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: foundry-rs/foundry-toolchain@v1
+        with: {version: v1.5.1}
+      - run: python -m pip install -r requirements.lock
+      - run: python -m ruff check services scripts experiments tests infra
+      - run: python scripts/module_c.py test-contract
+      - run: python scripts/module_c.py chain-up
+      - run: python scripts/module_c.py deploy
+      - run: python -m pytest -q --junitxml=experiments/raw/python/pytest-results.xml
+      - run: python scripts/module_c.py run-data
+      - run: python scripts/module_c.py test-security
+      - run: python scripts/module_c.py collect-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: module-c-evidence
+          path: |
+            experiments/raw/
+            experiments/results/

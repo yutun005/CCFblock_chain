@@ -1,0 +1,16 @@
+[project]
+name = "agentflow-pay-chain-adapter"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+description = "DASC module C: secure settlement and EVM chain adapter"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/integration"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

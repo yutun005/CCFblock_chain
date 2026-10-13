@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-10-13T10:38:33.411662+00:00",
+  "commit_sha": "UNCOMMITTED",
+  "source_hash": "e74aaaf92c6f95858527e9528df99674be7ec735eebb499bc08ee9797e2f8348",
+  "seed": 20261013,
+  "environment": "local-development-only",
+  "case_id": "SEC-09",
+  "title": "Agent服务身份冒用",
+  "run_id": "f849dc17-b099-4680-a5a8-7f5daec5a5e8",
+  "layer": "L3-C: real RPC transactions; A2A transport not included",
+  "tx_hashes": [],
+  "status": "SKIP",
+  "reason": "requires module B Agent registry / module A validator integration"
+}

@@ -1,0 +1,105 @@
+{
+  "timestamp": "2026-10-13T10:39:51.390497+00:00",
+  "commit_sha": "UNCOMMITTED",
+  "source_hash": "e74aaaf92c6f95858527e9528df99674be7ec735eebb499bc08ee9797e2f8348",
+  "seed": 20261013,
+  "environment": "local-development-only",
+  "case_id": "SEC-18",
+  "title": "非法DAG",
+  "run_id": "f849dc17-b099-4680-a5a8-7f5daec5a5e8",
+  "layer": "L3-C: real RPC transactions; A2A transport not included",
+  "tx_hashes": [
+    "0x5729af3d3dabe8a21f1f8edc12edd2794d7335126bc59420c9c1daeeffe0ca1a"
+  ],
+  "chain_id": 1337,
+  "contract_address": "0x5fbC73911b9f073390a67CFcE5dfe4c835543c08",
+  "job_id": "0xe0f71757c50c7aacc2b3e7545fd83f21ed599fc9970e36ad8e6fd51354060a1e",
+  "inputs_hash": "0x79cb6a186e44025aaaa098b7c5afe7cbb9bac3936ae07e158c1292c8689ddbbc",
+  "status": "PASS",
+  "observed": {
+    "before": {
+      "job": {
+        "owner": "0x0000000000000000000000000000000000000000",
+        "coordinator": "0x0000000000000000000000000000000000000000",
+        "paymentToken": "0x0000000000000000000000000000000000000000",
+        "deposit": 0,
+        "remaining": 0,
+        "reservedBudget": 0,
+        "deadline": 0,
+        "taskCount": 0,
+        "settledMask": 0,
+        "terminalMask": 0,
+        "jobState": 0
+      },
+      "tasks": [],
+      "contract_balance": 1600000000,
+      "pending": {
+        "agent": 0,
+        "backup": 20000000
+      },
+      "refundable": 0,
+      "total_deposited": 1900000000,
+      "total_withdrawn": 160000000,
+      "total_refunded": 140000000
+    },
+    "after": {
+      "job": {
+        "owner": "0x0000000000000000000000000000000000000000",
+        "coordinator": "0x0000000000000000000000000000000000000000",
+        "paymentToken": "0x0000000000000000000000000000000000000000",
+        "deposit": 0,
+        "remaining": 0,
+        "reservedBudget": 0,
+        "deadline": 0,
+        "taskCount": 0,
+        "settledMask": 0,
+        "terminalMask": 0,
+        "jobState": 0
+      },
+      "tasks": [],
+      "contract_balance": 1600000000,
+      "pending": {
+        "agent": 0,
+        "backup": 20000000
+      },
+      "refundable": 0,
+      "total_deposited": 1900000000,
+      "total_withdrawn": 160000000,
+      "total_refunded": 140000000
+    },
+    "revert_receipt": {
+      "blockHash": "0x753c6fcdb761dff13d6f1a094cadda4edb5097500d85150ac6cf30dd91b0305d",
+      "blockNumber": 1055,
+      "contractAddress": null,
+      "cumulativeGasUsed": 38265,
+      "from": "0xe41979D78ACE6c3FA4c7598Bbf2422E942865973",
+      "gasUsed": 38265,
+      "effectiveGasPrice": 0,
+      "logs": [],
+      "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "status": 0,
+      "to": "0x5fbC73911b9f073390a67CFcE5dfe4c835543c08",
+      "transactionHash": "0x5729af3d3dabe8a21f1f8edc12edd2794d7335126bc59420c9c1daeeffe0ca1a",
+      "transactionIndex": 0,
+      "type": 0
+    }
+  },
+  "receipts": [
+    {
+      "blockHash": "0x753c6fcdb761dff13d6f1a094cadda4edb5097500d85150ac6cf30dd91b0305d",
+      "blockNumber": 1055,
+      "contractAddress": null,
+      "cumulativeGasUsed": 38265,
+      "from": "0xe41979D78ACE6c3FA4c7598Bbf2422E942865973",
+      "gasUsed": 38265,
+      "effectiveGasPrice": 0,
+      "logs": [],
+      "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "status": 0,
+      "to": "0x5fbC73911b9f073390a67CFcE5dfe4c835543c08",
+      "transactionHash": "0x5729af3d3dabe8a21f1f8edc12edd2794d7335126bc59420c9c1daeeffe0ca1a",
+      "transactionIndex": 0,
+      "type": 0
+    }
+  ]
+}

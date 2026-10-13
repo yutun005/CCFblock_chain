@@ -1,0 +1,1050 @@
+{
+  "timestamp": "2026-10-13T10:47:18.802948+00:00",
+  "commit_sha": "UNCOMMITTED",
+  "source_hash": "e74aaaf92c6f95858527e9528df99674be7ec735eebb499bc08ee9797e2f8348",
+  "seed": 20261013,
+  "environment": "local-development-only",
+  "forge": {
+    "total": 53,
+    "statuses": {
+      "Success": 53
+    },
+    "tests": [
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV01_GlobalConservation()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV02_AtMostOneSettlement()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV03_PriceWithinCap()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV04_ReservedBudgetWithinDeposit()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV05_AttemptsNeverDecrease()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV06_DependenciesSettled()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV07_RefundDoesNotSpendPendingRewards()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/invariant/AccountingInvariant.t.sol:AccountingInvariantTest",
+        "name": "invariant_INV08_UnauthorizedChangesRejected()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Invariant": {
+            "runs": 128,
+            "calls": 8192,
+            "reverts": 0,
+            "metrics": {
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.cancel": {
+                "calls": 1028,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.create": {
+                "calls": 1017,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.unauthorized": {
+                "calls": 1049,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.withdraw": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.expire": {
+                "calls": 1050,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.finalizeAndRefund": {
+                "calls": 1007,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.settle": {
+                "calls": 1039,
+                "reverts": 0,
+                "discards": 0
+              },
+              "test/invariant/AccountingInvariant.t.sol:LifecycleHandler.assign": {
+                "calls": 995,
+                "reverts": 0,
+                "discards": 0
+              }
+            },
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "testExpiredAttestationRejected()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 187758
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "testFixedValidationPolicyCannotBeReplaced()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 187068
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC01_QuotePriceTamper()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 78707
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC02_QuoteIdentityTamper()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 57098
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC03_QuoteCrossTaskReplay()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 64518
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC04_QuoteCrossJobReplay()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 717479
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC05_CrossContractReplay()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 2748439
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC06_CrossChainReplay()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 54459
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC07_ExpiredQuote()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 49656
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC08_ConsumedBidNonce()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 204010
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC11_ModifiedResultContentHash()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 187524
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC12_ForgedAgentResultSignature()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 187495
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC13_CrossTaskResultReplay()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 335501
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC14_OldAttemptAfterReassignment()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 372825
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC15_LateOldAgentAfterExpiry()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 149958
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC16_ExpiryWinsAtExactBoundary()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 172480
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC16_SettlementWinsBeforeDeadline()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 303694
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC17_DependencyBypass()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 774692
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC18_BackwardCycle()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 24604
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC18_SelfDependency()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 24613
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC19_UnauthorizedVerifier()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 194996
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC20_AttestationForDifferentResult()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 187065
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC21_AttestationForOldAttempt()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 240201
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC22_DoubleSettlement()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 304986
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC23_UnauthorizedRefund()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 254654
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC23_UnauthorizedSettlement()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 187271
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC24_UnauthorizedReassignment()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 176200
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC25_OverBudgetQuote()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 48812
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC26_DuplicateJobCannotReserveTwice()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 48770
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC26_OvercommittedBudget()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 498155
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC27_DoubleRefundAndDoubleWithdrawal()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 518829
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC29_DatabaseRetryCannotPayTwice()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 337848
+          }
+        }
+      },
+      {
+        "suite": "test/security/DASCSecurity.t.sol:DASCSecurityTest",
+        "name": "test_SEC30_LIMITATION_AuthorizedBadApprovalStillPays()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 300980
+          }
+        }
+      },
+      {
+        "suite": "test/security/Reentrancy.t.sol:ReentrancyTest",
+        "name": "test_SEC28_CallbackCannotReenterOrDoubleRefund()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 3818566
+          }
+        }
+      },
+      {
+        "suite": "test/unit/GasComparison.t.sol:GasComparisonTest",
+        "name": "testGasDASCSingleTaskLifecycle()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 585212
+          }
+        }
+      },
+      {
+        "suite": "test/unit/GasComparison.t.sol:GasComparisonTest",
+        "name": "testGasSimpleSingleTaskLifecycle()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 139826
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testAll16TasksMaskAndBudget()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 2859016
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testCancelCascadesButIndependentTaskCanSettle()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 633017
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testEarlyExpiryAndPrematureFinalizeRejected()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 169602
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testFourNodeFlowWithdrawalAndRefund()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 1043104
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testFuzzSettlementBoundedByQuoteAndCap(uint256)",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Fuzz": {
+            "first_case": {
+              "calldata": "0x7e7fb5b300000000000000000000000000000000000000000000000000000000000003d2",
+              "gas": 350066,
+              "stipend": 21216
+            },
+            "runs": 256,
+            "mean_gas": 328981,
+            "median_gas": 329092,
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testFuzzTopologicalDeps(uint16)",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Fuzz": {
+            "first_case": {
+              "calldata": "0x1fa59df900000000000000000000000000000000000000000000000000000000000003d2",
+              "gas": 283893,
+              "stipend": 21216
+            },
+            "runs": 256,
+            "mean_gas": 328008,
+            "median_gas": 262677,
+            "failed_corpus_replays": 0
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testPermissionlessExpireUnassignedJobThenRefund()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 286783
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testRetryLimitCancelsAndCascades()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 472656
+          }
+        }
+      },
+      {
+        "suite": "test/unit/TaskEscrow.t.sol:TaskEscrowUnitTest",
+        "name": "testValidNegativeAttestationEmitsFailureAndReleasesAttempt()",
+        "status": "Success",
+        "reason": null,
+        "kind": {
+          "Unit": {
+            "gas": 428496
+          }
+        }
+      }
+    ]
+  },
+  "security": {
+    "statuses": {
+      "PASS": 26,
+      "SKIP": 3,
+      "LIMITATION": 1
+    },
+    "run_ids": [
+      "f849dc17-b099-4680-a5a8-7f5daec5a5e8"
+    ]
+  },
+  "module_c_e2e": {
+    "total": 14,
+    "passed": 13,
+    "seconds": [
+      0.9803250000113621,
+      0.985057300014887,
+      22.116899799992098,
+      22.069275600020774,
+      1.0722719000186771,
+      1.1074566000024788,
+      22.173507700004848,
+      0.9962289999821223,
+      0.9683650000079069,
+      0.9667623999994248,
+      1.0272723000089172,
+      1.003136999992421,
+      1.034100999997463
+    ],
+    "by_chain": {
+      "1337": {
+        "total": 3,
+        "passed": 3,
+        "mean_seconds": 22.119894366672572,
+        "min_seconds": 22.069275600020774,
+        "max_seconds": 22.173507700004848
+      },
+      "31337": {
+        "total": 11,
+        "passed": 10,
+        "mean_seconds": 1.014097750003566,
+        "min_seconds": 0.9667623999994248,
+        "max_seconds": 1.1074566000024788
+      }
+    }
+  },
+  "python": {
+    "tests": 20,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "besu_faults": [
+    {
+      "case_id": "C-BESU-FAULT-01",
+      "run_id": "5bd7586f-4eb8-4778-b849-cf0d3cf2e8b8",
+      "status": "PASS",
+      "observed": {
+        "initial_block": 301,
+        "validators": [
+          "0x5f4cfea7394a240b92a9b5a2e30f9f522bfb8a6c",
+          "0x68285829ea3e751f0e5dce8bee2b7d8c73784522",
+          "0x69565074de8223a0072962bd37fd49ec478bee94",
+          "0x6ccae94f5a978ec58ef648b9856f8cda354e496e"
+        ],
+        "peers_before": 4,
+        "block_when_stopped": 301,
+        "block_with_one_down": 304,
+        "continued_production_seconds": 8.577999999979511,
+        "validator4_restarted": true,
+        "recovery_target": 304,
+        "recovered_block": 310,
+        "recovery_observed_seconds": 19.64000000001397
+      }
+    }
+  ],
+  "scope": "Module C only; no claim that A2A market/orchestrator end-to-end is complete"
+}

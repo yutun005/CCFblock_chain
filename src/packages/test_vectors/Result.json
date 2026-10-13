@@ -1,0 +1,75 @@
+{
+  "fixture": "PUBLIC UNIT TEST VECTOR ONLY; not a deployment wallet",
+  "typed_data": {
+    "types": {
+      "EIP712Domain": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "chainId",
+          "type": "uint256"
+        },
+        {
+          "name": "verifyingContract",
+          "type": "address"
+        }
+      ],
+      "Result": [
+        {
+          "name": "jobId",
+          "type": "bytes32"
+        },
+        {
+          "name": "taskId",
+          "type": "uint8"
+        },
+        {
+          "name": "attempt",
+          "type": "uint32"
+        },
+        {
+          "name": "agentWallet",
+          "type": "address"
+        },
+        {
+          "name": "resultHash",
+          "type": "bytes32"
+        },
+        {
+          "name": "artifactURIHash",
+          "type": "bytes32"
+        },
+        {
+          "name": "submittedAt",
+          "type": "uint64"
+        }
+      ]
+    },
+    "primaryType": "Result",
+    "domain": {
+      "name": "DASC",
+      "version": "1",
+      "chainId": 31337,
+      "verifyingContract": "0x1111111111111111111111111111111111111111"
+    },
+    "message": {
+      "jobId": "0xe6ae4ecf2c31955bfe5a9089420caa9021a3dc67ca11f6481cfcbda3f2d609fd",
+      "taskId": 0,
+      "attempt": 0,
+      "agentWallet": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+      "resultHash": "0x06b0a4f426f6713234b2d4b2468640bc4e0bb72657a920ad24c5087153c593c8",
+      "artifactURIHash": "0x1a5087fb66df04be1ac13452160e0c9ffa29353677c07d067cd8c496408eb855",
+      "submittedAt": 1000000
+    }
+  },
+  "signer": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+  "digest": "0x990fd221af9db123518718bca1a2ce22635ddce5f6cbfdbd2d3b137abab821f4",
+  "signature": "0xd01cd6418e6bd4e24da168f4f31e242af62d89c2add2ab2db28aad1f172a79141624b7f751aa5570d6ad9488b9e957aa24f2df0cbc82d96179e768fed554111a1b",
+  "expected_recovered_address": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+}

@@ -1,0 +1,2 @@
+GasComparisonTest:testGasDASCSingleTaskLifecycle() (gas: 585212)
+GasComparisonTest:testGasSimpleSingleTaskLifecycle() (gas: 139826)

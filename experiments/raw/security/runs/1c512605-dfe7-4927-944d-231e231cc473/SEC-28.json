@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-10-13T04:53:13.413818+00:00",
+  "commit_sha": "UNCOMMITTED",
+  "seed": 20261013,
+  "environment": "local-development-only",
+  "case_id": "SEC-28",
+  "title": "重入回调",
+  "run_id": "1c512605-dfe7-4927-944d-231e231cc473",
+  "layer": "L3-C: real RPC transactions; A2A transport not included",
+  "tx_hashes": [],
+  "status": "SKIP",
+  "reason": "callback covered by Foundry SEC28; normal RPC deployment restricts token"
+}

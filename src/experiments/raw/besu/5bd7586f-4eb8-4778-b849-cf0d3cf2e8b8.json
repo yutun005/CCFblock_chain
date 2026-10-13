@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-10-13T07:31:01.227500+00:00",
+  "commit_sha": "UNCOMMITTED",
+  "seed": 20261013,
+  "environment": "local-development-only",
+  "case_id": "C-BESU-FAULT-01",
+  "run_id": "5bd7586f-4eb8-4778-b849-cf0d3cf2e8b8",
+  "chain_id": 1337,
+  "rpc_url": "http://127.0.0.1:8547",
+  "status": "PASS",
+  "observed": {
+    "initial_block": 301,
+    "validators": [
+      "0x5f4cfea7394a240b92a9b5a2e30f9f522bfb8a6c",
+      "0x68285829ea3e751f0e5dce8bee2b7d8c73784522",
+      "0x69565074de8223a0072962bd37fd49ec478bee94",
+      "0x6ccae94f5a978ec58ef648b9856f8cda354e496e"
+    ],
+    "peers_before": 4,
+    "block_when_stopped": 301,
+    "block_with_one_down": 304,
+    "continued_production_seconds": 8.577999999979511,
+    "validator4_restarted": true,
+    "recovery_target": 304,
+    "recovered_block": 310,
+    "recovery_observed_seconds": 19.64000000001397
+  },
+  "image_digests": [
+    "hyperledger/besu@sha256:11dd3a2f44ad1cafb39cbe27d6ee57b053733c257812cc8a0264ade9e6cc0778"
+  ]
+}

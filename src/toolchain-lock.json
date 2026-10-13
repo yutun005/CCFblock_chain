@@ -1,0 +1,16 @@
+{
+  "foundry": "1.5.1",
+  "solidity": "0.8.28",
+  "evm_version": "paris",
+  "python": "3.11",
+  "besu_image": "hyperledger/besu:25.10.0",
+  "besu_image_digest": "sha256:11dd3a2f44ad1cafb39cbe27d6ee57b053733c257812cc8a0264ade9e6cc0778",
+  "openzeppelin": "5.2.0",
+  "forge_std": "1.9.7",
+  "git_dependencies": {
+    "openzeppelin-contracts": "acd4ff74de833399287ed6b31b4debf6b2b35527",
+    "forge-std": "77041d2ce690e692d6e03cc812b57d1ddaa4d505"
+  },
+  "foundry_windows_archive_sha256": "293fedd9ad45eb9d774008815dbda820bddd3c85cab3baf55a0be3775e86d5ae",
+  "foundry_download_source": "https://github.com/foundry-rs/foundry/releases/download/v1.5.1/"
+}

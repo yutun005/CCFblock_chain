@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-10-13T10:47:16.370727+00:00",
+  "commit_sha": "UNCOMMITTED",
+  "source_hash": "e74aaaf92c6f95858527e9528df99674be7ec735eebb499bc08ee9797e2f8348",
+  "seed": 20261013,
+  "environment": "local-development-only",
+  "case_id": "C-REPRODUCE-01",
+  "status": "PASS",
+  "setup": "new Python venv; requirements.lock; vendored dependencies without Git metadata",
+  "foundry": "reused verified Foundry 1.5.1; no original build/output cache copied",
+  "forge_tests": 53,
+  "python_rpc_tests": 20,
+  "bytecode_identical": true,
+  "creation_bytecode_sha256": {
+    "TaskEscrow": "a0e9630ab646e408fe83e626a7333e5f87a66d969f1acc3a00194af41b33dcf7",
+    "MockUSDC": "edc2d6fd85635cf41f3e9593a9581968d87ddb0f7d3f3dda9e663cef9501da4c"
+  },
+  "chain_id": 31337,
+  "temporary_rpc_port": 8559,
+  "temporary_chain_stopped": true,
+  "e2e_run_id": "b6841150-e60c-4c0c-85ef-88bca8599cbb",
+  "test_scope": "independent extracted source, not main workspace"
+}
