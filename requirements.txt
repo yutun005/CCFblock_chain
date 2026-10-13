@@ -1,0 +1,1 @@
+# B module uses only Python 3.11+ standard library; no network dependency is required.

@@ -1,0 +1,32 @@
+{
+  "schema_version": "1",
+  "domain": {
+    "name": "AgentFlow Pay",
+    "version": "1",
+    "chain_id": 31337,
+    "verifying_contract": "0x0000000000000000000000000000000000000001"
+  },
+  "wallet": "0xbee3523fac14ee4ab0e0d93e42361b876d65801d",
+  "quote": {
+    "job_id": "0x4990e28af2a010a1b9cdf2e1dba9fb14df0464e10dc0cca8155a61f261d70b72",
+    "task_id": 2,
+    "attempt": 1,
+    "agent_wallet": "0xbee3523fac14ee4ab0e0d93e42361b876d65801d",
+    "price": 11,
+    "requirement_hash": "0xfce234dbde58ff99696c2d2c413c2392b6cf3af581ed0d5a5a0e97612e5f5f57",
+    "payment_token": "0x0000000000000000000000000000000000000002",
+    "valid_until": 1893456000,
+    "bid_nonce": 1,
+    "signature": "0xb145628a4bd617e947a2cc6bbac6b29f886fc9349ebfcdea05a1a2cba1b92e4b02136e7414e84b3dec917ace082330579c53ea8110afe3aa5e8793a6bbc84e5a1b"
+  },
+  "result": {
+    "job_id": "0x4990e28af2a010a1b9cdf2e1dba9fb14df0464e10dc0cca8155a61f261d70b72",
+    "task_id": 2,
+    "attempt": 1,
+    "agent_wallet": "0xbee3523fac14ee4ab0e0d93e42361b876d65801d",
+    "result_hash": "0xbfc9cd3c4c7835732d6e677ef735e026cc3db4f2824de2c22adcc41ea57b2111",
+    "artifact_uri_hash": "0x8be731a58acbc31fbd2e18ef002149b4586ce86f243b7f78d53fc4b36d0daa7e",
+    "submitted_at": 1791893648,
+    "signature": "0x3d4ac7e169c790bc0a3f6ffc2d321f7201a191eef5878e405a43f1390248627508c317248291827ee43e6024a9cd4a1a833f581ad85414c49168b44d010af9b01b"
+  }
+}

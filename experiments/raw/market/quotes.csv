@@ -1,0 +1,6 @@
+run_id,skill,candidate_count,selected_agent,price,result_hash,elapsed_ms,status
+0,data_cleaning,2,cleaner-a,11,0xa70935e5b284d555319a781a436d7f5a2d64ee5dd97c2341f9dd15a3f41d8bb3,64.382,PASS
+1,data_validation,2,validator-a,8,0xb778c415ffec6e950cd3d45fe6a40eb26f3b2e540406b88f35395f8b0a1be781,67.743,PASS
+2,statistical_analysis,2,analyst-a,15,0xa944505a97fe7d82f30b8ff90296be2c0480bcad58019c04f2636b9dc2dd8ae8,67.767,PASS
+3,report_generation,1,reporter-a,9,0xada50405e1588a7256ae9036ce23245280d738052645dab29bc3bc5b868d8e34,36.119,PASS
+4,travel_itinerary,1,travel-a,12,0x0547fc40d3402c3083be94e7112d5d6416ec5d0626b4c840bc01e90fd1befbda,37.056,PASS

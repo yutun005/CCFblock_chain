@@ -1,0 +1,52 @@
+[
+  {
+    "run_id": 0,
+    "skill": "data_cleaning",
+    "candidate_count": 2,
+    "selected_agent": "cleaner-a",
+    "price": 11,
+    "result_hash": "0xa70935e5b284d555319a781a436d7f5a2d64ee5dd97c2341f9dd15a3f41d8bb3",
+    "elapsed_ms": 64.382,
+    "status": "PASS"
+  },
+  {
+    "run_id": 1,
+    "skill": "data_validation",
+    "candidate_count": 2,
+    "selected_agent": "validator-a",
+    "price": 8,
+    "result_hash": "0xb778c415ffec6e950cd3d45fe6a40eb26f3b2e540406b88f35395f8b0a1be781",
+    "elapsed_ms": 67.743,
+    "status": "PASS"
+  },
+  {
+    "run_id": 2,
+    "skill": "statistical_analysis",
+    "candidate_count": 2,
+    "selected_agent": "analyst-a",
+    "price": 15,
+    "result_hash": "0xa944505a97fe7d82f30b8ff90296be2c0480bcad58019c04f2636b9dc2dd8ae8",
+    "elapsed_ms": 67.767,
+    "status": "PASS"
+  },
+  {
+    "run_id": 3,
+    "skill": "report_generation",
+    "candidate_count": 1,
+    "selected_agent": "reporter-a",
+    "price": 9,
+    "result_hash": "0xada50405e1588a7256ae9036ce23245280d738052645dab29bc3bc5b868d8e34",
+    "elapsed_ms": 36.119,
+    "status": "PASS"
+  },
+  {
+    "run_id": 4,
+    "skill": "travel_itinerary",
+    "candidate_count": 1,
+    "selected_agent": "travel-a",
+    "price": 12,
+    "result_hash": "0x0547fc40d3402c3083be94e7112d5d6416ec5d0626b4c840bc01e90fd1befbda",
+    "elapsed_ms": 37.056,
+    "status": "PASS"
+  }
+]

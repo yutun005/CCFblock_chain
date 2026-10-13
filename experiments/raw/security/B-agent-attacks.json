@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "domain": {
+    "name": "AgentFlow Pay",
+    "version": "1",
+    "chain_id": 31337,
+    "verifying_contract": "0x0000000000000000000000000000000000000001"
+  },
+  "cases": [
+    {
+      "case_id": "SEC-09",
+      "name": "valid_identity_binding",
+      "expected": "PASS",
+      "observed": true
+    },
+    {
+      "case_id": "SEC-01",
+      "name": "quote_price_tamper",
+      "expected": "REJECT",
+      "observed": true
+    },
+    {
+      "case_id": "SEC-09B",
+      "name": "agent_wallet_impersonation",
+      "expected": "REJECT",
+      "observed": true
+    },
+    {
+      "case_id": "SEC-07",
+      "name": "expired_quote",
+      "expected": "REJECT",
+      "observed": true
+    },
+    {
+      "case_id": "SEC-14",
+      "name": "old_attempt_result",
+      "expected": "REJECT_BY_CHAIN",
+      "observed": true,
+      "note": "B signs the old attempt; C must reject after attempt increments"
+    },
+    {
+      "case_id": "FAULT-INVALID-JSON",
+      "name": "invalid_artifact",
+      "expected": "FAIL_CLOSED",
+      "observed": true
+    },
+    {
+      "case_id": "FAULT-TIMEOUT",
+      "name": "agent_timeout",
+      "expected": "REASSIGN",
+      "observed": true
+    }
+  ],
+  "all_expected": true
+}
