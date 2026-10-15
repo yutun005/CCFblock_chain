@@ -22,7 +22,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from contextlib import asynccontextmanager, contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from fractions import Fraction
 from html import escape
 from pathlib import Path
@@ -1150,13 +1150,265 @@ def report(inputs: list[dict]) -> list[dict]:
             packet("references.json", canonical(refs), "application/json"), chart_source, chart]
 
 
+# Travel services consume operator-supplied snapshots, never invented live prices.
+TravelLabel = Annotated[str, Field(min_length=1, max_length=160, pattern=r"^[^\x00-\x1f|<>`]+$")]
+TravelId = Annotated[str, Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_-]{0,47}$")]
+Cents = Annotated[int, Field(ge=0, le=100_000_000, strict=True)]
+ClockTime = Annotated[str, Field(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")]
+
+
+def travel_date(value: str) -> str:
+    if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
+        raise ValueError("travel dates must use YYYY-MM-DD")
+    return value
+
+
+def minutes(value: str) -> int:
+    hours, minute = map(int, value.split(":"))
+    return hours * 60 + minute
+
+
+def clock_time(value: int) -> str:
+    return f"{value // 60:02d}:{value % 60:02d}"
+
+
+class TravelRequest(StrictModel):
+    destination: TravelLabel
+    start_date: Annotated[str, BeforeValidator(travel_date)]
+    days: int = Field(default=3, ge=1, le=7, strict=True)
+    travelers: int = Field(default=1, ge=1, le=20, strict=True)
+    budget_cents: Cents
+    interests: tuple[TravelLabel, ...] = Field(default=(), max_length=20)
+    day_start: ClockTime = "09:00"
+    day_end: ClockTime = "18:00"
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        if self.day_start >= self.day_end:
+            raise ValueError("day_start must be earlier than day_end")
+        try:
+            date.fromisoformat(self.start_date) + timedelta(days=self.days)
+        except OverflowError as exc:
+            raise ValueError("travel date range exceeds supported calendar") from exc
+        return self
+
+
+class Attraction(StrictModel):
+    id: TravelId
+    name: TravelLabel
+    destination: TravelLabel
+    category: TravelLabel
+    visit_minutes: int = Field(ge=1, le=720, strict=True)
+    opens_at: ClockTime
+    closes_at: ClockTime
+    ticket_cents: Cents
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        if minutes(self.closes_at) - minutes(self.opens_at) < self.visit_minutes:
+            raise ValueError("attraction visit does not fit opening hours")
+        return self
+
+
+class Hotel(StrictModel):
+    id: TravelId
+    name: TravelLabel
+    destination: TravelLabel
+    nightly_cents: Cents
+    room_capacity: int = Field(ge=1, le=20, strict=True)
+    available_rooms: int = Field(ge=1, le=100, strict=True)
+    available_from: Annotated[str, BeforeValidator(travel_date)]
+    available_until: Annotated[str, BeforeValidator(travel_date)]
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        if self.available_from >= self.available_until:
+            raise ValueError("invalid hotel availability range")
+        return self
+
+
+class Transfer(StrictModel):
+    from_id: TravelId
+    to_id: TravelId
+    minutes: int = Field(ge=1, le=720, strict=True)
+    cost_cents: Cents  # Per traveler, one way, from the supplied snapshot.
+
+
+class TravelInput(StrictModel):
+    schemaVersion: Literal[1] = 1
+    request: TravelRequest
+    source: TravelLabel
+    as_of: Annotated[str, BeforeValidator(travel_date)]
+    attractions: tuple[Attraction, ...] = Field(min_length=1, max_length=100)
+    hotels: tuple[Hotel, ...] = Field(min_length=1, max_length=50)
+    transfers: tuple[Transfer, ...] = Field(max_length=10000)
+
+    @model_validator(mode="after")
+    def references(self):
+        ids = [x.id for x in (*self.attractions, *self.hotels)]
+        pairs = [(x.from_id, x.to_id) for x in self.transfers]
+        if len(set(ids)) != len(ids) or len(set(pairs)) != len(pairs):
+            raise ValueError("duplicate travel location or transfer")
+        if any(a == b or a not in ids or b not in ids for a, b in pairs):
+            raise ValueError("transfer must link two known, distinct locations")
+        if self.as_of > self.request.start_date:
+            raise ValueError("snapshot date must not be later than departure")
+        return self
+
+
+def travel_document(inputs: list[dict]) -> TravelInput:
+    if len(inputs) != 1 or inputs[0]["name"] != "travel.json":
+        raise ValueError("travel roots require exactly one travel.json")
+    return TravelInput.model_validate_json(unpack(inputs[0]))
+
+
+def load_travel_inputs(directory: Path) -> list[dict]:
+    root = Path(directory).resolve()
+    source = root / "travel.json"
+    if not source.is_file() or not source.resolve().is_relative_to(root):
+        raise ValueError("旅游资料未配置：请在旅游输入目录提供 travel.json")
+    if source.stat().st_size > 20_000_000:
+        raise ValueError("travel.json exceeds 20 MB")
+    items = [packet("travel.json", source.read_bytes(), "application/json")]
+    travel_document(items)
+    return items
+
+
+def travel_context(doc: TravelInput, digest: str) -> dict:
+    return {"request": doc.request.model_dump(mode="json"), "source": doc.source,
+            "as_of": doc.as_of, "input_hash": digest,
+            "transfers": [x.model_dump(mode="json") for x in doc.transfers]}
+
+
+def attraction_search(inputs: list[dict]) -> list[dict]:
+    doc = travel_document(inputs)
+    req = doc.request
+    selected = [x.model_dump(mode="json") for x in doc.attractions
+                if x.destination == req.destination and (not req.interests or x.category in req.interests)]
+    result = {"context": travel_context(doc, inputs[0]["sha256"]),
+              "attractions": sorted(selected, key=lambda x: (x["ticket_cents"], x["id"]))}
+    return [packet("attractions.json", canonical(result), "application/json")]
+
+
+def hotel_search(inputs: list[dict]) -> list[dict]:
+    doc = travel_document(inputs)
+    req = doc.request
+    checkout = (date.fromisoformat(req.start_date) + timedelta(days=req.days - 1)).isoformat()
+    offers = []
+    for hotel in doc.hotels:
+        rooms = (req.travelers + hotel.room_capacity - 1) // hotel.room_capacity
+        if (hotel.destination == req.destination and hotel.available_from <= req.start_date
+                and hotel.available_until >= checkout and rooms <= hotel.available_rooms):
+            offers.append({**hotel.model_dump(mode="json"), "rooms": rooms,
+                           "nights": req.days - 1, "total_cents": rooms * (req.days - 1) * hotel.nightly_cents})
+    result = {"context": travel_context(doc, inputs[0]["sha256"]),
+              "hotels": sorted(offers, key=lambda x: (x["total_cents"], x["id"]))}
+    return [packet("hotels.json", canonical(result), "application/json")]
+
+
+def travel_candidates(inputs: list[dict]) -> tuple[dict, list[dict], list[dict]]:
+    files = {x["name"]: json.loads(unpack(x)) for x in inputs}
+    if len(files) != len(inputs) or set(files) != {"attractions.json", "hotels.json"}:
+        raise ValueError("route requires settled attractions and hotel results")
+    attractions, hotels = files["attractions.json"], files["hotels.json"]
+    if attractions["context"] != hotels["context"]:
+        raise ValueError("travel source or request mismatch between predecessors")
+    return attractions["context"], attractions["attractions"], hotels["hotels"]
+
+
+def route_planning(inputs: list[dict]) -> list[dict]:
+    context, attractions, hotels = travel_candidates(inputs)
+    req = TravelRequest.model_validate(context["request"])
+    links = {(x["from_id"], x["to_id"]): x for x in context["transfers"]}
+    # Bounded deterministic heuristic: try hotels by total price, then visit cheap
+    # eligible locations. Preserve at least one unused attraction for each later day.
+    for hotel in hotels:
+        spent, used, days = hotel["total_cents"], set(), []
+        if spent > req.budget_cents:
+            continue
+        for day in range(req.days):
+            current, at = hotel["id"], minutes(req.day_start)
+            stops, transport, tickets = [], 0, 0
+            for place in attractions:
+                if place["id"] in used:
+                    continue
+                if stops and len(attractions) - len(used) <= req.days - day - 1:
+                    break
+                outward, back = links.get((current, place["id"])), links.get((place["id"], hotel["id"]))
+                if not outward or not back:
+                    continue
+                arrival = max(at + outward["minutes"], minutes(place["opens_at"]))
+                departure = arrival + place["visit_minutes"]
+                fare, ticket = outward["cost_cents"] * req.travelers, place["ticket_cents"] * req.travelers
+                if (departure > minutes(place["closes_at"]) or departure + back["minutes"] > minutes(req.day_end)
+                        or spent + fare + ticket + back["cost_cents"] * req.travelers > req.budget_cents):
+                    continue
+                stops.append({"id": place["id"], "name": place["name"], "arrive": clock_time(arrival),
+                              "depart": clock_time(departure), "ticket_cents": ticket})
+                spent += fare + ticket
+                transport += fare
+                tickets += ticket
+                current, at = place["id"], departure
+                used.add(current)
+            if not stops:
+                break
+            back = links[(current, hotel["id"])]
+            fare = back["cost_cents"] * req.travelers
+            spent += fare
+            days.append({"date": (date.fromisoformat(req.start_date) + timedelta(days=day)).isoformat(),
+                         "stops": stops, "return_at": clock_time(at + back["minutes"]),
+                         "transport_cents": transport + fare, "ticket_cents": tickets})
+        if len(days) == req.days:
+            result = {"request": context["request"], "source": context["source"], "as_of": context["as_of"],
+                      "input_hash": context["input_hash"], "hotel": hotel, "days": days,
+                      "total_cents": spent, "remaining_cents": req.budget_cents - spent}
+            return [packet("itinerary.json", canonical(result), "application/json")]
+    raise ValueError("当前资料与规划规则下无法形成满足天数、时段和预算的行程；请调整条件或补充资料")
+
+
+TRAVEL_NOTICE = "价格、营业时间与交通来自所列资料快照，非实时查询或预订；预算仅含住宿、门票与所列交通，不含餐饮及往返目的地费用。"
+
+
+def travel_report(inputs: list[dict]) -> list[dict]:
+    if len(inputs) != 1 or inputs[0]["name"] != "itinerary.json":
+        raise ValueError("travel report requires itinerary.json")
+    route = json.loads(unpack(inputs[0]))
+    req, hotel = route["request"], route["hotel"]
+    lines = ["# 旅游行程方案", "", "## 需求与资料", "",
+             f"目的地：{req['destination']}；出发：{req['start_date']}；{req['days']} 天；{req['travelers']} 人。",
+             f"资料来源：{route['source']}；资料日期：{route['as_of']}。", "", "## 住宿", "",
+             f"{hotel['name']}：{hotel['rooms']} 间 × {hotel['nights']} 晚，合计 {hotel['total_cents']} 分。",
+             "", "## 每日行程", "", "| 日期 | 景点 | 开始 | 结束 | 门票（分） |", "|---|---|---|---|---:|"]
+    for day in route["days"]:
+        for stop in day["stops"]:
+            lines.append(f"| {day['date']} | {stop['name']} | {stop['arrive']} | {stop['depart']} | {stop['ticket_cents']} |")
+    lines += [""] + [f"{day['date']} 返回住宿点：{day['return_at']}；当日交通 {day['transport_cents']} 分。"
+                     for day in route["days"]]
+    lines += ["", "## 费用", "", f"行程合计：{route['total_cents']} 分；预算余额：{route['remaining_cents']} 分。",
+              "", "## 限制与来源", "", TRAVEL_NOTICE, "",
+              f"行程成果 SHA-256：{inputs[0]['sha256']}", f"原始资料 SHA-256：{route['input_hash']}", ""]
+    refs = {"itinerary": reference(inputs[0]), "input_hash": route["input_hash"],
+            "source": route["source"], "as_of": route["as_of"], "total_cents": route["total_cents"]}
+    return [packet("travel-report.md", "\n".join(lines).encode(), "text/markdown"),
+            packet("travel-references.json", canonical(refs), "application/json")]
+
+
 EXECUTORS = {"data_cleaning": cleaning, "data_validation": validation,
-             "statistical_analysis": statistics, "report_generation": report}
+             "statistical_analysis": statistics, "report_generation": report,
+             "attraction_search": attraction_search, "hotel_search": hotel_search,
+             "route_planning": route_planning, "travel_report": travel_report}
 
 SKILL_TYPES = {"data_cleaning": ("raw_csv", "cleaned_dataset"),
                "data_validation": ("raw_csv", "quality_report"),
                "statistical_analysis": ("cleaned_and_quality", "statistics"),
-               "report_generation": ("statistics", "report")}
+               "report_generation": ("statistics", "report"),
+               "attraction_search": ("travel_request", "attractions"),
+               "hotel_search": ("travel_request", "hotels"),
+               "route_planning": ("travel_candidates", "itinerary"),
+               "travel_report": ("itinerary", "travel_report")}
+
+SKILL_POLICIES = {skill: ("travel-v1" if skill in {"attraction_search", "hotel_search", "route_planning", "travel_report"}
+                         else "sales-v1") for skill in SKILL_TYPES}
 
 
 # ============================================================================
@@ -1175,17 +1427,63 @@ def data_plan(input_hashes: list[str], *, sla: int = 30, deposit: str = "100") -
                 deposit=deposit, tasks=tasks, input_hashes=tuple(input_hashes), duration_seconds=max(900, sla*12))
 
 
+def travel_plan(input_hashes: list[str], *, sla: int = 30, deposit: str = "100") -> Plan:
+    specs = [("attractions", "景点检索", "attraction_search", [], "25"),
+             ("hotels", "酒店信息汇总", "hotel_search", [], "20"),
+             ("route", "路线规划", "route_planning", ["attractions", "hotels"], "30"),
+             ("report", "行程报告", "travel_report", ["route"], "15")]
+    tasks = tuple(TaskSpec(key=key, title=title, skill=skill, dependencies=deps, budget_cap=cap,
+                           sla_seconds=sla, max_attempts=3, policy="travel-v1",
+                           input_type=SKILL_TYPES[skill][0], output_type=SKILL_TYPES[skill][1])
+                  for key, title, skill, deps, cap in specs)
+    return Plan(scenario="travel_planning", goal="按旅游资料中的目的地、天数与预算生成可核验行程",
+                deposit=deposit, tasks=tasks, input_hashes=tuple(input_hashes), duration_seconds=max(900, sla*12))
+
+
+SCENARIOS = {
+    "cross_org_analysis": {"title": "跨组织销售分析", "description": "清洗与原始校验并行执行，统计和报告按依赖推进。",
+                           "plan": data_plan, "loader": load_inputs, "policy": "sales-v1"},
+    "travel_planning": {"title": "旅游行程规划", "description": "景点与酒店并行检索，路线和行程报告按依赖推进。",
+                        "plan": travel_plan, "loader": load_travel_inputs, "policy": "travel-v1"},
+}
+
+
+def scenario_inputs(config: dict, scenario: str) -> list[dict]:
+    if scenario not in SCENARIOS:
+        raise ValueError("unsupported scenario")
+    directories = config.get("scenarioInputDirectories", {})
+    fallback = {"cross_org_analysis": config["inputDirectory"],
+                "travel_planning": Path(config["inputDirectory"]) / "travel"}
+    return SCENARIOS[scenario]["loader"](Path(directories.get(scenario, fallback[scenario])))
+
+
+def describe_inputs(scenario: str, inputs: list[dict]) -> dict:
+    result = {"scenario": scenario, "available": True, "files": [reference(x) for x in inputs]}
+    if scenario == "travel_planning":
+        doc = travel_document(inputs)
+        result.update(request=doc.request.model_dump(mode="json"), source=doc.source, as_of=doc.as_of,
+                      attractions=len(doc.attractions), hotels=len(doc.hotels))
+    else:
+        result["columns"] = COLUMNS
+        for ref, item in zip(result["files"], inputs, strict=True):
+            ref["rows"] = sum(1 for _ in csv.DictReader(io.StringIO(unpack(item).decode("utf-8"))))
+    return result
+
+
 def validate_skills(plan: Plan) -> None:
+    if plan.scenario not in SCENARIOS:
+        raise ValueError("unsupported scenario")
     by_key = {t.key: t for t in plan.tasks}
     for task in plan.tasks:
         if task.skill not in SKILL_TYPES or SKILL_TYPES[task.skill] != (task.input_type, task.output_type):
             raise ValueError("unsupported skill or mismatched input/output schema")
         actual = sorted(by_key[d].output_type for d in task.dependencies)
         required = {"raw_csv": [], "cleaned_and_quality": ["cleaned_dataset", "quality_report"],
-                    "statistics": ["statistics"]}[task.input_type]
+                    "statistics": ["statistics"], "travel_request": [],
+                    "travel_candidates": ["attractions", "hotels"], "itinerary": ["itinerary"]}[task.input_type]
         if actual != required:
             raise ValueError("dependency output types do not match task inputs")
-        if task.policy != "sales-v1":
+        if task.policy != SKILL_POLICIES[task.skill] or task.policy != SCENARIOS[plan.scenario]["policy"]:
             raise ValueError("unknown frozen policy")
 
 
@@ -1200,6 +1498,15 @@ RULES = {"version": "sales-v1", "categories": ["book", "food", "tool"],
 
 
 def policy_id(skill: str) -> str:
+    if SKILL_POLICIES.get(skill) == "travel-v1":
+        checker = "\n".join(inspect.getsource(f) for f in (
+            travel_date, minutes, clock_time, TravelRequest, Attraction, Hotel, Transfer, TravelInput,
+            travel_document, travel_context, travel_candidates, verify_travel,
+            verify_travel_route, verify_travel_report, check_context, validate_delivery)).encode()
+        return object_hash({"skill": skill, "rules": {"version": "travel-v1", "notice": TRAVEL_NOTICE,
+                            "schema": TravelInput.model_json_schema(), "currency": "CNY_cents",
+                            "route": "unique_visits_opening_hours_transfers_daily_return_budget"},
+                            "checker_hash": sha256(checker)})
     checker = "\n".join(inspect.getsource(f) for f in (audit_raw, reference_statistics, verify_chart,
                                                           verify_content, check_context, validate_delivery)).encode()
     return object_hash({"skill": skill, "rules": RULES, "checker_hash": sha256(checker)})
@@ -1607,8 +1914,8 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
     card = AgentCard(name=config["id"], description="Sales analysis service; independent wallet " + wallet,
                      version="1.0.0", capabilities=AgentCapabilities(streaming=False),
                      default_input_modes=["application/json"], default_output_modes=["application/json"],
-                     skills=[AgentSkill(id=skill, name=skill, description="Deterministic sales-v1 executor",
-                                        tags=["agentflow", "sales-analysis"]) for skill in config["prices"]],
+                     skills=[AgentSkill(id=skill, name=skill, description="Deterministic " + SKILL_POLICIES[skill] + " executor",
+                                        tags=["agentflow", SKILL_POLICIES[skill]]) for skill in config["prices"]],
                      supported_interfaces=[AgentInterface(protocol_binding="JSONRPC", protocol_version="1.0",
                                                            url=config["endpoint"] + "/a2a/jsonrpc")])
     handler = DefaultRequestHandler(agent_executor=ServiceExecutor(config, chain, db),
@@ -1802,7 +2109,130 @@ def verify_chart(stats: dict, source_hash: str, files: dict) -> None:
             "来源：" + source_hash)
 
 
+def verify_travel_route(inputs: list[dict], route: dict) -> None:
+    context, attractions, hotels = travel_candidates(inputs)
+    req = TravelRequest.model_validate(context["request"])
+    hotel = next((h for h in hotels if h["id"] == route.get("hotel", {}).get("id")), None)
+    if hotel is None:
+        raise ValueError("itinerary hotel is not a settled eligible offer")
+    places = {x["id"]: x for x in attractions}
+    links = {(x["from_id"], x["to_id"]): x for x in context["transfers"]}
+    supplied_days = route.get("days", [])
+    if len(supplied_days) != req.days:
+        raise ValueError("itinerary day count mismatch")
+    expected_days, visited = [], set()
+    total = hotel["total_cents"]
+    for index, day in enumerate(supplied_days):
+        at, current, tickets, transport = minutes(req.day_start), hotel["id"], 0, 0
+        expected_stops = []
+        if not day.get("stops"):
+            raise ValueError("each travel day must include a visit")
+        for stop in day["stops"]:
+            identity = stop.get("id")
+            if identity not in places or identity in visited:
+                raise ValueError("unknown or repeated attraction")
+            place = places[identity]
+            edge = links.get((current, identity))
+            if edge is None:
+                raise ValueError("missing transfer evidence")
+            start = max(at + edge["minutes"], minutes(place["opens_at"]))
+            end = start + place["visit_minutes"]
+            if end > minutes(place["closes_at"]):
+                raise ValueError("visit outside opening hours")
+            cost = place["ticket_cents"] * req.travelers
+            expected_stops.append({"id": identity, "name": place["name"], "arrive": clock_time(start),
+                                   "depart": clock_time(end), "ticket_cents": cost})
+            tickets += cost
+            transport += edge["cost_cents"] * req.travelers
+            at, current = end, identity
+            visited.add(identity)
+        back = links.get((current, hotel["id"]))
+        if back is None or at + back["minutes"] > minutes(req.day_end):
+            raise ValueError("daily return cannot fit travel window")
+        transport += back["cost_cents"] * req.travelers
+        expected_days.append({"date": (date.fromisoformat(req.start_date) + timedelta(days=index)).isoformat(),
+                              "stops": expected_stops, "return_at": clock_time(at + back["minutes"]),
+                              "transport_cents": transport, "ticket_cents": tickets})
+        total += tickets + transport
+    expected = {"request": context["request"], "source": context["source"], "as_of": context["as_of"],
+                "input_hash": context["input_hash"], "hotel": hotel, "days": expected_days,
+                "total_cents": total, "remaining_cents": req.budget_cents - total}
+    if total > req.budget_cents or canonical(route) != canonical(expected):
+        raise ValueError("itinerary timing, costs, source or budget mismatch")
+
+
+def verify_travel_report(inputs: list[dict], files: dict) -> None:
+    if len(inputs) != 1 or inputs[0]["name"] != "itinerary.json":
+        raise ValueError("missing settled itinerary")
+    if set(files) != {"travel-report.md", "travel-references.json"}:
+        raise ValueError("travel report artifact set mismatch")
+    route = json.loads(unpack(inputs[0]))
+    req, hotel = route["request"], route["hotel"]
+    refs = {"itinerary": reference(inputs[0]), "input_hash": route["input_hash"],
+            "source": route["source"], "as_of": route["as_of"], "total_cents": route["total_cents"]}
+    if canonical(json.loads(files["travel-references.json"])) != canonical(refs):
+        raise ValueError("travel report provenance mismatch")
+    text = files["travel-report.md"].decode("utf-8")
+    expected = ["# 旅游行程方案", "## 需求与资料",
+                f"目的地：{req['destination']}；出发：{req['start_date']}；{req['days']} 天；{req['travelers']} 人。",
+                f"资料来源：{route['source']}；资料日期：{route['as_of']}。", "## 住宿",
+                f"{hotel['name']}：{hotel['rooms']} 间 × {hotel['nights']} 晚，合计 {hotel['total_cents']} 分。",
+                "## 每日行程", "| 日期 | 景点 | 开始 | 结束 | 门票（分） |", "|---|---|---|---|---:|"]
+    for day in route["days"]:
+        expected.extend(f"| {day['date']} | {s['name']} | {s['arrive']} | {s['depart']} | {s['ticket_cents']} |"
+                        for s in day["stops"])
+    expected += [f"{day['date']} 返回住宿点：{day['return_at']}；当日交通 {day['transport_cents']} 分。"
+                 for day in route["days"]]
+    expected += ["## 费用", f"行程合计：{route['total_cents']} 分；预算余额：{route['remaining_cents']} 分。",
+                 "## 限制与来源", TRAVEL_NOTICE, f"行程成果 SHA-256：{inputs[0]['sha256']}",
+                 f"原始资料 SHA-256：{route['input_hash']}"]
+    if [line for line in text.splitlines() if line] != expected:
+        raise ValueError("travel report differs from settled itinerary")
+
+
+def verify_travel(skill: str, inputs: list[dict], artifacts: list[dict]) -> list[str]:
+    files = {x["name"]: unpack(x) for x in artifacts}
+    if len(files) != len(artifacts):
+        raise ValueError("duplicate travel artifact name")
+    if skill in {"attraction_search", "hotel_search"}:
+        doc = travel_document(inputs)
+        req, selected = doc.request, []
+        if skill == "attraction_search":
+            for place in doc.attractions:
+                if place.destination != req.destination or (req.interests and place.category not in req.interests):
+                    continue
+                selected.append(place.model_dump(mode="json"))
+            selected.sort(key=lambda x: (x["ticket_cents"], x["id"]))
+            filename, key = "attractions.json", "attractions"
+        else:
+            checkout = date.fromisoformat(req.start_date) + timedelta(days=req.days - 1)
+            for hotel in doc.hotels:
+                rooms = (req.travelers - 1) // hotel.room_capacity + 1
+                if (hotel.destination != req.destination or hotel.available_rooms < rooms
+                        or date.fromisoformat(hotel.available_from) > date.fromisoformat(req.start_date)
+                        or date.fromisoformat(hotel.available_until) < checkout):
+                    continue
+                selected.append({**hotel.model_dump(mode="json"), "rooms": rooms, "nights": req.days - 1,
+                                 "total_cents": hotel.nightly_cents * rooms * (req.days - 1)})
+            selected.sort(key=lambda x: (x["total_cents"], x["id"]))
+            filename, key = "hotels.json", "hotels"
+        expected = {"context": travel_context(doc, inputs[0]["sha256"]), key: selected}
+        if set(files) != {filename} or canonical(json.loads(files[filename])) != canonical(expected):
+            raise ValueError("travel candidates differ from independent snapshot filtering")
+    elif skill == "route_planning":
+        if set(files) != {"itinerary.json"}:
+            raise ValueError("itinerary artifact set mismatch")
+        verify_travel_route(inputs, json.loads(files["itinerary.json"]))
+    elif skill == "travel_report":
+        verify_travel_report(inputs, files)
+    else:
+        raise ValueError("unknown travel skill")
+    return ["schema_and_files", "independent_travel_constraints", "objective_policy_pass"]
+
+
 def verify_content(skill: str, inputs: list[dict], artifacts: list[dict]) -> list[str]:
+    if SKILL_POLICIES.get(skill) == "travel-v1":
+        return verify_travel(skill, inputs, artifacts)
     files = {p["name"]: unpack(p) for p in artifacts}
     if len(files) != len(artifacts):
         raise ValueError("duplicate artifact name")
@@ -2524,20 +2954,28 @@ class Engine:
 # ============================================================================
 class JobRequest(StrictModel):
     requestId: str | None = Field(default=None, min_length=1, max_length=128)
+    scenario: str = "cross_org_analysis"
+    expectedPlanHash: HashRef | None = None
     slaSeconds: int = Field(default=30, ge=2, le=3600, strict=True)
     deposit: str = "100"
     plan: dict | None = None
 
     @model_validator(mode="after")
     def no_ambiguous_overrides(self):
-        if self.plan is not None and self.model_fields_set & {"slaSeconds", "deposit"}:
+        if self.plan is not None and self.model_fields_set & {"slaSeconds", "deposit", "scenario"}:
             raise ValueError("put all task terms and deposit inside plan when providing a configured DAG")
         return self
+
+    @property
+    def scenario_id(self) -> str:
+        return self.plan.get("scenario", "") if self.plan is not None else self.scenario
 
 
 def prepare_plan(request: JobRequest, input_hashes: list[str]) -> Plan:
     if request.plan is None:
-        plan = data_plan(input_hashes, sla=request.slaSeconds, deposit=request.deposit)
+        if request.scenario not in SCENARIOS:
+            raise ValueError("unsupported scenario")
+        plan = SCENARIOS[request.scenario]["plan"](input_hashes, sla=request.slaSeconds, deposit=request.deposit)
     else:
         raw = dict(request.plan)
         raw.setdefault("input_hashes", input_hashes)
@@ -2548,6 +2986,8 @@ def prepare_plan(request: JobRequest, input_hashes: list[str]) -> Plan:
     if plan.input_hashes != tuple(input_hashes):
         raise ValueError("plan input hashes do not match the configured input bytes")
     validate_skills(plan)
+    if request.expectedPlanHash is not None and request.expectedPlanHash != plan.plan_hash:
+        raise ValueError("计划或输入资料已变化，请重新预览后再创建任务")
     return plan
 
 
@@ -2559,6 +2999,14 @@ def event_cursor(value: str) -> int:
     if not re.fullmatch(r"0|[1-9][0-9]{0,18}", value) or int(value) > (1 << 63) - 1:
         raise HTTPException(400, "event cursor must be a decimal integer from 0 to 9223372036854775807")
     return int(value)
+
+
+def input_error_message(exc: Exception) -> str:
+    if isinstance(exc, ValidationError):
+        return "；".join((".".join(map(str, error["loc"])) + "：" if error["loc"] else "")
+                        + error["msg"].removeprefix("Value error, ")
+                        for error in exc.errors(include_url=False, include_context=False, include_input=False))
+    return str(exc)
 
 
 def api_app(config: dict, runtime: Path) -> FastAPI:
@@ -2615,11 +3063,20 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
                 "escrow": engine.chain.escrow.address, "token": engine.chain.token.address,
                 "owner": config["deployment"]["owner"], "planningMode": "deterministic_template",
                 "tokenSymbol": config["tokenSymbol"],
+                "scenarios": [{"id": key, "title": value["title"], "description": value["description"]}
+                              for key, value in SCENARIOS.items()],
                 "supportedPlanningModes": ["deterministic_template", "configured_dag"]}
 
     @app.get("/api/inputs")
-    def inputs_manifest():
-        return input_manifest(config["inputDirectory"])
+    def inputs_manifest(scenario: str = "cross_org_analysis"):
+        try:
+            return describe_inputs(scenario, scenario_inputs(config, scenario))
+        except (ValueError, OSError) as exc:
+            return {"scenario": scenario, "available": False, "files": [], "error": input_error_message(exc)}
+
+    @app.get("/api/scenarios/travel/schema")
+    def travel_schema():
+        return JSONResponse(TravelInput.model_json_schema())
 
     @app.get("/api/agents")
     async def agents():
@@ -2653,22 +3110,24 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     @app.post("/api/plans/preview")
     def preview(data: dict):
         try:
-            inputs = load_inputs(config["inputDirectory"])
-            plan = prepare_plan(JobRequest.model_validate(data), [x["sha256"] for x in inputs])
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+            request = JobRequest.model_validate(data)
+            inputs = scenario_inputs(config, request.scenario_id)
+            plan = prepare_plan(request, [x["sha256"] for x in inputs])
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, input_error_message(exc)) from exc
         return {"plan": plan.model_dump(mode="json"), "planHash": plan.plan_hash,
-                "mode": plan.planning_mode, "dependencyMasks": plan.masks()}
+                "mode": plan.planning_mode, "dependencyMasks": plan.masks(),
+                "inputs": describe_inputs(plan.scenario, inputs)}
 
     @app.post("/api/jobs")
     async def create(data: dict):
-        inputs = load_inputs(config["inputDirectory"])
         try:
             request = JobRequest.model_validate(data)
+            inputs = scenario_inputs(config, request.scenario_id)
             plan = prepare_plan(request, [x["sha256"] for x in inputs])
             job_id = await engine.create(plan, inputs, request.requestId)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, input_error_message(exc)) from exc
         start(job_id)
         return {"jobId": job_id, "mode": plan.planning_mode, "planHash": plan.plan_hash,
                 "plan": plan.model_dump(mode="json")}
@@ -2784,6 +3243,8 @@ def settings_file(path: Path | str | None = None, runtime: Path | str | None = N
     settings["configPath"] = source
     settings["directory"] = (source.parent / (runtime or settings.get("directory", ".cache/runtime"))).resolve()
     settings["inputDirectory"] = (source.parent / settings.get("inputDirectory", "data")).resolve()
+    settings["scenarioInputDirectories"] = {
+        key: (source.parent / value).resolve() for key, value in settings.get("scenarioInputDirectories", {}).items()}
     for field in ("api", "market", "validator"):
         settings[field] = service_endpoint(settings[field])
     ids = set()
@@ -2868,6 +3329,7 @@ def runtime_config(settings: dict, role: str = "all") -> dict:
     if len(token) < 32:
         raise ValueError("API access token must contain at least 32 characters")
     config = {key: settings[key] for key in ("api", "market", "validator", "inputDirectory")}
+    config["scenarioInputDirectories"] = settings.get("scenarioInputDirectories", {})
     config.update(deployment=deployment, token=token, tokenSymbol=spec.get("tokenSymbol", "ERC20"), signers={}, agents=[])
     for name in ("owner", "coordinator", "validator"):
         if role == "all" or (role == "api" and name in {"owner", "coordinator"}) or role == name == "validator":
@@ -2909,7 +3371,8 @@ class ServiceCluster:
 
     def __enter__(self):
         try:
-            load_inputs(self.settings["inputDirectory"])
+            # Inputs are validated per scenario on preview/create; an unconfigured
+            # second scenario must not prevent access to existing Jobs or other data.
             # Validate the chain binding before starting any child process.
             Chain(self.config["deployment"]["rpc"], self.runtime, self.config["deployment"])
             (self.runtime / "logs").mkdir(parents=True, exist_ok=True)

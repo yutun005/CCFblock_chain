@@ -162,8 +162,10 @@ function App() {
     [events, setEvents] = useState<AnyRecord[]>([]);
   const [artifacts, setArtifacts] = useState<AnyRecord[]>([]),
     [ledger, setLedger] = useState<AnyRecord[]>([]);
-  const [inputs, setInputs] = useState<AnyRecord>({ files: [] }),
-    [error, setError] = useState("");
+  const [error, setError] = useState("");
+  const [scenario, setScenario] = useState("cross_org_analysis"),
+    [preview, setPreview] = useState<AnyRecord | null>(null),
+    [previewError, setPreviewError] = useState("");
   const [busy, setBusy] = useState(""),
     [tab, setTab] = useState("overview"),
     [selected, setSelected] = useState(0);
@@ -200,8 +202,10 @@ function App() {
       });
       if (!response.ok) {
         const text = await response.text();
+        let detail = text;
+        try { detail = JSON.parse(text).detail || text; } catch { /* plain text error */ }
         throw new Error(
-          response.status === 401 ? "访问令牌无效，请重新连接。" : text,
+          response.status === 401 ? "访问令牌无效，请重新连接。" : detail,
         );
       }
       return response.json();
@@ -209,16 +213,14 @@ function App() {
     [token],
   );
   const refresh = useCallback(async () => {
-    const [c, js, as, fs] = await Promise.all([
+    const [c, js, as] = await Promise.all([
       api("/api/config"),
       api("/api/jobs"),
       api("/api/agents"),
-      api("/api/inputs"),
     ]);
     setConfig(c);
     setJobs(js.slice().reverse());
     setAgents(as);
-    setInputs(fs);
     setConnected(true);
     if (!selectedJobRef.current && js.length) selectJob(js.at(-1).jobId);
     if (jobId) {
@@ -314,6 +316,26 @@ function App() {
     else modalRef.current?.close();
   }, [createOpen]);
   useEffect(() => {
+    if (!createOpen) return;
+    let cancelled = false;
+    setPreview(null);
+    setPreviewError("");
+    if (!/^\d+(\.\d{1,6})?$/.test(budget) || Number(budget) < 90) {
+      setPreviewError("Agent 服务托管预算至少为 90 代币，金额最多保留六位小数。");
+      return;
+    }
+    if (!Number.isInteger(sla) || sla < 10 || sla > 120) {
+      setPreviewError("每轮结算时限请填写 10 至 120 秒的整数。");
+      return;
+    }
+    const timer = setTimeout(() => {
+      void api("/api/plans/preview", { scenario, deposit: budget, slaSeconds: sla })
+        .then((value) => { if (!cancelled) setPreview(value); })
+        .catch((reason) => { if (!cancelled) setPreviewError(reason instanceof Error ? reason.message : String(reason)); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [api, createOpen, scenario, budget, sla]);
+  useEffect(() => {
     if (stopOpen) stopRef.current?.showModal();
     else stopRef.current?.close();
   }, [stopOpen]);
@@ -345,10 +367,13 @@ function App() {
     }
   }
   async function createJob() {
+    if (!preview) return;
     await action("create", async () => {
       const r = await api("/api/jobs", {
+        scenario,
         deposit: budget,
         slaSeconds: sla,
+        expectedPlanHash: preview.planHash,
         requestId: crypto.randomUUID(),
       });
       selectJob(r.jobId);
@@ -527,7 +552,7 @@ function App() {
           <ShieldCheck size={20} />
           <strong>DASC · 依赖感知结算</strong>
           <p>报酬由任务状态和有效凭证共同约束。</p>
-          <small>Anvil · Chain {config.chainId}</small>
+          <small>EVM · Chain {config.chainId}</small>
         </div>
       </aside>
       <div className="workspace-main">
@@ -572,7 +597,7 @@ function App() {
             </div>
             <button className="primary" onClick={() => setCreateOpen(true)}>
               <Plus size={18} />
-              创建分析任务
+              创建协作任务
             </button>
           </div>
           <div className="mode-note">
@@ -655,7 +680,7 @@ function App() {
             <section className="panel empty">
               <GitBranch size={36} />
               <h2>{jobId ? "正在读取任务…" : "创建你的第一个协作任务"}</h2>
-              <p>使用已配置的数据完成清洗、校验、统计和报告生成。</p>
+              <p>选择销售分析或旅游规划，由服务 Agent 协作执行并按履约结算。</p>
               {!jobId && (
                 <button className="primary" onClick={() => setCreateOpen(true)}>
                   查看计划并开始 <ArrowRight size={16} />
@@ -693,8 +718,8 @@ function App() {
                   <section className="panel">
                     <div className="panel-heading">
                       <div>
-                        <h2>跨组织销售分析</h2>
-                        <p>清洗与原始校验并行执行，统计和报告按依赖推进。</p>
+                        <h2>{config.scenarios?.find((s: AnyRecord) => s.id === job.scenario)?.title || job.scenario}</h2>
+                        <p>{config.scenarios?.find((s: AnyRecord) => s.id === job.scenario)?.description || job.goal}</p>
                       </div>
                       <div className="job-actions">
                         <span className="mono">{short(job.jobId)}</span>
@@ -1096,40 +1121,46 @@ function App() {
             <X size={20} />
           </button>
         </div>
-        <p>分析已配置的销售数据，生成可复算季度统计与报告。</p>
+        <label htmlFor="scenario">业务场景</label>
+        <select id="scenario" value={scenario} disabled={!!busy}
+          onChange={(e) => { setScenario(e.target.value); setPreview(null); setError(""); }}>
+          {(config.scenarios || []).map((s: AnyRecord) => <option key={s.id} value={s.id}>{s.title}</option>)}
+        </select>
+        <p>{config.scenarios?.find((s: AnyRecord) => s.id === scenario)?.description}</p>
+        {(previewError || error) && <p className="error" role="alert">{previewError || error}</p>}
         <div className="input-list">
           <Database size={20} />
           <div>
-            <strong>{inputs.files?.length || 0} 份输入文件</strong>
+            <strong>{preview ? `${preview.inputs.files.length} 份输入文件` : previewError ? "请先修正计划或输入资料" : "正在校验计划与输入资料"}</strong>
             <small>
-              {inputs.files
-                ?.reduce((s: number, f: AnyRecord) => s + f.rows, 0)
-                .toLocaleString()}{" "}
-              行输入数据
+              {preview?.inputs.request
+                ? `${preview.inputs.request.destination} · ${preview.inputs.request.start_date} 出发 · ${preview.inputs.request.days} 天 · ${preview.inputs.request.travelers} 人`
+                : preview ? `${preview.inputs.files.reduce((s: number, f: AnyRecord) => s + (f.rows || 0), 0).toLocaleString()} 行输入数据` : ""}
             </small>
           </div>
         </div>
+        {preview?.inputs.request && <p className="hint">
+          行程费用上限 ¥{(preview.inputs.request.budget_cents / 100).toFixed(2)}（住宿、门票、所列交通）；
+          {preview.inputs.attractions} 个景点、{preview.inputs.hotels} 家酒店。
+          资料：{preview.inputs.source}，截至 {preview.inputs.as_of}。提供行程方案，不进行预订。
+        </p>}
         <div className="plan-steps">
-          {[
-            ["01", "数据清洗", "25"],
-            ["02", "原始数据校验", "20"],
-            ["03", "统计分析", "30"],
-            ["04", "报告生成", "15"],
-          ].map(([i, t, b]) => (
-            <div key={i}>
-              <span>{i}</span>
-              <strong>{t}</strong>
-              <small>上限 {b} 代币</small>
+          {preview?.plan.tasks.map((task: AnyRecord, index: number) => (
+            <div key={task.key}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <strong>{task.title}</strong>
+              <small>上限 {Number(task.budget_cap)} 代币</small>
             </div>
           ))}
         </div>
         <div className="form-row">
           <div>
-            <label htmlFor="budget">总托管预算（代币）</label>
+            <label htmlFor="budget">Agent 服务托管预算（代币）</label>
             <input
               id="budget"
               value={budget}
-              onChange={(e) => setBudget(e.target.value)}
+              disabled={!!busy}
+              onChange={(e) => { setBudget(e.target.value); setPreview(null); }}
               inputMode="decimal"
             />
           </div>
@@ -1141,20 +1172,21 @@ function App() {
               min={10}
               max={120}
               value={sla}
-              onChange={(e) => setSla(Number(e.target.value))}
+              disabled={!!busy}
+              onChange={(e) => { setSla(Number(e.target.value)); setPreview(null); }}
             />
           </div>
         </div>
         <p className="hint">
-          节点预算合计
-          90。成功节点按成交价结算，未使用部分在全部节点终止后退款。当前使用管理员配置的业务钱包。
+          节点预算合计 {preview ? preview.plan.tasks.reduce((sum: number, t: AnyRecord) => sum + Number(t.budget_cap), 0) : "—"} 代币。
+          此预算支付 Agent 规划服务；行程费用单独计算。成功节点按成交价结算，未使用部分终态后可退。
         </p>
         <div className="modal-actions">
           <button onClick={() => setCreateOpen(false)}>返回</button>
           <button
             className="primary"
             disabled={
-              !!busy ||
+              !!busy || !preview ||
               !/^\d+(\.\d{1,6})?$/.test(budget) ||
               Number(budget) < 90 ||
               sla < 10

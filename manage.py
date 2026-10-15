@@ -165,11 +165,12 @@ def main():
             plan_schema_document,
             protocol_schema_document,
             runtime_schema_document,
+            TravelInput,
         )
         destination = (ROOT / (args.output or Path(".cache/interfaces.json"))).resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)
         document = {"plan": plan_schema_document(), "runtime": runtime_schema_document(),
-                    "protocol": protocol_schema_document()}
+                    "protocol": protocol_schema_document(), "travelInput": TravelInput.model_json_schema()}
         destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"exported": str(destination), "protocolVersion": 1, "status": "local_proposal"}))
         return
