@@ -146,7 +146,8 @@ def setup():
 
 def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
-    parser.add_argument("command", choices=["setup", "build", "configure", "approve", "start"], nargs="?", default="start")
+    parser.add_argument("command", choices=["setup", "build", "schema", "configure", "approve", "start"], nargs="?", default="start")
+    parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
     parser.add_argument("--amount", help="exact six-decimal token allowance for approve")
@@ -158,6 +159,19 @@ def main():
         raise SystemExit(subprocess.call([str(PYTHON), str(ROOT / "manage.py"), *sys.argv[1:]], cwd=ROOT))
     if args.command == "build":
         build()
+        return
+    if args.command == "schema":
+        from app import (
+            plan_schema_document,
+            protocol_schema_document,
+            runtime_schema_document,
+        )
+        destination = (ROOT / (args.output or Path(".cache/interfaces.json"))).resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        document = {"plan": plan_schema_document(), "runtime": runtime_schema_document(),
+                    "protocol": protocol_schema_document()}
+        destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"exported": str(destination), "protocolVersion": 1, "status": "local_proposal"}))
         return
     from app import (
         Chain,

@@ -70,7 +70,10 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
+    RootModel,
+    ValidationError,
     WithJsonSchema,
+    create_model,
     field_validator,
     model_validator,
 )
@@ -585,6 +588,252 @@ def runtime_schema_document():
             "x-agentflow-version": 1, "$defs": definitions,
             "oneOf": [{"$ref": f"#/$defs/{name}"} for name in ("JobSnapshot", "AuditEvent", "JobRecord", "TaskCheckpoint")],
             "description": "A-owned runtime fields; selected/verification/candidates retain external service formats."}
+
+
+# ============================================================================
+# service protocol: validate original payloads without rewriting signed/hash-bound data
+# ============================================================================
+ProtocolSignature = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{130}$")]
+ProtocolKey = Annotated[str, Field(min_length=1, max_length=256)]
+WireUint64 = Annotated[int, BeforeValidator(runtime_uint), Field(ge=0, le=(1 << 64) - 1, strict=True),
+                       PlainSerializer(str, return_type=str, when_used="json"),
+                       WithJsonSchema({"type": "string", "pattern": "^(0|[1-9][0-9]*)$", "maxLength": 20},
+                                      mode="serialization")]
+
+
+def signed_payload_model(kind: str):
+    fields = {}
+    for name, solidity_type in FIELDS[kind]:
+        if solidity_type == "bytes32":
+            annotation = HashRef
+        elif solidity_type == "address":
+            annotation = WalletRef
+        elif solidity_type == "uint256":
+            annotation = WireUint
+        elif solidity_type == "uint64":
+            annotation = WireUint64
+        else:
+            annotation = Annotated[int, Field(ge=0, le=(1 << int(solidity_type[4:])) - 1, strict=True)]
+        fields[name] = (annotation, ...)
+    return create_model(kind + "Payload", __base__=StrictModel, **fields)
+
+
+QuotePayload = signed_payload_model("Quote")
+ResultPayload = signed_payload_model("Result")
+AttestationPayload = signed_payload_model("Attestation")
+
+
+class ProtocolTaskContext(StrictModel):
+    jobId: HashRef
+    taskId: NodeIndex
+    plan: Plan
+
+    @model_validator(mode="after")
+    def task_exists(self):
+        if self.taskId >= len(self.plan.tasks):
+            raise ValueError("taskId outside plan")
+        return self
+
+    def dependency_ids(self):
+        tasks = self.plan.topological()
+        indices = {task.key: i for i, task in enumerate(tasks)}
+        return [indices[key] for key in tasks[self.taskId].dependencies]
+
+
+class RFQRequest(ProtocolTaskContext):
+    attempt: RoundIndex
+    idempotencyKey: ProtocolKey
+    excludeWallets: list[WalletRef] = Field(default_factory=list)
+
+
+class QuoteRequest(ProtocolTaskContext):
+    operation: Literal["quote"]
+    attempt: RoundIndex
+    idempotencyKey: ProtocolKey
+
+
+class BinaryArtifact(ArtifactRef):
+    data: str = Field(max_length=28_000_000)
+
+    @model_validator(mode="after")
+    def bytes_match(self):
+        unpack(self.model_dump())
+        return self
+
+
+class UpstreamReference(StrictModel):
+    taskId: NodeIndex
+    attempt: RoundIndex
+    resultHash: HashRef
+
+
+class ExecutionRequest(ProtocolTaskContext):
+    operation: Literal["execute"]
+    attempt: RoundIndex
+    idempotencyKey: ProtocolKey
+    inputs: list[BinaryArtifact]
+    upstreamRefs: list[UpstreamReference] = Field(max_length=15)
+
+    @model_validator(mode="after")
+    def dependencies_match(self):
+        if [ref.taskId for ref in self.upstreamRefs] != self.dependency_ids():
+            raise ValueError("upstreamRefs must follow the plan's dependency order")
+        return self
+
+
+class QuoteReply(StrictModel):
+    agentId: str = Field(min_length=1)
+    quote: QuotePayload
+    signature: ProtocolSignature
+
+
+class DeliveryManifest(StrictModel):
+    jobId: HashRef
+    taskId: NodeIndex
+    attempt: RoundIndex
+    agentWallet: WalletRef
+    requirementHash: HashRef
+    inputRefs: list[ArtifactRef]
+    upstreamRefs: list[UpstreamReference] = Field(max_length=15)
+    artifacts: list[ArtifactRef] = Field(min_length=1)
+
+
+class ServiceDelivery(StrictModel):
+    manifest: DeliveryManifest
+    artifacts: list[BinaryArtifact] = Field(min_length=1)
+    result: ResultPayload
+    signature: ProtocolSignature
+
+    @model_validator(mode="after")
+    def manifest_matches(self):
+        if self.result.resultHash != object_hash(self.manifest.model_dump()):
+            raise ValueError("resultHash does not bind the delivery manifest")
+        refs = [ArtifactRef.model_validate(reference(packet.model_dump())) for packet in self.artifacts]
+        if refs != self.manifest.artifacts:
+            raise ValueError("artifact bytes/references differ from manifest")
+        for key in ("jobId", "taskId", "attempt", "agentWallet"):
+            if getattr(self.result, key) != getattr(self.manifest, key):
+                raise ValueError("result/manifest context mismatch: " + key)
+        return self
+
+
+class VerificationRequest(ProtocolTaskContext):
+    inputs: list[BinaryArtifact]
+    upstream: list[ServiceDelivery] = Field(max_length=15)
+    delivery: ServiceDelivery
+
+    @model_validator(mode="after")
+    def context_matches(self):
+        if self.delivery.manifest.jobId != self.jobId or self.delivery.manifest.taskId != self.taskId:
+            raise ValueError("verification/delivery context mismatch")
+        if [item.manifest.taskId for item in self.upstream] != self.dependency_ids():
+            raise ValueError("verification upstream must follow the plan's dependency order")
+        if any(item.manifest.jobId != self.jobId for item in self.upstream):
+            raise ValueError("upstream belongs to another job")
+        return self
+
+
+class VerificationPass(StrictModel):
+    passed: Literal[True]
+    checks: list[str] = Field(min_length=1)
+    attestation: AttestationPayload
+    signature: ProtocolSignature
+
+    @field_validator("passed", mode="before")
+    @classmethod
+    def strict_pass(cls, value):
+        if value is not True:
+            raise ValueError("passed must be the boolean true")
+        return value
+
+
+class VerificationReject(StrictModel):
+    passed: Literal[False]
+    reason: str = Field(min_length=1)
+
+    @field_validator("passed", mode="before")
+    @classmethod
+    def strict_reject(cls, value):
+        if value is not False:
+            raise ValueError("passed must be the boolean false")
+        return value
+
+
+class VerificationReply(RootModel[VerificationPass | VerificationReject]):
+    pass
+
+
+class QuoteCandidate(StrictModel):
+    agentId: str = Field(min_length=1)
+    endpoint: str = Field(min_length=1)
+    wallet: WalletRef
+    bindingVersion: Annotated[int, Field(ge=1, strict=True)]
+    valid: Annotated[bool, Field(strict=True)]
+    reason: str | None = None
+    quote: QuotePayload | None = None
+    signature: ProtocolSignature | None = None
+    a2aTaskId: str | None = None
+    quoteHash: HashRef | None = None
+    history: dict | None = None
+    scoreNumerator: str | None = Field(default=None, pattern=r"^(0|[1-9][0-9]*)$")
+    scoreDenominator: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$")
+
+    @model_validator(mode="after")
+    def evidence_matches(self):
+        if self.valid:
+            if not all((self.quote, self.signature, self.a2aTaskId, self.quoteHash)):
+                raise ValueError("valid candidate requires signed quote evidence")
+            if self.quote.agentWallet != self.wallet:
+                raise ValueError("candidate/quote wallet mismatch")
+        elif not self.reason:
+            raise ValueError("rejected candidate requires a reason")
+        return self
+
+
+class RFQReply(StrictModel):
+    jobId: HashRef
+    taskId: NodeIndex
+    attempt: RoundIndex
+    candidates: list[QuoteCandidate]
+    selected: QuoteCandidate | None
+    selectionRule: Literal["lowest_price", "risk_aware"]
+    riskPenalty: str
+    createdAt: Annotated[int, Field(ge=0, le=(1 << 53) - 1, strict=True)]
+
+    @model_validator(mode="after")
+    def selected_matches(self):
+        units(self.riskPenalty)
+        for candidate in self.candidates:
+            if candidate.valid and any(getattr(candidate.quote, key) != getattr(self, key)
+                                       for key in ("jobId", "taskId", "attempt")):
+                raise ValueError("candidate quote belongs to a different task/attempt")
+        if self.selected is not None and (not self.selected.valid or self.selected not in self.candidates):
+            raise ValueError("selected must be a valid member of candidates")
+        return self
+
+
+PROTOCOL_MODELS = {model.__name__: model for model in (
+    RFQRequest, RFQReply, QuoteRequest, QuoteReply, ExecutionRequest, ServiceDelivery,
+    VerificationRequest, VerificationReply, QuotePayload, ResultPayload, AttestationPayload)}
+
+
+def validate_protocol(name: str, payload: dict) -> None:
+    """Check only: preserve the exact payload used for signatures, hashes and idempotency."""
+    try:
+        PROTOCOL_MODELS[name].model_validate(payload)
+    except ValidationError as exc:
+        errors = exc.errors(include_input=False, include_url=False, include_context=False)
+        raise ValueError(f"INVALID_PROTOCOL_MESSAGE {name}: {errors}") from exc
+
+
+def protocol_schema_document():
+    return {"$id": "urn:agentflow:handoff:1", "version": 1, "status": "local_proposal",
+            "integerEncoding": "uint64/uint256 use canonical decimal strings on the wire; uint8/uint32 use integers",
+            "signedFields": {kind: [{"name": name, "type": typ} for name, typ in fields]
+                             for kind, fields in FIELDS.items()},
+            "schemas": {name: {"$schema": "https://json-schema.org/draft/2020-12/schema",
+                               **model.model_json_schema(mode="serialization")}
+                        for name, model in PROTOCOL_MODELS.items()}}
 
 
 # ============================================================================
@@ -1308,6 +1557,7 @@ class ServiceExecutor(AgentExecutor):
             await TaskUpdater(event_queue, context.task_id, context.context_id).cancel()
 
     async def handle(self, request: dict) -> dict:
+        validate_protocol("QuoteRequest" if request.get("operation") == "quote" else "ExecutionRequest", request)
         if request["operation"] == "quote":
             plan = Plan.model_validate(request["plan"])
             spec = plan.topological()[request["taskId"]]
@@ -1428,6 +1678,8 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
 
 
 async def a2a_call(endpoint: str, payload: dict, token: str, timeout: float = 15) -> dict:
+    quoting = payload.get("operation") == "quote"
+    validate_protocol("QuoteRequest" if quoting else "ExecutionRequest", payload)
     async with httpx.AsyncClient(trust_env=False, timeout=timeout, headers={"Authorization": "Bearer " + token}) as http:
         client = await ClientFactory(ClientConfig(streaming=False, httpx_client=http)).create_from_url(endpoint)
         message = Message(message_id=payload["idempotencyKey"], role=Role.ROLE_USER,
@@ -1439,8 +1691,9 @@ async def a2a_call(endpoint: str, payload: dict, token: str, timeout: float = 15
                     raise ValueError("A2A agent failed: " + " ".join(p.text for p in task.status.message.parts))
                 if task.status.state != TaskState.TASK_STATE_COMPLETED or not task.artifacts:
                     raise ValueError("A2A response was not a completed task with artifacts")
-                return {"a2aTaskId": task.id,
-                        "response": signed_from_wire(json.loads(task.artifacts[-1].parts[0].text))}
+                response = signed_from_wire(json.loads(task.artifacts[-1].parts[0].text))
+                validate_protocol("QuoteReply" if quoting else "ServiceDelivery", response)
+                return {"a2aTaskId": task.id, "response": response}
         raise ValueError("A2A response contains no task")
 
 
@@ -1684,7 +1937,9 @@ def validator_app(deployment: dict, runtime: Path, token: str, validator_key: st
     @app.post("/verify")
     async def verify(request: dict):
         try:
+            validate_protocol("VerificationRequest", request)
             result = await asyncio.to_thread(validate_delivery, chain, signed_from_wire(request), validator_key)
+            validate_protocol("VerificationReply", result)
         except Exception as exc:  # noqa: BLE001 - fail closed; an unexpected checker error never signs a pass
             result = {"passed": False, "reason": str(exc)}
         db.put("verifications", object_hash({"request": request, "timeNs": time.time_ns()}), result)
@@ -1772,6 +2027,7 @@ class Market:
         return result
 
     async def rfq(self, request: dict) -> dict:
+        validate_protocol("RFQRequest", request)
         plan = Plan.model_validate(request["plan"])
         spec = plan.topological()[request["taskId"]]
         job = await asyncio.to_thread(self.chain.job, request["jobId"])
@@ -1891,7 +2147,12 @@ def market_app(deployment: dict, runtime: Path, token: str, allowed_origins: lis
 
     @app.post("/api/rfq")
     async def rfq(data: dict):
-        return await market.rfq(data)
+        try:
+            result = await market.rfq(data)
+            validate_protocol("RFQReply", result)
+            return result
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     return app
 
@@ -2080,6 +2341,9 @@ class Engine:
                 try:
                     quotes = await self.post(self.market_url + "/api/rfq", {"jobId": job_id, "taskId": task_id,
                         "attempt": attempt, "plan": job["plan"], "idempotencyKey": rfq_id, "excludeWallets": history})
+                    validate_protocol("RFQReply", quotes)
+                    if (quotes["jobId"], quotes["taskId"], quotes["attempt"]) != (job_id, task_id, attempt):
+                        raise ValueError("RFQ response context mismatch")
                 except (httpx.HTTPError, ValueError) as exc:
                     raise WorkflowFault(classify_fault(exc, "market")) from exc
                 self.db.put("quotes", rfq_id, quotes)
@@ -2154,6 +2418,7 @@ class Engine:
                 verification = await self.post(self.validator_url + "/verify", {"jobId": job_id, "taskId": task_id,
                     "plan": job["plan"], "inputs": inputs, "upstream": upstream, "delivery": delivery})
                 self.db.put("proofs", execution_key, verification)
+            validate_protocol("VerificationReply", verification)
             if not verification["passed"]:
                 raise WorkflowFault(RuntimeFault(code="VALIDATION_REJECTED", phase="validator", action="await_expiry",
                                                  message="VALIDATION_FAILED: " + verification["reason"]))
@@ -2362,6 +2627,11 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     @app.get("/api/plans/schema")
     def plan_schema():
         return plan_schema_document()
+
+    @app.get("/api/protocol/schema")
+    def protocol_schema():
+        # Schema numeric bounds must stay JSON numbers, unlike payment payloads.
+        return JSONResponse(protocol_schema_document())
 
     @app.get("/api/runtime/schema")
     def runtime_schema():
