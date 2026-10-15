@@ -225,7 +225,7 @@ class ExecutionPolicy(StrictModel):
     scheduling: Literal["dag", "sequential"] = "dag"
     recovery: Literal["reassign", "abort"] = "reassign"
     selection: Literal["lowest_price", "risk_aware"] = "lowest_price"
-    risk_penalty: str = "30"
+    risk_penalty: str = "30.000000"
 
     @field_validator("risk_penalty")
     @classmethod
@@ -2272,59 +2272,72 @@ class Engine:
             if recovering["status"] == "INTERRUPTED":
                 recovering.update(status="ACTIVE", lastError=None, lastFault=None)
                 self.db.put("jobs", job_id, recovering)
-            while True:
-                job_record = self.db.get("jobs", job_id)
-                plan = Plan.model_validate(job_record["plan"])
-                job = await asyncio.to_thread(self.chain.job, job_id)
-                states = [await asyncio.to_thread(self.chain.task, job_id, i) for i in range(len(plan.tasks))]
-                for i, chain_task in enumerate(states):
-                    if chain_task["state"] in (2, 3):
-                        status = "SETTLED" if chain_task["state"] == 2 else "CANCELED"
-                        checkpoint = self.db.get("tasks", f"{job_id}:{i}", {})
-                        if checkpoint.get("status") != status:
-                            self.checkpoint(job_id, i, status, attempt=chain_task["attempt"],
-                                            resultHash=chain_task["resultHash"], reconciled=True)
-                if all(t["state"] in (2, 3) for t in states):
-                    if not job["finalized"]:
-                        await self.submit(job_id, "finalizeJob", [job_id])
-                    succeeded = all(t["state"] == 2 for t in states)
-                    job_record.update(status="SUCCEEDED" if succeeded else "PARTIAL_FAILED", finishedAt=time.time())
-                    self.db.put("jobs", job_id, job_record)
-                    await asyncio.to_thread(self.chain.event_scan, job_id)
-                    return self.snapshot(job_id)
-                ready = []
-                for i, (spec, task) in enumerate(zip(plan.topological(), states, strict=True)):
-                    if task["state"] in (2, 3):
-                        continue
-                    if task["state"] == 1:
-                        ready.append((i, spec))
-                        continue
-                    deps = task["config"]["depsMask"]
-                    canceled = job["terminalMask"] & ~job["settledMask"]
-                    if (job["stopping"] or canceled & deps or task["attempt"] >= task["config"]["maxAttempts"]
-                            or self.chain.now + spec.sla_seconds > job["deadline"]):
-                        code = ("STOP_REQUESTED" if job["stopping"] else "DEPENDENCY_CANCELED" if canceled & deps
-                                else "ATTEMPTS_EXHAUSTED" if task["attempt"] >= task["config"]["maxAttempts"]
-                                else "JOB_DEADLINE")
-                        await self.submit(job_id, "cancelTask", [job_id, i])
-                        self.checkpoint(job_id, i, "CANCELED", attempt=task["attempt"],
-                                        fault=RuntimeFault(code=code, phase="scheduler", action="cancel",
-                                                           message=code).model_dump())
-                    elif job["settledMask"] & deps == deps:
-                        ready.append((i, spec))
-                if ready:
+            workers: dict[int, asyncio.Task] = {}
+            try:
+                while True:
+                    for task_id, worker in list(workers.items()):
+                        if worker.done():
+                            del workers[task_id]
+                            if worker.cancelled():
+                                raise asyncio.CancelledError
+                            error = worker.exception()
+                            if error is not None:
+                                self.db.event(job_id, "SCHEDULER_ERROR", {"error": str(error),
+                                    "fault": classify_fault(error).model_dump()})
+                                raise error
+                    job_record = self.db.get("jobs", job_id)
+                    plan = Plan.model_validate(job_record["plan"])
+                    job = await asyncio.to_thread(self.chain.job, job_id)
+                    states = [await asyncio.to_thread(self.chain.task, job_id, i) for i in range(len(plan.tasks))]
+                    for i, chain_task in enumerate(states):
+                        if i not in workers and chain_task["state"] in (2, 3):
+                            status = "SETTLED" if chain_task["state"] == 2 else "CANCELED"
+                            checkpoint = self.db.get("tasks", f"{job_id}:{i}", {})
+                            if checkpoint.get("status") != status:
+                                self.checkpoint(job_id, i, status, attempt=chain_task["attempt"],
+                                                resultHash=chain_task["resultHash"], reconciled=True)
+                    if not workers and all(t["state"] in (2, 3) for t in states):
+                        if not job["finalized"]:
+                            await self.submit(job_id, "finalizeJob", [job_id])
+                        succeeded = all(t["state"] == 2 for t in states)
+                        job_record.update(status="SUCCEEDED" if succeeded else "PARTIAL_FAILED", finishedAt=time.time())
+                        self.db.put("jobs", job_id, job_record)
+                        await asyncio.to_thread(self.chain.event_scan, job_id)
+                        return self.snapshot(job_id)
+                    ready = []
+                    for i, (spec, task) in enumerate(zip(plan.topological(), states, strict=True)):
+                        if i in workers or task["state"] in (2, 3):
+                            continue
+                        if task["state"] == 1:
+                            ready.append((i, spec))
+                            continue
+                        deps = task["config"]["depsMask"]
+                        canceled = job["terminalMask"] & ~job["settledMask"]
+                        if (job["stopping"] or canceled & deps or task["attempt"] >= task["config"]["maxAttempts"]
+                                or self.chain.now + spec.sla_seconds > job["deadline"]):
+                            code = ("STOP_REQUESTED" if job["stopping"] else "DEPENDENCY_CANCELED" if canceled & deps
+                                    else "ATTEMPTS_EXHAUSTED" if task["attempt"] >= task["config"]["maxAttempts"]
+                                    else "JOB_DEADLINE")
+                            await self.submit(job_id, "cancelTask", [job_id, i])
+                            self.checkpoint(job_id, i, "CANCELED", attempt=task["attempt"],
+                                            fault=RuntimeFault(code=code, phase="scheduler", action="cancel",
+                                                               message=code).model_dump())
+                        elif job["settledMask"] & deps == deps:
+                            ready.append((i, spec))
                     if plan.execution_policy.scheduling == "sequential":
-                        # Re-read chain state after each node; never assign from a stale pre-stop batch.
-                        ready = ready[:1]
-                    results = await asyncio.gather(*(self.execute_node(job_id, i, spec) for i, spec in ready),
-                                                   return_exceptions=True)
-                    for result in results:
-                        if isinstance(result, BaseException):
-                            self.db.event(job_id, "SCHEDULER_ERROR", {"error": str(result),
-                                          "fault": classify_fault(result).model_dump()})
-                            raise result
-                else:
-                    await asyncio.sleep(0.5)
+                        ready = [] if workers else ready[:1]
+                    for i, spec in ready:
+                        workers[i] = asyncio.create_task(self.execute_node(job_id, i, spec))
+                    if workers:
+                        # Re-read dependencies whenever one node finishes; slow sibling branches must not block it.
+                        await asyncio.wait(workers.values(), timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
+                    else:
+                        await asyncio.sleep(0.5)
+            finally:
+                # Drain node coroutines before releasing the Job lock; persisted transactions recover separately.
+                for worker in workers.values():
+                    worker.cancel()
+                await asyncio.gather(*workers.values(), return_exceptions=True)
 
     async def execute_node(self, job_id: str, task_id: int, spec):
         job = self.db.get("jobs", job_id)

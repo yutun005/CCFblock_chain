@@ -300,7 +300,7 @@ Task 的完整身份是 `(jobId, taskId)`，Attempt 是 `(jobId, taskId, attempt
 
 RFQRequest 包含 jobId、taskId、attempt、plan、idempotencyKey、excludeWallets。ExecutionRequest 另外包含输入字节包与有序 upstreamRefs；VerificationRequest 包含 plan、实际输入、前驱交付和当前交付，当前 attempt 从交付中取出。ServiceDelivery 返回 manifest、artifacts、签名 Result；验证成功响应返回 checks、签名 Attestation。候选列表保留拒绝原因，selected 必须属于有效候选。
 
-金额对外有两种明确单位：Plan 的 deposit/budget_cap 是最多六位小数的代币金额字符串；签名报价与链上账本是最小单位整数的十进制字符串，1 个代币等于 1,000,000 最小单位。uint64/uint256 在线上传字符串，uint8/uint32 使用 JSON 整数；禁止浮点金额。deadline、validUntil、submittedAt 使用 Unix 秒。业务 taskId/attempt 从 0 开始；A2A task.id 是单独的传输任务标识，不能混用。
+金额对外有两种明确单位：Plan 的 deposit/budget_cap 是最多六位小数的代币金额字符串；签名报价与链上账本是最小单位整数的十进制字符串，1 个代币等于 1,000,000 最小单位。uint64/uint256 在线上传字符串，uint8/uint32 使用 JSON 整数；禁止浮点金额。显式配置 execution 时，risk_penalty 的缺省值也采用规范化的 `30.000000`，保证计划保存、重载与市场校验使用相同哈希。deadline、validUntil、submittedAt 使用 Unix 秒。业务 taskId/attempt 从 0 开始；A2A task.id 是单独的传输任务标识，不能混用。
 
 签名域为 `name=DASC, version=1, chainId=部署链, verifyingContract=TaskEscrow 地址`。Quote 签价格、需求哈希、支付代币、任务/轮次、钱包、有效期和 nonce；Result 签任务/轮次、钱包、结果哈希、URI 哈希和提交时间；Attestation 签任务/轮次、结果哈希、策略 ID、判定、有效期和 nonce。完整字段类型及顺序见导出包 signedFields，与 TaskEscrow.sol 的类型声明一致。
 
@@ -352,7 +352,9 @@ sequenceDiagram
     O->>O: 解锁依赖已满足的后继
 ```
 
-调度循环先恢复待确认交易并重读链状态，再处理到期/终态节点、取消受阻后继，最后并发推进当前就绪批次。当前使用 asyncio.gather 等待一批完成后重新调度；因此不承诺完全按单节点完成事件立即推进所有后继。配置支持 sequential 与 dag 两种策略，便于在相同条件下比较。
+调度循环先恢复待确认交易并重读链状态，再处理到期/终态节点、取消受阻后继，为每个就绪节点建立一个执行协程。同一节点在当前 Job 中只允许一个执行协程；任一节点完成即重新检查依赖，另一个慢分支不会阻止已就绪的后继启动。等待期间最多每 0.5 秒重新检查一次链状态。
+
+Job 监督协程退出时取消并收拢节点协程，再释放该 Job 的执行锁；已提交的链交易仍按持久化命令和回执恢复。配置支持 sequential 与 dag 两种策略；sequential 模式同时最多运行一个节点。
 
 ### 7. 成果验证与信任模型
 
@@ -381,7 +383,7 @@ sequenceDiagram
 |---|---|---|---|
 | R-01 | app.py：Plan、prepare_plan、validate_skills | 非法图/预算/类型拒绝，四/六节点合法图均能执行 | 已实现确定性模板与配置 DAG |
 | R-02 | app.py：Market、ServiceExecutor、a2a_call | 合法询价保留竞争候选；错字段、假签名和失效报价拒绝 | 需 B 确认注册与协议兼容 |
-| R-03 | app.py：Engine.run/execute_node | 首层两节点执行，后继等前驱结算；多输出完整产出 | 当前按就绪批次调度 |
+| R-03 | app.py：Engine.run/execute_node | 首层两节点执行，后继等前驱结算；慢分支不阻塞另一分支的后继 | 按节点完成重新调度；单 Job 内防止重复执行 |
 | R-04 | app.py：expire、recover_commands、API lifespan | 到期重派、旧轮次拒绝、重启继续、耗尽后退款 | 完整故障矩阵与 C/D 联验待完成 |
 | R-05 | app.py：check_context、validate_delivery、verify_content | 修改输入、结果、统计或图表后不能获得有效付款凭证 | 仅支持已定义销售分析规则 |
 | R-06 | TaskEscrow.sol；app.py：Chain、claims | 默认成功支付 72、退回 28；重复领取账本不变 | 需 C 确认合约安全矩阵与不变量证据 |
@@ -463,6 +465,6 @@ totalLiability 表示尚留在合约内的应付责任；正常入出金下应�
 
 ### 12. 完成边界与后续工作
 
-A 分支已有可配置 DAG、市场询价与签名校验、真实 A2A 任务交付、独立内容核验、合约结算、恢复与持久化、网页/API 和可移植部署配置。本次补充服务消息模型、运行时校验、离线接口导出，以及整体系统的架构、数据模型、时序、状态、恢复与实验证据流程图。
+A 分支已有可配置 DAG、市场询价与签名校验、真实 A2A 任务交付、独立内容核验、合约结算、恢复与持久化、网页/API 和可移植部署配置。接口提供消息模型、运行时校验和离线导出；调度按节点完成重新检查依赖，并保证显式执行策略的计划哈希在保存与重载后保持一致。整体设计包含架构、数据模型、时序、状态、恢复与实验证据流程图。
 
-接口文件仍是 A 提案。后续由 B 确认 Card/RFQ/A2A 与钱包绑定，由 C 确认 TypedData/ABI、取消语义和资金不变量，由 D 确认网页字段、故障展示和实验记录，再完成共同部署的联调验收。SEC-01～SEC-30、四组正式对照实验、旅游 P1、多租户与争议处理没有在本稿宣称完成。
+A 的独立设计稿、调度/恢复对照和本地验收材料已整理；原始记录、统计图表与验收报告按提交规则保存在本地忽略目录。接口文件仍是 A 提案。后续由 B 确认 Card/RFQ/A2A 与钱包绑定，由 C 确认 TypedData/ABI、取消语义和资金不变量，由 D 确认网页字段与故障展示，再完成共同部署的联调验收。完整 SEC-01～SEC-30、EXP-1/EXP-4、旅游 P1、多租户与争议处理没有在本稿宣称完成。
