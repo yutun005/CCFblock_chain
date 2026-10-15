@@ -126,6 +126,21 @@ def sha256(data: bytes) -> str:
     return "0x" + hashlib.sha256(data).hexdigest()
 
 
+def artifact_json(data: bytes) -> Any:
+    """Read unambiguous JSON evidence, preserving the protocol's integer-only numbers."""
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON field: " + key)
+            result[key] = value
+        return result
+
+    value = json.loads(data, object_pairs_hook=unique_object)
+    canonical(value)  # Reject floats, including NaN and Infinity, at every nesting level.
+    return value
+
+
 def object_hash(value: Any) -> str:
     return sha256(canonical(value))
 
@@ -1087,7 +1102,7 @@ def cleaning(inputs: list[dict]) -> list[dict]:
 
 def validation(inputs: list[dict]) -> list[dict]:
     # This is a paid data-quality service, not the independent payment validator.
-    report = json.loads(unpack(cleaning(inputs)[1]))
+    report = artifact_json(unpack(cleaning(inputs)[1]))
     return [packet("validation.json", canonical({"rows": report["total"],
                     "invalid_rows": report["removed"], "violations": report["rejected"]}), "application/json")]
 
@@ -1101,7 +1116,7 @@ def statistics(inputs: list[dict]) -> list[dict]:
         g["count"] += 1
         g["quantity"] += int(row["quantity"])
         g["revenue_cents"] += int(row["quantity"]) * int(row["unit_price_cents"])
-    quality = json.loads(unpack(next(x for x in inputs if x["name"] == "validation.json")))
+    quality = artifact_json(unpack(next(x for x in inputs if x["name"] == "validation.json")))
     for g in groups.values():
         # Rational pair is exact; presentation can round without changing the source statistic.
         g["mean_order_cents"] = {"numerator": g["revenue_cents"], "denominator": g["count"]}
@@ -1113,7 +1128,7 @@ def statistics(inputs: list[dict]) -> list[dict]:
 
 def report(inputs: list[dict]) -> list[dict]:
     stats_packet = next(x for x in inputs if x["name"] == "statistics.json")
-    stats = json.loads(unpack(stats_packet))
+    stats = artifact_json(unpack(stats_packet))
     lines = ["# 跨组织销售分析报告", "", "## 数据与质量", "",
              f"有效订单数：{stats['total_orders']}",
              f"原始异常行数：{stats['quality_invalid_rows']}", "", "## 季度统计", "",
@@ -1259,7 +1274,7 @@ class TravelInput(StrictModel):
 def travel_document(inputs: list[dict]) -> TravelInput:
     if len(inputs) != 1 or inputs[0]["name"] != "travel.json":
         raise ValueError("travel roots require exactly one travel.json")
-    return TravelInput.model_validate_json(unpack(inputs[0]))
+    return TravelInput.model_validate(artifact_json(unpack(inputs[0])))
 
 
 def load_travel_inputs(directory: Path) -> list[dict]:
@@ -1307,11 +1322,11 @@ def hotel_search(inputs: list[dict]) -> list[dict]:
 
 
 def travel_candidates(inputs: list[dict]) -> tuple[dict, list[dict], list[dict]]:
-    files = {x["name"]: json.loads(unpack(x)) for x in inputs}
+    files = {x["name"]: artifact_json(unpack(x)) for x in inputs}
     if len(files) != len(inputs) or set(files) != {"attractions.json", "hotels.json"}:
         raise ValueError("route requires settled attractions and hotel results")
     attractions, hotels = files["attractions.json"], files["hotels.json"]
-    if attractions["context"] != hotels["context"]:
+    if canonical(attractions["context"]) != canonical(hotels["context"]):
         raise ValueError("travel source or request mismatch between predecessors")
     return attractions["context"], attractions["attractions"], hotels["hotels"]
 
@@ -1372,7 +1387,7 @@ TRAVEL_NOTICE = "价格、营业时间与交通来自所列资料快照，非实
 def travel_report(inputs: list[dict]) -> list[dict]:
     if len(inputs) != 1 or inputs[0]["name"] != "itinerary.json":
         raise ValueError("travel report requires itinerary.json")
-    route = json.loads(unpack(inputs[0]))
+    route = artifact_json(unpack(inputs[0]))
     req, hotel = route["request"], route["hotel"]
     lines = ["# 旅游行程方案", "", "## 需求与资料", "",
              f"目的地：{req['destination']}；出发：{req['start_date']}；{req['days']} 天；{req['travelers']} 人。",
@@ -1500,14 +1515,14 @@ RULES = {"version": "sales-v1", "categories": ["book", "food", "tool"],
 def policy_id(skill: str) -> str:
     if SKILL_POLICIES.get(skill) == "travel-v1":
         checker = "\n".join(inspect.getsource(f) for f in (
-            travel_date, minutes, clock_time, TravelRequest, Attraction, Hotel, Transfer, TravelInput,
+            canonical, artifact_json, travel_date, minutes, clock_time, TravelRequest, Attraction, Hotel, Transfer, TravelInput,
             travel_document, travel_context, travel_candidates, verify_travel,
             verify_travel_route, verify_travel_report, check_context, validate_delivery)).encode()
         return object_hash({"skill": skill, "rules": {"version": "travel-v1", "notice": TRAVEL_NOTICE,
                             "schema": TravelInput.model_json_schema(), "currency": "CNY_cents",
                             "route": "unique_visits_opening_hours_transfers_daily_return_budget"},
                             "checker_hash": sha256(checker)})
-    checker = "\n".join(inspect.getsource(f) for f in (audit_raw, reference_statistics, verify_chart,
+    checker = "\n".join(inspect.getsource(f) for f in (canonical, artifact_json, audit_raw, reference_statistics, verify_chart,
                                                           verify_content, check_context, validate_delivery)).encode()
     return object_hash({"skill": skill, "rules": RULES, "checker_hash": sha256(checker)})
 
@@ -2054,7 +2069,7 @@ def reference_statistics(inputs: list[dict]) -> dict:
         counts[group] += 1
         quantities[group] += int(row["quantity"])
         revenues[group] += int(row["quantity"]) * int(row["unit_price_cents"])
-    quality = json.loads(unpack(next(x for x in inputs if x["name"] == "validation.json")))
+    quality = artifact_json(unpack(next(x for x in inputs if x["name"] == "validation.json")))
     return {"groups": {k: {"count": counts[k], "quantity": quantities[k], "revenue_cents": revenues[k],
                            "mean_order_cents": {"numerator": revenues[k], "denominator": counts[k]}}
                        for k in sorted(counts)},
@@ -2065,7 +2080,7 @@ def reference_statistics(inputs: list[dict]) -> dict:
 def verify_chart(stats: dict, source_hash: str, files: dict) -> None:
     expected_rows = [{"group": k, "revenue_cents": v["revenue_cents"]} for k, v in stats["groups"].items()]
     expected_data = {"schema": "quarter-revenue-v1", "source": source_hash, "unit": "cents", "rows": expected_rows}
-    if json.loads(files["chart-data.json"]) != expected_data:
+    if canonical(artifact_json(files["chart-data.json"])) != canonical(expected_data):
         raise ValueError("chart values/source mismatch")
     raw = files["revenue.svg"]
     if b"<!" in raw or b"<?" in raw:
@@ -2166,11 +2181,11 @@ def verify_travel_report(inputs: list[dict], files: dict) -> None:
         raise ValueError("missing settled itinerary")
     if set(files) != {"travel-report.md", "travel-references.json"}:
         raise ValueError("travel report artifact set mismatch")
-    route = json.loads(unpack(inputs[0]))
+    route = artifact_json(unpack(inputs[0]))
     req, hotel = route["request"], route["hotel"]
     refs = {"itinerary": reference(inputs[0]), "input_hash": route["input_hash"],
             "source": route["source"], "as_of": route["as_of"], "total_cents": route["total_cents"]}
-    if canonical(json.loads(files["travel-references.json"])) != canonical(refs):
+    if canonical(artifact_json(files["travel-references.json"])) != canonical(refs):
         raise ValueError("travel report provenance mismatch")
     text = files["travel-report.md"].decode("utf-8")
     expected = ["# 旅游行程方案", "## 需求与资料",
@@ -2217,12 +2232,12 @@ def verify_travel(skill: str, inputs: list[dict], artifacts: list[dict]) -> list
             selected.sort(key=lambda x: (x["total_cents"], x["id"]))
             filename, key = "hotels.json", "hotels"
         expected = {"context": travel_context(doc, inputs[0]["sha256"]), key: selected}
-        if set(files) != {filename} or canonical(json.loads(files[filename])) != canonical(expected):
+        if set(files) != {filename} or canonical(artifact_json(files[filename])) != canonical(expected):
             raise ValueError("travel candidates differ from independent snapshot filtering")
     elif skill == "route_planning":
         if set(files) != {"itinerary.json"}:
             raise ValueError("itinerary artifact set mismatch")
-        verify_travel_route(inputs, json.loads(files["itinerary.json"]))
+        verify_travel_route(inputs, artifact_json(files["itinerary.json"]))
     elif skill == "travel_report":
         verify_travel_report(inputs, files)
     else:
@@ -2245,24 +2260,25 @@ def verify_content(skill: str, inputs: list[dict], artifacts: list[dict]) -> lis
             if reader.fieldnames != COLUMNS or list(reader) != rows:
                 raise ValueError("independent cleaning reconstruction mismatch")
             expected = {"kept": len(rows), "removed": len(violations), "total": total, "rejected": violations}
-            if json.loads(files["cleaning.json"]) != expected:
+            if canonical(artifact_json(files["cleaning.json"])) != canonical(expected):
                 raise ValueError("row conservation or rejection evidence mismatch")
         else:
             expected = {"rows": total, "invalid_rows": len(violations), "violations": violations}
-            if set(files) != {"validation.json"} or json.loads(files["validation.json"]) != expected:
+            if set(files) != {"validation.json"} or canonical(artifact_json(files["validation.json"])) != canonical(expected):
                 raise ValueError("independent quality reconstruction mismatch")
     elif skill == "statistical_analysis":
-        if set(files) != {"statistics.json"} or json.loads(files["statistics.json"]) != reference_statistics(inputs):
+        if (set(files) != {"statistics.json"}
+                or canonical(artifact_json(files["statistics.json"])) != canonical(reference_statistics(inputs))):
             raise ValueError("independent grouped statistics mismatch")
     elif skill == "report_generation":
         if set(files) != {"report.md", "references.json", "chart-data.json", "revenue.svg"}:
             raise ValueError("report artifact set mismatch")
         source = next(x for x in inputs if x["name"] == "statistics.json")
-        stats = json.loads(unpack(source))
+        stats = artifact_json(unpack(source))
         expected = {"source": source["sha256"], "total_orders": stats["total_orders"],
                     "total_revenue_cents": stats["total_revenue_cents"], "groups": stats["groups"],
                     "charts": {"revenue.svg": sha256(files["revenue.svg"]), "chart-data.json": sha256(files["chart-data.json"])}}
-        if json.loads(files["references.json"]) != expected:
+        if canonical(artifact_json(files["references.json"])) != canonical(expected):
             raise ValueError("report reference index mismatch")
         verify_chart(stats, source["sha256"], files)
         text = files["report.md"].decode("utf-8")

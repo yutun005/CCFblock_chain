@@ -162,10 +162,10 @@ def main():
         return
     if args.command == "schema":
         from app import (
+            TravelInput,
             plan_schema_document,
             protocol_schema_document,
             runtime_schema_document,
-            TravelInput,
         )
         destination = (ROOT / (args.output or Path(".cache/interfaces.json"))).resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)
