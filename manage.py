@@ -154,6 +154,30 @@ def test_contracts():
     print(f"Foundry contract tests passed: {len(cases)} cases; raw output saved to {result_path}")
 
 
+def package_delivery():
+    branch = subprocess.run(["git", "branch", "--show-current"], cwd=ROOT, check=True,
+                            capture_output=True, text=True).stdout.strip()
+    if branch != "Dmodule":
+        raise RuntimeError("The Dmodule delivery package must be built from the Dmodule branch")
+    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=ROOT, check=True,
+                           capture_output=True, text=True).stdout.strip()
+    if dirty:
+        raise RuntimeError("Commit tracked source and documentation changes before packaging")
+    commit = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, check=True,
+                            capture_output=True, text=True).stdout.strip()
+    prefix = f"{ROOT.name}-Dmodule-{commit}/"
+    archive = subprocess.run(["git", "archive", "--format=zip", f"--prefix={prefix}", "HEAD"],
+                             cwd=ROOT, check=True, capture_output=True).stdout
+    destination = CACHE / "delivery"
+    destination.mkdir(parents=True, exist_ok=True)
+    filename = f"{ROOT.name}-Dmodule-{commit}.zip"
+    package = destination / filename
+    package.write_bytes(archive)
+    digest = hashlib.sha256(archive).hexdigest()
+    (destination / "SHA256SUMS").write_text(f"{digest}  {filename}\n", encoding="utf-8")
+    print(json.dumps({"package": str(package), "sha256": digest, "commit": commit}, ensure_ascii=False))
+
+
 def build():
     prepare_generated()
     run([foundry("forge"), "build", "--skip", "test", "--skip", "script"], cwd=CACHE / "contracts")
@@ -175,7 +199,7 @@ def setup():
 
 def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
-    parser.add_argument("command", choices=["setup", "build", "test-contract", "schema", "configure", "approve", "start"], nargs="?", default="start")
+    parser.add_argument("command", choices=["setup", "build", "test-contract", "package", "schema", "configure", "approve", "start"], nargs="?", default="start")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
@@ -191,6 +215,9 @@ def main():
         return
     if args.command == "test-contract":
         test_contracts()
+        return
+    if args.command == "package":
+        package_delivery()
         return
     if args.command == "schema":
         from app import (

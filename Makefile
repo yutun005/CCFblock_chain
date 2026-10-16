@@ -1,4 +1,4 @@
-.PHONY: setup build check test-integration test-contract test-e2e dev
+.PHONY: setup build check test-integration test-contract test-e2e package dev
 
 setup:
 	python manage.py setup
@@ -18,6 +18,9 @@ test-contract:
 
 test-e2e:
 	python tests/e2e/run_main_scenario.py
+
+package:
+	python manage.py package
 
 dev:
 	python manage.py start

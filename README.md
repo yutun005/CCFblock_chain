@@ -33,7 +33,7 @@
 
 ### 1. 获取工程与依赖
 
-在 GitHub Desktop 克隆本仓库，Current Branch 选择 A。在 PyCharm 的 File → Open 中打开克隆出来的工程文件夹，不要求固定盘符、用户名或目录名。
+在 GitHub Desktop 克隆本仓库，Current Branch 选择 Dmodule。在 PyCharm 的 File → Open 中打开克隆出来的工程文件夹，不要求固定盘符、用户名或目录名。
 
 环境要求：Python 3.12、Node.js 24、pnpm 11.25.0；编译使用 Foundry 1.8.5 与 Solidity 0.8.28。Node/pnpm 可通过系统 PATH 提供，或通过 AGENTFLOW_PNPM 指定 pnpm 可执行文件。Windows/Linux x64 的 setup 可安装固定版本 Forge；其他平台可预先将相应版本的 Forge 放到 PATH。
 
@@ -50,10 +50,13 @@
 | `python -m unittest discover -s tests -v` | A 与 C 的接口、签名和账本边界检查 |
 | `python manage.py test-contract` | Foundry 合约安全与资金守恒测试 |
 | `python tests/e2e/run_main_scenario.py` | 本地 Anvil 上的四节点销售 DAG、真实 A2A 报价/交付、REST API、链上结算和一次超时重派 |
+| `python manage.py package` | 从干净的 Dmodule 提交生成版本化 ZIP 和 `SHA256SUMS`，输出在 `.cache/delivery/` |
 
 端到端脚本仅启动本机 `127.0.0.1` 上的临时 chainId `31337`，使用公开的 Foundry 测试助记词和临时部署，不连接真实网络或资产。每次运行的交易回执、任务快照、报价、成果哈希、合约事件和 Anvil 日志写入 `experiments/raw/e2e/<run-id>/`；Foundry 原始结果写入 `experiments/raw/forge/`。这些原始文件保留在本机或 CI 构建产物中，不提交到 Git。
 
 GitHub Actions 会在推送到 Dmodule 后运行以上检查，并归档原始日志。当前流程没有自动化真实浏览器操作；Web 的静态构建由 `setup` 覆盖，浏览器验收仍需手动执行并单独记录。
+
+打包前需先提交所有源码和文档变更。ZIP 由当前 `HEAD` 的已跟踪文件生成，名称包含 12 位提交号；`SHA256SUMS` 与 ZIP 一起写入 `.cache/delivery/`。CI 也会生成同一包并作为 Actions artifact 保留。
 
 ### 2. 配置链、账户与业务数据
 
@@ -232,9 +235,9 @@ Agent 使用 A2A 1.0 JSON-RPC，Agent Card 位于 /.well-known/agent-card.json�
 
 源码不引用个人目录、固定安装路径或随源码携带的虚拟环境。工程根目录由脚本位置确定；输入/运行目录相对配置文件确定；构建目录默认 .cache，可通过 AGENTFLOW_BUILD_DIR 覆盖。
 
-在新设备上克隆 A、安装依赖、提供对应链和账户配置、放入业务输入即可启动。同一部署的数据迁移应停止服务后复制运行目录和业务输入，再在新设备重新安装依赖；历史运行记录不提交到 Git。
+在新设备上克隆 Dmodule、安装依赖、提供对应链和账户配置、放入业务输入即可启动。同一部署的数据迁移应停止服务后复制运行目录和业务输入，再在新设备重新安装依赖；历史运行记录不提交到 Git。
 
-GitHub Desktop 中始终选择 A → Commit → Push origin。不要选择 Publish/PR/Merge 到 main；只有用户后续明确授权才进入团队审核合并流程。提交前按 .gitignore 和 AGENTS.md 排除测试、缓存、IDE 配置、密钥与数据。
+本 Dmodule 集成分支的改动提交并推送到 `Dmodule`。不要推送到 `main` 或创建 PR/合并，除非用户之后明确授权。提交前按 `.gitignore` 排除密钥、缓存和本地运行数据；集成测试与测试夹具按本分支交付范围保留。
 
 ## 系统分析与设计
 

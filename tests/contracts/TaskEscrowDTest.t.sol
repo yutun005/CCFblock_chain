@@ -241,6 +241,8 @@ contract TaskEscrowDTest {
         vm.prank(owner);
         vm.expectRevert(TaskEscrow.NothingToWithdraw.selector);
         escrow.withdrawRefund(JOB);
+        require(escrow.withdrawable(agent) == 0 && escrow.withdrawable(backup) == 0,
+                "canceled tasks retained agent payout");
         require(token.balanceOf(address(escrow)) == 0, "duplicate refund changed escrow balance");
         _assertAccounting();
     }
