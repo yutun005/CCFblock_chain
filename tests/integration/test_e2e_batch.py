@@ -113,13 +113,22 @@ class E2EBatchTests(unittest.TestCase):
         try:
             result = manage.collect_results(root=root, commit_sha="test-commit")
             self.assertEqual(result["e2e_runs"], 1)
-            self.assertEqual(result["e2e_duration_seconds"]["cross_org_analysis"],
+            self.assertEqual(result["e2e_duration_seconds_by_variant"]["cross_org_analysis/api"],
                              {"n": 1, "mean": 3.0, "median": 3.0, "min": 3.0, "max": 3.0})
             self.assertEqual(result["security_status_counts"], {"LIMITATION": 1})
             self.assertEqual(json.loads(raw_summary.read_text(encoding="utf-8")), summary)
             self.assertTrue((root / "experiments" / "results" / "e2e-summary.csv").is_file())
             self.assertEqual(len((root / "experiments" / "results" / "e2e-summary.csv").read_text(
                 encoding="utf-8-sig").splitlines()), 2)
+            browser_dir = root / "experiments" / "raw" / "e2e" / "run-browser"
+            browser_dir.mkdir(parents=True, exist_ok=True)
+            (browser_dir / "result.json").write_text(json.dumps({
+                "scenario": "cross_org_analysis", "run_id": "run-browser", "status": "PASS",
+                "duration_seconds": 4.0, "failure": None, "jobs": [{"label": "browser"}]
+            }), encoding="utf-8")
+            with_browser = manage.collect_results(root=root, commit_sha="test-commit")
+            self.assertEqual(with_browser["e2e_runs"], 2)
+            self.assertEqual(with_browser["e2e_duration_seconds_by_variant"]["cross_org_analysis/browser"]["n"], 1)
             raw_result["status"] = "FAIL"
             result_path.write_text(json.dumps(raw_result), encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "E2E batch/raw mismatch"):

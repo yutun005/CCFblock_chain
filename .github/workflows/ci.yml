@@ -30,6 +30,8 @@ jobs:
         run: pnpm --dir .cache/web exec playwright install --with-deps chromium
       - name: Run browser workflow smoke
         run: pnpm --dir .cache/web run test:browser
+      - name: Run live browser against Anvil and services
+        run: .cache/venv/bin/python manage.py test-browser-live
       - name: Run D interface checks
         run: .cache/venv/bin/python -m unittest discover -s tests -v
       - name: Check Python syntax

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from app import Chain, ServiceCluster, artifact, settings_file  # noqa: E402
-from manage import CACHE, foundry  # noqa: E402
+from manage import CACHE, foundry, pnpm, prepare_generated  # noqa: E402
 
 MNEMONIC = "test test test test test test test test test test test junk"
 OUTPUT = ROOT / "experiments" / "raw" / "e2e"
@@ -153,6 +153,25 @@ def request_headers() -> dict:
     return {"Authorization": "Bearer " + os.environ["AGENTFLOW_E2E_API_TOKEN"]}
 
 
+def run_browser_job(api: str, scenario: str, output_dir: Path) -> str:
+    prepare_generated()
+    result_path = output_dir / "browser-ui.json"
+    environment = {**os.environ,
+                   "AGENTFLOW_LIVE_API_URL": api,
+                   "AGENTFLOW_LIVE_API_TOKEN": os.environ["AGENTFLOW_E2E_API_TOKEN"],
+                   "AGENTFLOW_LIVE_SCENARIO": scenario,
+                   "AGENTFLOW_LIVE_RESULT_PATH": str(result_path)}
+    result = subprocess.run(
+        [pnpm(), "exec", "playwright", "test", "tests/live-workspace.spec.ts", "--config",
+         "playwright.config.ts", "--output", str(output_dir / "browser-test-results")],
+        cwd=CACHE / "web", env=environment, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=240)
+    (output_dir / "browser-test.log").write_text(result.stdout + "\n" + result.stderr, encoding="utf-8")
+    if result.returncode or not result_path.is_file():
+        raise RuntimeError("live browser workflow failed; inspect " + str(output_dir / "browser-test.log"))
+    return json.loads(result_path.read_text(encoding="utf-8"))["jobId"]
+
+
 def create_job(client: httpx.Client, api: str, scenario_label: str, sla: int,
                scenario: str = "cross_org_analysis") -> str:
     preview = client.post(api + "/api/plans/preview", headers=request_headers(), json={
@@ -262,13 +281,22 @@ def validate_settlement(client: httpx.Client, api: str, job: dict, *, recovery: 
             "invalidatedEvents": invalidated}
 
 
-def run(scenario: str = "cross_org_analysis") -> dict:
+def run(scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
     if scenario not in {"cross_org_analysis", "travel_planning"}:
         raise ValueError("unsupported E2E scenario")
     started = time.monotonic()
     run_id = str(uuid.uuid4())
     case_id = "E2E-TRAVEL-01" if scenario == "travel_planning" else "E2E-DATA-01"
+    source_commit = None
+    worktree_dirty = None
+    if (ROOT / ".git").exists() and shutil.which("git"):
+        source_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+                                       capture_output=True, text=True).stdout.strip()
+        worktree_dirty = bool(subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, check=True,
+                                             capture_output=True, text=True).stdout.strip())
     evidence = {"case_id": case_id, "scenario": scenario, "run_id": run_id, "status": "RUNNING",
+                "browser": browser,
+                "source_commit_sha": source_commit, "source_worktree_dirty": worktree_dirty,
                 "scope": "Dmodule A2A + API + local Anvil + C TaskEscrow", "seed": "Anvil test mnemonic index allocation",
                 "started_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "transactions": []}
     output_dir = OUTPUT / run_id
@@ -310,6 +338,20 @@ def run(scenario: str = "cross_org_analysis") -> dict:
                 registered.raise_for_status()
                 if len(registered.json()) < 6:
                     raise AssertionError("expected six live A2A service instances")
+                if browser and scenario_label == "normal":
+                    browser_job_id = run_browser_job(settings["api"], scenario, output_dir)
+                    browser_job = wait_job(client, settings["api"], browser_job_id)
+                    browser_proof = validate_settlement(client, settings["api"], browser_job,
+                                                        recovery=False, scenario=scenario)
+                    results.append({"label": "browser", "job_id": browser_job_id,
+                                    "status": browser_job["status"], "tasks": browser_job["tasks"],
+                                    "quoteRecords": browser_proof["quoteRecords"],
+                                    "artifacts": browser_proof["artifacts"],
+                                    "settledEvents": browser_proof["settledEvents"],
+                                    "finalizedEvents": browser_proof["finalizedEvents"],
+                                    "refundEvents": browser_proof["refundEvents"],
+                                    "invalidatedEvents": browser_proof["invalidatedEvents"],
+                                    "claimResponse": browser_proof["claims"]})
                 job_id = create_job(client, settings["api"], f"{run_id}-{scenario_label}", sla, scenario)
                 job = wait_job(client, settings["api"], job_id, recovery=inject_delay,
                                w3=w3 if inject_delay else None, failed_agent=failed_agent_wallet)
@@ -345,7 +387,7 @@ def run(scenario: str = "cross_org_analysis") -> dict:
             write_json(output_dir / "result.json", evidence)
 
 
-def run_batch(repeat: int, scenario: str = "cross_org_analysis") -> dict:
+def run_batch(repeat: int, scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
     if repeat < 1:
         raise ValueError("repeat must be at least 1")
     batch_id = str(uuid.uuid4())
@@ -357,7 +399,7 @@ def run_batch(repeat: int, scenario: str = "cross_org_analysis") -> dict:
     for index in range(1, repeat + 1):
         before = {path.name for path in OUTPUT.iterdir() if path.is_dir() and not path.name.startswith("batch-")}
         try:
-            evidence = run(scenario)
+            evidence = run(scenario, browser=True) if browser and index == 1 else run(scenario)
         except Exception as exc:
             after = [path for path in OUTPUT.iterdir()
                      if path.is_dir() and not path.name.startswith("batch-") and path.name not in before]
@@ -373,7 +415,8 @@ def run_batch(repeat: int, scenario: str = "cross_org_analysis") -> dict:
         write_json(batch_dir / f"run-{index:02d}.json", evidence)
     passed = sum(item["status"] == "PASS" for item in runs)
     case_id = "E2E-TRAVEL-BATCH" if scenario == "travel_planning" else "E2E-DATA-BATCH"
-    batch = {"case_id": case_id, "scenario": scenario, "batch_id": batch_id, "requested_runs": repeat,
+    batch = {"case_id": case_id, "scenario": scenario, "batch_id": batch_id,
+             "browser": browser, "requested_runs": repeat,
              "passed_runs": passed, "failed_runs": repeat - passed,
              "status": "PASS" if passed == repeat else "FAIL",
              "duration_seconds": round(time.monotonic() - batch_started, 3), "runs": runs,
@@ -392,8 +435,9 @@ if __name__ == "__main__":
     parser.add_argument("--repeat", type=int, default=1, help="independent normal and recovery E2E runs")
     parser.add_argument("--scenario", choices=("cross_org_analysis", "travel_planning"),
                         default="cross_org_analysis", help="application scenario to exercise")
+    parser.add_argument("--browser", action="store_true", help="create one job through the real browser UI")
     args = parser.parse_args()
-    result = run_batch(args.repeat, args.scenario)
+    result = run_batch(args.repeat, args.scenario, browser=args.browser)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["status"] != "PASS":
         raise SystemExit(1)

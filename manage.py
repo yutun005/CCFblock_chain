@@ -298,8 +298,6 @@ def archive_evidence(run_commit_sha: str | None = None):
     if run_commit_sha:
         run_commit_sha = subprocess.run(["git", "rev-parse", "--verify", run_commit_sha + "^{commit}"],
                                         cwd=ROOT, check=True, capture_output=True, text=True).stdout.strip()
-    else:
-        run_commit_sha = current_commit
     files = []
     for folder in (ROOT / "experiments/raw", ROOT / "experiments/results"):
         if folder.is_dir():
@@ -311,6 +309,7 @@ def archive_evidence(run_commit_sha: str | None = None):
     if not files:
         raise RuntimeError("No raw or summarized evidence to archive")
     checksums = {}
+    e2e_run_provenance = {}
     package_buffer = io.BytesIO()
     prefix = f"{ROOT.name}-evidence-{current_commit[:12]}/"
     with zipfile.ZipFile(package_buffer, "w", compression=zipfile.ZIP_DEFLATED) as package:
@@ -318,10 +317,17 @@ def archive_evidence(run_commit_sha: str | None = None):
             relative = path.relative_to(ROOT).as_posix()
             content = path.read_bytes()
             checksums[relative] = hashlib.sha256(content).hexdigest()
+            if relative.startswith("experiments/raw/e2e/") and relative.endswith("/result.json"):
+                record = json.loads(content)
+                e2e_run_provenance[record["run_id"]] = {
+                    "source_commit_sha": record.get("source_commit_sha") or run_commit_sha,
+                    "source_worktree_dirty": record.get("source_worktree_dirty")}
             info = zipfile.ZipInfo(prefix + relative, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             package.writestr(info, content)
-        manifest = {"analysis_commit_sha": current_commit, "run_commit_sha": run_commit_sha,
+        manifest = {"analysis_commit_sha": current_commit,
+                    "declared_legacy_run_commit_sha": run_commit_sha,
+                    "e2e_run_provenance": e2e_run_provenance,
                     "summary": summary, "sha256_by_path": checksums}
         info = zipfile.ZipInfo(prefix + "EVIDENCE-MANIFEST.json", date_time=(1980, 1, 1, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
@@ -335,12 +341,15 @@ def archive_evidence(run_commit_sha: str | None = None):
     (destination / "EVIDENCE-SHA256SUMS").write_text(f"{digest}  {filename}\n", encoding="utf-8")
     print(json.dumps({"evidence_archive": str(archive), "sha256": digest,
                       "files": len(files), "analysis_commit_sha": current_commit,
-                      "run_commit_sha": run_commit_sha}, ensure_ascii=False))
+                      "declared_legacy_run_commit_sha": run_commit_sha}, ensure_ascii=False))
 
 
-def run_e2e(scenario: str, repeat: int = 1) -> None:
-    run([PYTHON, ROOT / "tests/e2e/run_main_scenario.py", "--scenario", scenario,
-         "--repeat", repeat])
+def run_e2e(scenario: str, repeat: int = 1, *, browser: bool = False) -> None:
+    command = [PYTHON, ROOT / "tests/e2e/run_main_scenario.py", "--scenario", scenario,
+               "--repeat", repeat]
+    if browser:
+        command.append("--browser")
+    run(command)
 
 
 def collect_results(root: Path | None = None, commit_sha: str | None = None):
@@ -356,6 +365,7 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
             for item in batch.get("runs", []):
                 row = {"scenario": batch.get("scenario"), "batch_id": batch.get("batch_id"),
                        "iteration": item.get("iteration"), "run_id": item.get("run_id"),
+                       "variant": "browser" if batch.get("browser") and item.get("iteration") == 1 else "api",
                        "status": item.get("status"),
                        "duration_seconds": item.get("duration_seconds"),
                        "failure": item.get("failure")}
@@ -370,14 +380,17 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
                 continue
             item = json.loads(result_path.read_text(encoding="utf-8"))
             run_id = item.get("run_id")
+            variant = "browser" if item.get("browser") or any(
+                job.get("label") == "browser" for job in item.get("jobs", [])) else "api"
             if run_id in batch_runs:
                 batch_row = batch_runs[run_id]
                 for field in ("scenario", "status", "duration_seconds", "failure"):
                     if item.get(field) != batch_row[field]:
                         raise RuntimeError(f"E2E batch/raw mismatch for {run_id}: {field}")
+                batch_row["variant"] = variant
                 continue
             e2e_rows.append({"scenario": item.get("scenario"), "batch_id": None, "iteration": None,
-                             "run_id": run_id, "status": item.get("status"),
+                             "run_id": run_id, "variant": variant, "status": item.get("status"),
                              "duration_seconds": item.get("duration_seconds"),
                              "failure": item.get("failure")})
     security_rows = []
@@ -389,7 +402,7 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
                                   "status": item.get("status"), "skip_reason": item.get("skip_reason"),
                                   "commit_sha": item.get("commit_sha"), "raw_log": item.get("raw_log")})
     destination.mkdir(parents=True, exist_ok=True)
-    e2e_fields = ("scenario", "batch_id", "iteration", "run_id", "status", "duration_seconds", "failure")
+    e2e_fields = ("scenario", "batch_id", "iteration", "run_id", "variant", "status", "duration_seconds", "failure")
     security_fields = ("case_id", "title", "status", "skip_reason", "commit_sha", "raw_log")
     for filename, rows, fields in (("e2e-summary.csv", e2e_rows, e2e_fields),
                                    ("security-summary.csv", security_rows, security_fields)):
@@ -402,7 +415,8 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
     durations = {}
     for row in e2e_rows:
         if row["status"] == "PASS" and row["duration_seconds"] is not None:
-            durations.setdefault(row["scenario"], []).append(float(row["duration_seconds"]))
+            cohort = row["scenario"] + "/" + row["variant"]
+            durations.setdefault(cohort, []).append(float(row["duration_seconds"]))
     statuses = [row["status"] for row in e2e_rows] + [row["status"] for row in security_rows]
     if not statuses:
         summary_status = "NO_DATA"
@@ -416,11 +430,11 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
                 "e2e_runs": len(e2e_rows),
                 "e2e_status_counts": {status: sum(row["status"] == status for row in e2e_rows)
                                       for status in sorted({row["status"] for row in e2e_rows})},
-                "e2e_duration_seconds": {
-                    scenario: {"n": len(values), "mean": round(statistics.mean(values), 3),
+                "e2e_duration_seconds_by_variant": {
+                    cohort: {"n": len(values), "mean": round(statistics.mean(values), 3),
                                "median": round(statistics.median(values), 3),
                                "min": min(values), "max": max(values)}
-                    for scenario, values in sorted(durations.items())},
+                    for cohort, values in sorted(durations.items())},
                 "security_cases": len(security_rows),
                 "security_status_counts": {status: sum(row["status"] == status for row in security_rows)
                                             for status in sorted({row["status"] for row in security_rows})},
@@ -475,7 +489,7 @@ def setup():
 
 def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
-    parser.add_argument("command", choices=["setup", "build", "test-contract", "test-security", "test-e2e", "run-data",
+    parser.add_argument("command", choices=["setup", "build", "test-contract", "test-security", "test-e2e", "test-browser-live", "run-data",
                         "run-travel", "collect-results", "reset-demo", "package", "schema", "configure",
                         "approve", "start", "archive-evidence"], nargs="?", default="start")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
@@ -500,6 +514,9 @@ def main():
         return
     if args.command == "test-e2e":
         run_e2e("cross_org_analysis", repeat=10)
+        return
+    if args.command == "test-browser-live":
+        run_e2e("cross_org_analysis", browser=True)
         return
     if args.command == "run-data":
         run_e2e("cross_org_analysis")

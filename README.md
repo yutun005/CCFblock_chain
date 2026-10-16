@@ -51,6 +51,7 @@
 |---|---|
 | `python -m unittest discover -s tests -v` | A 与 C 的接口、签名和账本边界检查 |
 | `pnpm --dir .cache/web run test:browser` | Chromium 浏览器登录、计划预览、提交任务及工作区渲染 smoke；API 由测试路由模拟 |
+| `python manage.py test-browser-live` | 临时 Anvil 与 6 个服务启动后，由真实浏览器创建任务并核对结算事件和成果 |
 | `python manage.py test-contract` | Foundry 合约安全与资金守恒测试 |
 | `python manage.py test-e2e` | 本地 Anvil 上 10 次销售场景正常结算与超时恢复 |
 | `python manage.py run-travel` | 本地 Anvil 上旅游场景正常结算和超时恢复 |
