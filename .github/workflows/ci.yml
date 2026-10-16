@@ -47,5 +47,6 @@ jobs:
           path: |
             experiments/raw/e2e/**
             experiments/raw/forge/**
+            experiments/raw/security/**
             .cache/delivery/**
           include-hidden-files: true

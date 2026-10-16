@@ -55,6 +55,25 @@ class E2EBatchTests(unittest.TestCase):
         self.assertEqual(len(route["days"]), 3)
         self.assertEqual({item["name"] for item in report_packets}, {"travel-report.md", "travel-references.json"})
 
+    def test_security_evidence_records_pass_skip_and_trust_limitation(self):
+        import manage
+        import shutil
+
+        output = ROOT / ".cache" / "test-security-evidence"
+        output.mkdir(parents=True, exist_ok=True)
+        try:
+            cases = [("TaskEscrowDTest", "testQuotePriceTamperingIsRejected", {"status": "Success"})]
+            raw_log = ROOT / "experiments" / "raw" / "forge" / "forge-results.json"
+            manage.write_security_evidence(cases, raw_log, commit_sha="test-commit", destination=output)
+            self.assertEqual(len(list(output.glob("SEC-*.json"))), 30)
+            self.assertEqual(json.loads((output / "SEC-01.json").read_text(encoding="utf-8"))["status"], "PASS")
+            self.assertEqual(json.loads((output / "SEC-02.json").read_text(encoding="utf-8"))["status"], "SKIP")
+            limitation = json.loads((output / "SEC-30.json").read_text(encoding="utf-8"))
+            self.assertEqual(limitation["status"], "LIMITATION")
+            self.assertIn("信任边界", limitation["skip_reason"])
+        finally:
+            shutil.rmtree(output, ignore_errors=True)
+
     def test_batch_rejects_zero_runs(self):
         with self.assertRaisesRegex(ValueError, "at least 1"):
             SCENARIO.run_batch(0)

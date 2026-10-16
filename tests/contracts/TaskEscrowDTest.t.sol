@@ -203,6 +203,21 @@ contract TaskEscrowDTest {
         _assertAccounting();
     }
 
+    function testResultFromDifferentTaskIsRejected() public {
+        _assign(0, AGENT_KEY);
+        _assign(1, AGENT_KEY);
+        (TaskEscrow.Result memory stale, TaskEscrow.Attestation memory staleProof) = _proof(0, AGENT_KEY);
+        stale.taskId = 1;
+        staleProof.taskId = 1;
+        bytes memory agentSig = _sign(AGENT_KEY, escrow.hashResult(_proofResultForTask(0, AGENT_KEY)));
+        bytes memory verifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(staleProof));
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidSignature.selector);
+        escrow.settleTask(stale, agentSig, staleProof, verifierSig);
+        require(escrow.withdrawable(agent) == 0, "cross-task result paid");
+        _assertAccounting();
+    }
+
     function testUnauthorizedVerifierCannotSettle() public {
         _assign(0, AGENT_KEY);
         (TaskEscrow.Result memory r, TaskEscrow.Attestation memory a) = _proof(0, AGENT_KEY);
@@ -344,6 +359,18 @@ contract TaskEscrowDTest {
         _assertAccounting();
     }
 
+    function testStrangerCannotSettleTask() public {
+        _assign(0, AGENT_KEY);
+        (TaskEscrow.Result memory r, TaskEscrow.Attestation memory a) = _proof(0, AGENT_KEY);
+        bytes memory agentSig = _sign(AGENT_KEY, escrow.hashResult(r));
+        bytes memory verifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(a));
+        vm.prank(stranger);
+        vm.expectRevert(TaskEscrow.Unauthorized.selector);
+        escrow.settleTask(r, agentSig, a, verifierSig);
+        require(escrow.withdrawable(agent) == 0, "unauthorized settlement paid");
+        _assertAccounting();
+    }
+
     function testSettleBeforeDeadlineWinsAndCannotExpireAfterward() public {
         _assign(0, AGENT_KEY);
         uint64 deadline = escrow.getTask(JOB, 0).deadline;
@@ -424,6 +451,12 @@ contract TaskEscrowDTest {
                               keccak256("artifact-uri"), uint64(block.timestamp));
         a = TaskEscrow.Attestation(JOB, taskId, task.attempt, r.resultHash, task.validationPolicyId,
                                    true, uint64(block.timestamp + 60), uint256(taskId) + uint256(task.attempt) * 100);
+    }
+
+    function _proofResultForTask(uint8 taskId, uint256 key)
+        private view returns (TaskEscrow.Result memory r)
+    {
+        (r,) = _proof(taskId, key);
     }
 
     function _settle(uint8 taskId, uint256 key) private {

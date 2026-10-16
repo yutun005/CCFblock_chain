@@ -142,6 +142,76 @@ def prepare_generated():
     shutil.copyfile(ROOT / "tests/contracts/TaskEscrowDTest.t.sol", test_target)
 
 
+SECURITY_CASES = {
+    "SEC-01": ("报价金额篡改", ["testQuotePriceTamperingIsRejected"], "签名后增加报价金额", "拒绝报价且任务保持 READY"),
+    "SEC-02": ("报价执行者篡改", ["testQuoteAgentWalletTamperingIsRejected"], "签名后替换 Agent 钱包", "签名校验拒绝且不改变任务"),
+    "SEC-03": ("报价任务 ID 替换", ["testQuoteTaskIdSubstitutionIsRejected"], "将 task 0 报价改用于 task 1", "签名校验拒绝跨任务使用"),
+    "SEC-04": ("报价 Job ID 替换", ["testQuoteJobIdSubstitutionIsRejected"], "将已签报价改用于另一 Job", "签名校验拒绝跨 Job 使用"),
+    "SEC-05": ("报价跨合约重放", ["testCrossContractQuoteReplayIsRejected"], "在另一合约域签名后提交给本合约", "EIP-712 域校验拒绝"),
+    "SEC-06": ("报价跨链重放", ["testQuoteCrossChainReplayIsRejected"], "签名后切换 chainId 并提交报价", "EIP-712 域校验拒绝"),
+    "SEC-07": ("过期报价使用", ["testExpiredQuoteIsRejected"], "提交 validUntil 已过期的报价", "拒绝报价"),
+    "SEC-08": ("报价 nonce 重放", ["testBidNonceCannotBeReusedByTheSameAgent"], "同一 Agent 重用已消费 bidNonce", "拒绝重放"),
+    "SEC-09": ("Agent 冒用服务身份", [], "服务端点冒称其他钱包且不能提供对应签名", "注册挑战必须拒绝"),
+    "SEC-10": ("虚假服务能力", [], "Agent 声明技能但提交不符合规则的成果", "独立客观验证拒绝且不付款"),
+    "SEC-11": ("结果内容改包", ["testResultTamperingIsRejected"], "更改结果摘要但保留原 Agent 签名", "拒绝结算"),
+    "SEC-12": ("伪造结果签名", ["testForgedResultSignatureIsRejected"], "使用非执行者钱包签署结果", "拒绝结算且不付款"),
+    "SEC-13": ("旧任务结果用于新任务", ["testResultFromDifferentTaskIsRejected"], "把 task 0 结果和签名提交给 task 1", "拒绝跨任务重放"),
+    "SEC-14": ("旧轮次重放", ["testOldAttemptCannotSettleAfterExpiryAndReassignment"], "attempt 0 失效并重派后提交旧证明", "旧轮次不得结算"),
+    "SEC-15": ("超时后的迟交", ["testOldAttemptCannotSettleAfterExpiryAndReassignment"], "expireTask 后提交旧 Agent 证明", "失效轮次不得收款"),
+    "SEC-16": ("截止边界竞争", ["testSettleBeforeDeadlineWinsAndCannotExpireAfterward"], "在截止前一个区块时间完成结算并尝试失效", "只保留一个最终状态且不双付"),
+    "SEC-17": ("未完成依赖提前结算", ["testDependencyCannotSettleBeforeParents"], "父任务未结算时尝试结算子任务", "依赖检查拒绝结算"),
+    "SEC-18": ("非法 DAG", ["testSelfDependencyConfigurationIsRejected"], "登记自依赖节点", "配置阶段拒绝"),
+    "SEC-19": ("伪造验证者", ["testUnauthorizedVerifierCannotSettle"], "未授权钱包签署验证证明", "拒绝结算"),
+    "SEC-20": ("验证证明跨结果使用", ["testAttestationForDifferentResultIsRejected"], "证明 resultHash 与执行结果不一致", "拒绝结算"),
+    "SEC-21": ("验证证明跨轮次使用", ["testOldAttemptAttestationIsRejectedForNewAttempt"], "将 attempt 0 验证证明用于 attempt 1", "拒绝结算"),
+    "SEC-22": ("验证凭证重复使用", ["testAttestationNonceCannotBeReused", "testDuplicateSettlementCannotPayTwice"], "重用验证 nonce 或重复结算", "至多结算付款一次"),
+    "SEC-23": ("未授权结算或退款", ["testStrangerCannotSettleTask", "testNonOwnerCannotWithdrawRefund"], "随机外部账户调用结算或退款", "权限检查拒绝且资金不变"),
+    "SEC-24": ("未授权修改执行者", ["testNonCoordinatorCannotAssignTask"], "非 owner/coordinator 调用任务分配", "权限检查拒绝"),
+    "SEC-25": ("超预算报价", ["testFuzzPriceNeverExceedsTaskCap"], "对报价金额做 256 轮 fuzz", "超过任务预算的报价全部拒绝"),
+    "SEC-26": ("多任务预算超额", ["testOvercommittedBudgetsAreRejected"], "登记的任务预算总和超过托管金额", "创建 Job 失败"),
+    "SEC-27": ("重复退款", ["testRefundCannotBeClaimedTwice"], "重复领取同一 Job 退款", "第二次领取拒绝且不重复转账"),
+    "SEC-28": ("恶意代币回调或重入", [], "恶意 token 或回调收款器尝试重入", "本期仅支持标准无手续费 ERC-20；需独立恶意 token 用例"),
+    "SEC-29": ("数据库重启后重复结算", [], "重启协调服务后重放已提交结算凭证", "链上状态仍至多付款一次；需应用层故障注入"),
+    "SEC-30": ("授权验证者恶意批准坏结果", [], "有权验证者故意签署错误 verdict", "已知信任限制；P0 不宣称可自动阻断"),
+}
+
+
+def write_security_evidence(cases, result_path: Path, *, commit_sha=None, destination=None) -> None:
+    test_results = {}
+    for contract, name, case in cases:
+        test_results[name] = {"contract": contract, **case}
+    commit = commit_sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+                                          capture_output=True, text=True).stdout.strip()
+    destination = destination or ROOT / "experiments/raw/security"
+    destination.mkdir(parents=True, exist_ok=True)
+    for case_id, (title, functions, action, expected) in SECURITY_CASES.items():
+        mapped = [test_results[name] for name in functions if name in test_results]
+        if case_id == "SEC-30":
+            status, reason = "LIMITATION", "有权限的验证者可以对主观质量作出错误判断；这是明确披露的信任边界。"
+        elif not mapped:
+            status, reason = "SKIP", "本次 Foundry 输出没有对应的自动化测试用例。"
+        elif len(mapped) != len(functions):
+            status, reason = "SKIP", "组合场景只执行了部分映射的测试函数。"
+        else:
+            status = "PASS" if all(item.get("status") == "Success" for item in mapped) else "FAIL"
+            reason = None if status == "PASS" else "至少一个对应 Foundry 用例未通过。"
+        evidence = {
+            "case_id": case_id, "title": title, "scenario": "cross_org_analysis",
+            "commit_sha": commit, "chain_id": None, "contract_address": None,
+            "seed": next((item.get("counterexample") for item in mapped if item.get("counterexample")), None),
+            "initial_state": "Foundry 隔离 EVM；具体状态由对应测试函数创建。",
+            "action": action, "expected": expected, "observed": [
+                {"test": name, "status": test_results.get(name, {}).get("status"),
+                 "reason": test_results.get(name, {}).get("reason")} for name in functions
+            ],
+            "status": status, "skip_reason": reason,
+            "transaction_hashes": [], "execution_environment": "Foundry unit test; no persistent chain transaction",
+            "raw_log": result_path.relative_to(ROOT).as_posix(),
+        }
+        (destination / f"{case_id}.json").write_text(
+            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def test_contracts():
     prepare_generated()
     result_path = ROOT / "experiments/raw/forge/forge-results.json"
@@ -156,6 +226,7 @@ def test_contracts():
         raise RuntimeError("Foundry returned invalid JSON; inspect " + str(result_path)) from exc
     cases = [(contract, name, case) for contract, suite in report.items()
              for name, case in suite.get("test_results", {}).items()]
+    write_security_evidence(cases, result_path)
     failures = [(contract, name, case.get("reason")) for contract, name, case in cases
                 if case.get("status") != "Success"]
     if result.returncode or failures:
