@@ -18,8 +18,3 @@ dist/
 .hypothesis/
 .pytest_cache/
 .ruff_cache/
-test_*.py
-*_test.py
-*.t.sol
-tests/
-e2e/

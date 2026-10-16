@@ -1,0 +1,31 @@
+name: Dmodule verification
+
+on:
+  push:
+    branches: [Dmodule]
+  pull_request:
+    branches: [Dmodule]
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.25.0"
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: "v1.8.5"
+      - name: Install locked dependencies and build
+        run: python manage.py setup
+      - name: Run D interface checks
+        run: .cache/venv/bin/python -m unittest discover -s tests -v
+      - name: Check Python syntax
+        run: .cache/venv/bin/python -m py_compile app.py manage.py

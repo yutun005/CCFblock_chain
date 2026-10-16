@@ -43,7 +43,7 @@
 
 ### 2. 配置链、账户与业务数据
 
-服务连接外部运营的 EVM RPC。由合约负责人先部署一个 **6 位小数 ERC-20** 和以它为构造参数的 TaskEscrow；本仓库不自动启动模拟链、不生成钱包、不铸造代币。账户余额、Gas 和合约地址由部署环境提供。
+服务连接外部运营的 EVM RPC。按 C 的接口部署标准，TaskEscrow 构造参数为测试 ERC-20 地址和管理员地址；部署时须给配置的验证者授予 `VERIFIER_ROLE`。本仓库不自动启动模拟链、不生成钱包、不铸造代币。账户余额、Gas 和合约地址由部署环境提供。`configure` 会检查合约绑定及验证者角色；未授予时拒绝启动。
 
 编辑 project.json 的 runtime 区域，或新建被 Git 忽略的 runtime.json，并在运行参数后添加 `--config runtime.json`。独立 runtime.json 直接使用 runtime 区域内的结构。文件路径均相对配置文件目录解析；默认配置文件相对工程根目录定位，与启动时的终端目录无关。
 
@@ -141,7 +141,7 @@ flowchart LR
 
 市场只对签名、任务上下文、报价上限和有效期均通过的候选评分。风险评分为 `报价 + risk_penalty × (到期次数 + 1) / (结算次数 + 到期次数 + 2)`，取最低分，同分按 agentId 排序。报价和惩罚金额统一换算为代币最小单位，以有理数计算；评分只影响选择，实际付款仍是签名报价，风险惩罚不向用户收费。将 selection 改回 lowest_price 即恢复最低价选择。
 
-历史来自当前部署中市场已知且计划哈希匹配的 Job，以及对应技能的链上 TaskAssigned、TaskSettled、AttemptExpired 事件。未知钱包使用相同的初始风险项，因此全部候选都没有历史时仍选最低价。结果验证失败后到期的尝试也会计入到期次数；该值不是对故障责任的裁决。历史不会自动随时间衰减，服务恢复正常后可能仍因旧记录被跳过；重新使用新钱包也会丢失原有历史约束。risk_aware 是可解释的启发式策略，不保证费用更低、完成率更高或准确预测失败概率。
+历史来自当前市场本地记录的 Job 计划，以及对应技能的链上 TaskAssigned、TaskSettled、TaskInvalidated 事件；C 合约逐任务冻结 requirementHash 和 validationPolicyId，不在 Job 结构中保存整个 planHash。未知钱包使用相同的初始风险项，因此全部候选都没有历史时仍选最低价。失效轮次也会计入到期次数；该值不是对故障责任的裁决。历史不会自动随时间衰减，服务恢复正常后可能仍因旧记录继续受罚；重新使用新钱包也会丢失原有历史约束。risk_aware 是可解释的启发式策略，不保证费用更低、完成率更高或准确预测失败概率。
 
 选择策略、恢复策略及风险惩罚都属于冻结计划，不能在 Job 创建后直接切换；报价接口保留候选历史、评分分子/分母和最终选择供复核。当前网页按默认策略创建模板任务，风险策略通过完整 plan 接口配置。
 
@@ -371,7 +371,7 @@ RFQRequest 包含 jobId、taskId、attempt、plan、idempotencyKey、excludeWall
 
 金额对外有两种明确单位：Plan 的 deposit/budget_cap 是最多六位小数的代币金额字符串；签名报价与链上账本是最小单位整数的十进制字符串，1 个代币等于 1,000,000 最小单位。uint64/uint256 在线上传字符串，uint8/uint32 使用 JSON 整数；禁止浮点金额。显式配置 execution 时，risk_penalty 的缺省值也采用规范化的 `30.000000`，保证计划保存、重载与市场校验使用相同哈希。deadline、validUntil、submittedAt 使用 Unix 秒。业务 taskId/attempt 从 0 开始；A2A task.id 是单独的传输任务标识，不能混用。
 
-签名域为 `name=DASC, version=1, chainId=部署链, verifyingContract=TaskEscrow 地址`。Quote 签价格、需求哈希、支付代币、任务/轮次、钱包、有效期和 nonce；Result 签任务/轮次、钱包、结果哈希、URI 哈希和提交时间；Attestation 签任务/轮次、结果哈希、策略 ID、判定、有效期和 nonce。完整字段类型及顺序见导出包 signedFields，与 TaskEscrow.sol 的类型声明一致。
+签名域为 `name=DASC, version=1, chainId=部署链, verifyingContract=TaskEscrow 地址`。Quote 签价格、需求哈希、支付代币、任务/轮次、钱包、有效期和 nonce；Result 签任务/轮次、钱包、结果哈希、URI 哈希和提交时间；Attestation 签任务/轮次、结果哈希、策略 ID、布尔判定、有效期和 nonce。完整字段类型及顺序以 `TaskEscrow.sol` 和 `/api/protocol/schema` 为准。
 
 创建任务使用 requestId：相同 owner/链/合约/requestId 对应同一 jobId，计划不同则拒绝。执行请求键为 `execute:jobId:taskId:attempt`；Agent 保存请求哈希和响应，同键不同内容拒绝。RFQ 是一次询价批次的标识，重新询价使用新键，不能把过期报价当永久缓存。发送链交易前持久化命令及签名交易；重启按交易哈希恢复，避免盲目重复创建新交易。
 
@@ -380,11 +380,13 @@ RFQRequest 包含 jobId、taskId、attempt、plan、idempotencyKey、excludeWall
 | createJob | owner 转入代币；合法拓扑、预算和截止时间 | JobCreated；逐节点预留预算 |
 | assignTask | coordinator；有效报价、当前轮次和预算 | TaskAssigned；固定 payee、price、deadline |
 | settleTask | owner/coordinator；成果与验证签名、期限、轮次及依赖通过 | TaskSettled；增加服务商可提现余额 |
-| expireTask | 任何调用者；已分配、已到期、expectedAttempt 匹配 | AttemptExpired；轮次递增、回到未分配 |
-| requestStop | owner；尚未终结 | StopRequested；禁止新委派 |
-| cancelTask | 未分配节点；owner/coordinator，或满足公开取消条件 | TaskCanceled；释放预留预算 |
+| expireTask | 任何调用者；已分配且到期 | TaskInvalidated；轮次递增、回到 READY |
+| 停止后续委派 | D 的本地调度状态；已接受服务仍可完成 | 不伪称为链上交易；后继未分配节点按 C `cancelTask` 规则收尾 |
+| cancelTask | owner/coordinator；未终态任务 | TaskCanceled；释放预留预算并传播取消依赖 |
 | finalizeJob | 任何调用者；全部节点进入结算/取消终态 | JobFinalized；未用预算转为退款余额 |
-| withdraw / claimRefund | 有余额的服务商 / owner | Withdrawn / Refunded；实际转账并清零对应余额 |
+| withdraw / withdrawRefund | Agent / owner | Withdrawn / Refunded；实际转账并清零对应余额 |
+
+C 合约的 `withdraw()` 按钱包汇总该 Agent 在所有 Job 的待提现报酬，`Withdrawn` 事件不带 `jobId`。因此页面按 Job 显示结算金额与退款，但不把全局提现事件错误分摊到某个 Job。
 
 公开取消条件为 Job 已过总期限或存在已取消的依赖。具体失败由 InvalidState、InvalidContext、Expired、DependenciesUnsettled、BudgetExceeded、InvalidSignature、NonceUsed 等合约错误表示。A 的 RuntimeFault 另外记录 phase、code、action 和 message；HTTP 失败、业务拒绝与交易回滚不可互相冒充。
 
@@ -500,8 +502,8 @@ sequenceDiagram
     participant B as 替代 Agent
     O->>A: 执行 attempt=n
     Note over O,A: 超时或验证失败，保留既有履约窗口
-    O->>C: 到期后 expireTask(expectedAttempt=n)
-    C-->>O: AttemptExpired，当前轮次 n+1
+    O->>C: 到期后 expireTask(jobId, taskId)
+    C-->>O: TaskInvalidated，当前轮次 n+1
     O->>M: 新轮次询价，排除此前失败钱包
     M-->>O: 替代服务签名报价
     O->>C: assignTask(attempt=n+1)
@@ -523,7 +525,7 @@ sequenceDiagram
 每个 Job 的账本不变量是：
 
 ```text
-deposit = reserved + unallocated + agentCredits + refundCredit + withdrawn + refunded
+deposit = current task reserves + unallocated + settled payouts + refund credit + already refunded
 ```
 
 totalLiability 表示尚留在合约内的应付责任；正常入出金下应等于所有 Job 未转出部分之和。合约代币余额至少覆盖该值；第三方直接转入的额外代币不能当成某 Job 的余额。节点结算/取消不可重复，旧 attempt、已用 nonce、未满足依赖和超预算支付必须拒绝。

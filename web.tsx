@@ -693,9 +693,8 @@ function App() {
                 {[
                   ["托管预算", job.chain.deposit, Coins],
                   [
-                    "已确认报酬",
-                    BigInt(job.chain.agentCredits) +
-                      BigInt(job.chain.withdrawn),
+                    "本任务已结算报酬",
+                    job.chain.agentCredits,
                     ShieldCheck,
                   ],
                   ["可领取退款", job.chain.refundCredit, ArrowDownToLine],
@@ -941,7 +940,7 @@ function App() {
                   <div className="panel-heading">
                     <div>
                       <h2>逐任务结算账本</h2>
-                      <p>结算记入待提现报酬，提现才会将代币转入钱包。</p>
+                      <p>结算数据来自合约任务状态；C 合约按 Agent 钱包汇总多个任务的提现余额。</p>
                     </div>
                     <button
                       disabled={!!busy || !job.chain.finalized}
@@ -968,11 +967,8 @@ function App() {
                       未使用 <strong>{amount(job.chain.unallocated)}</strong>
                     </span>
                     <span>
-                      待提现报酬{" "}
+                      本任务累计结算{" "}
                       <strong>{amount(job.chain.agentCredits)}</strong>
-                    </span>
-                    <span>
-                      已提现 <strong>{amount(job.chain.withdrawn)}</strong>
                     </span>
                   </div>
                   <div className="table-wrap">

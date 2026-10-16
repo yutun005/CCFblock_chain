@@ -98,7 +98,7 @@ FIELDS = {
     ],
     "Attestation": [
         ("jobId", "bytes32"), ("taskId", "uint8"), ("attempt", "uint32"),
-        ("resultHash", "bytes32"), ("validationPolicyId", "bytes32"), ("verdict", "uint8"),
+        ("resultHash", "bytes32"), ("validationPolicyId", "bytes32"), ("verdict", "bool"),
         ("validUntil", "uint64"), ("attestationNonce", "uint256"),
     ],
 }
@@ -452,7 +452,7 @@ class ChainJobView(StrictModel):
     unallocated: WireUint
     agentCredits: WireUint
     refundCredit: WireUint
-    withdrawn: WireUint
+    withdrawn: WireUint | None = None
     refunded: WireUint
     deadline: WireUint
     taskCount: Annotated[int, Field(ge=1, le=16, strict=True)]
@@ -627,6 +627,8 @@ def signed_payload_model(kind: str):
             annotation = WireUint
         elif solidity_type == "uint64":
             annotation = WireUint64
+        elif solidity_type == "bool":
+            annotation = Annotated[bool, Field(strict=True)]
         else:
             annotation = Annotated[int, Field(ge=0, le=(1 << int(solidity_type[4:])) - 1, strict=True)]
         fields[name] = (annotation, ...)
@@ -1664,15 +1666,69 @@ class Chain:
 
     def job(self, job_id: str) -> dict:
         fn = self.escrow.functions.getJob(job_id)
-        return struct_dict(fn.abi["outputs"][0]["components"], fn.call())
+        value = struct_dict(fn.abi["outputs"][0]["components"], fn.call())
+        if "jobState" not in value:
+            return value
+        tasks = [self.task(job_id, index) for index in range(value["taskCount"])]
+        reserved = sum(task["config"]["budgetCap"] for task in tasks if task["state"] in (0, 1))
+        settled_amount = sum(task["acceptedPrice"] for task in tasks if task["state"] == 2)
+        refunded = 0
+        if value["jobState"] == 2:
+            refunds = self.escrow.events.Refunded().get_logs(
+                from_block=self.deployment["startBlock"],
+                to_block=self.w3.eth.block_number,
+                argument_filters={"jobId": job_id},
+            )
+            refunded = sum(int(item["args"]["amount"]) for item in refunds)
+        return {
+            "owner": value["owner"],
+            "coordinator": value["coordinator"],
+            "deposit": value["deposit"],
+            "reserved": reserved,
+            "unallocated": value["remaining"] - reserved,
+            "agentCredits": settled_amount,
+            "refundCredit": self.escrow.functions.refundable(job_id).call(),
+            "withdrawn": None,
+            "refunded": refunded,
+            "deadline": value["deadline"],
+            "taskCount": value["taskCount"],
+            "settledMask": value["settledMask"],
+            "terminalMask": value["terminalMask"],
+            "stopping": False,
+            "finalized": value["jobState"] == 2,
+            "planHash": "0x" + "00" * 32,
+        }
 
     def task(self, job_id: str, task_id: int) -> dict:
         fn = self.escrow.functions.getTask(job_id, task_id)
-        return struct_dict(fn.abi["outputs"][0]["components"], fn.call())
+        value = struct_dict(fn.abi["outputs"][0]["components"], fn.call())
+        if "payeeWallet" not in value:
+            return value
+        config = {
+            "requirementHash": value["requirementHash"],
+            "depsMask": value["depsMask"],
+            "budgetCap": value["budgetCap"],
+            "validationPolicyId": value["validationPolicyId"],
+            "validator": self.deployment["validator"],
+            "slaSeconds": value["executionWindow"],
+            "maxAttempts": value["maxAttempts"],
+        }
+        return {
+            "config": config,
+            "payee": value["payeeWallet"],
+            "acceptedPrice": value["acceptedPrice"],
+            "attempt": value["attempt"],
+            "deadline": value["deadline"],
+            "state": value["state"],
+            "quoteHash": value["quoteHash"],
+            "resultHash": value["resultHash"],
+        }
 
     @staticmethod
     def wire(kind: str, message: dict) -> tuple:
         normalized = signed_from_wire(message)
+        if kind == "Attestation":
+            normalized["verdict"] = bool(normalized["verdict"])
         return tuple(normalized[name] for name, _ in FIELDS[kind])
 
     def event_scan(self, job_id: str) -> list[dict]:
@@ -1886,10 +1942,9 @@ class ServiceExecutor(AgentExecutor):
             if spec.skill not in self.config["prices"]:
                 raise ValueError("skill not offered")
             state = await asyncio.to_thread(self.chain.task, request["jobId"], request["taskId"])
-            job = await asyncio.to_thread(self.chain.job, request["jobId"])
             expected = plan.requirement_hash(spec, policy_id(spec.skill))
-            if (job["planHash"] != plan.plan_hash or state["config"]["requirementHash"] != expected
-                    or state["attempt"] != request["attempt"] or state["state"] != 0):
+            if (state["config"]["requirementHash"] != expected or state["attempt"] != request["attempt"]
+                    or state["state"] != 0):
                 raise ValueError("RFQ does not match current on-chain terms")
             quote = {"jobId": request["jobId"], "taskId": request["taskId"], "attempt": request["attempt"],
                      "agentWallet": self.wallet, "price": units(self.config["prices"][spec.skill]),
@@ -1987,14 +2042,14 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
     @app.post("/withdraw/{job_id}")
     async def withdraw(job_id: str):
         async with withdrawal_lock:
-            credit = await asyncio.to_thread(chain.escrow.functions.credits(job_id, wallet).call)
+            credit = await asyncio.to_thread(chain.escrow.functions.withdrawable(wallet).call)
             if not credit:
                 return {"amount": "0", "status": "NOTHING_TO_CLAIM"}
-            # An Agent may earn again after an earlier withdrawal in the same Job.
-            # Latest nonce stays stable until a pending withdrawal is confirmed, allowing exact replay.
+            # C records claimable payouts per wallet, aggregated across all Jobs.
             generation = await asyncio.to_thread(chain.w3.eth.get_transaction_count, wallet, "latest")
-            return await asyncio.to_thread(chain.tx, chain.escrow.functions.withdraw(job_id), config["key"],
-                                           f"withdraw:{job_id}:{wallet}:{generation}")
+            receipt = await asyncio.to_thread(chain.tx, chain.escrow.functions.withdraw(), config["key"],
+                                              f"withdraw:{job_id}:{wallet}:{generation}")
+            return {"amount": str(credit), "status": "CONFIRMED", "receipt": receipt}
 
     return app
 
@@ -2299,12 +2354,11 @@ def verify_content(skill: str, inputs: list[dict], artifacts: list[dict]) -> lis
 def check_context(chain: Chain, request: dict) -> tuple[dict, dict, list[dict]]:
     plan = Plan.model_validate(request["plan"])
     job_id, task_id = request["jobId"], request["taskId"]
-    job = chain.job(job_id)
     task = chain.task(job_id, task_id)
     spec = plan.topological()[task_id]
     policy = policy_id(spec.skill)
-    if job["planHash"] != plan.plan_hash or task["config"]["requirementHash"] != plan.requirement_hash(spec, policy):
-        raise ValueError("frozen plan/requirements do not match chain")
+    if task["config"]["requirementHash"] != plan.requirement_hash(spec, policy):
+        raise ValueError("frozen task requirements do not match chain")
     if task["config"]["validationPolicyId"] != policy:
         raise ValueError("frozen policy version mismatch")
     if task["state"] != 1 or task["deadline"] < chain.now:
@@ -2361,7 +2415,7 @@ def validate_delivery(chain: Chain, request: dict, validator_key: str) -> dict:
         raise ValueError("result signer is not assigned payee")
     checks = verify_content(context["spec"].skill, inputs, delivery["artifacts"])
     attestation = {"jobId": result["jobId"], "taskId": result["taskId"], "attempt": result["attempt"],
-                   "resultHash": result["resultHash"], "validationPolicyId": context["policy"], "verdict": 1,
+                   "resultHash": result["resultHash"], "validationPolicyId": context["policy"], "verdict": True,
                    "validUntil": min(chain.now + 60, task["deadline"]), "attestationNonce": secrets.randbits(128)}
     return {"passed": True, "checks": ["signature", "input_lineage", *checks], "attestation": attestation,
             "signature": sign("Attestation", attestation, validator_key, chain.chain_id, chain.escrow.address)}
@@ -2476,9 +2530,6 @@ class Market:
         validate_protocol("RFQRequest", request)
         plan = Plan.model_validate(request["plan"])
         spec = plan.topological()[request["taskId"]]
-        job = await asyncio.to_thread(self.chain.job, request["jobId"])
-        if job["planHash"] != plan.plan_hash:
-            raise ValueError("market plan does not match funded plan")
         self.db.put("known_plans", request["jobId"], {"jobId": request["jobId"], "plan": plan.model_dump(mode="json")})
         state = await asyncio.to_thread(self.chain.task, request["jobId"], request["taskId"])
         candidates = self.agents(spec.skill, True)
@@ -2535,19 +2586,20 @@ class Market:
         """Rebuild from canonical contract logs; never accept agent self-reported reputation."""
         head = self.chain.w3.eth.get_block("latest")
         known = {row["jobId"]: Plan.model_validate(row["plan"]) for row in self.db.values("known_plans")}
-        known = {job_id: plan for job_id, plan in known.items() if self.chain.job(job_id)["planHash"] == plan.plan_hash}
+        known = {job_id: plan for job_id, plan in known.items()
+                 if self.chain.escrow.functions.getJob(job_id).call()[0] != "0x0000000000000000000000000000000000000000"}
         assignments, outcomes = {}, {}
-        for event_name in ("TaskAssigned", "TaskSettled", "AttemptExpired"):
+        for event_name in ("TaskAssigned", "TaskSettled", "TaskInvalidated"):
             for log in getattr(self.chain.escrow.events, event_name)().get_logs(
                     from_block=self.chain.deployment["startBlock"], to_block=head["number"]):
                 args = jsonable(dict(log["args"]))
                 plan = known.get(args["jobId"])
                 if plan is None or plan.topological()[args["taskId"]].skill != skill:
                     continue
-                attempt = args["oldAttempt"] if event_name == "AttemptExpired" else args["attempt"]
+                attempt = args["oldAttempt"] if event_name == "TaskInvalidated" else args["attempt"]
                 key = (args["jobId"], args["taskId"], attempt)
                 if event_name == "TaskAssigned":
-                    assignments[key] = args["payee"]
+                    assignments[key] = args.get("agentWallet", args.get("payee"))
                 else:
                     outcomes[key] = {"kind": "settled" if event_name == "TaskSettled" else "expired",
                                      "transactionHash": log["transactionHash"].to_0x_hex(),
@@ -2672,9 +2724,9 @@ class Engine:
         record = {"jobId": job_id, "plan": plan.model_dump(mode="json"), "inputs": inputs,
                   "createdAt": time.time(), "status": "FUNDING", "deadline": self.chain.now + plan.duration_seconds}
         masks = plan.masks()
-        configs = [(plan.requirement_hash(t, policy_id(t.skill)), masks[t.key], units(t.budget_cap), policy_id(t.skill),
-                    self.chain.deployment["validator"], t.sla_seconds, t.max_attempts) for t in plan.topological()]
-        args = [job_id, self.chain.deployment["coordinator"], units(plan.deposit), record["deadline"], plan.plan_hash, configs]
+        configs = [(plan.requirement_hash(t, policy_id(t.skill)), policy_id(t.skill), units(t.budget_cap),
+                    masks[t.key], t.sla_seconds, t.max_attempts) for t in plan.topological()]
+        args = [job_id, self.chain.deployment["coordinator"], units(plan.deposit), record["deadline"], configs]
         # Persist the exact deadline/config before transmitting; a restart never silently creates new terms.
         record["createArgs"] = args
         self.db.put("jobs", job_id, record)
@@ -2734,6 +2786,7 @@ class Engine:
                     job_record = self.db.get("jobs", job_id)
                     plan = Plan.model_validate(job_record["plan"])
                     job = await asyncio.to_thread(self.chain.job, job_id)
+                    job["stopping"] = bool(job_record.get("stopRequested"))
                     states = [await asyncio.to_thread(self.chain.task, job_id, i) for i in range(len(plan.tasks))]
                     for i, chain_task in enumerate(states):
                         if i not in workers and chain_task["state"] in (2, 3):
@@ -2867,7 +2920,7 @@ class Engine:
             attestation = verification.get("attestation", {}) if isinstance(verification, dict) else {}
             expected = {"jobId": job_id, "taskId": task_id, "attempt": attempt,
                         "resultHash": delivery["result"]["resultHash"],
-                        "validationPolicyId": state["config"]["validationPolicyId"], "verdict": 1}
+                        "validationPolicyId": state["config"]["validationPolicyId"], "verdict": True}
             # A cache key alone is not evidence that a proof belongs to this round and result.
             reusable = (isinstance(verification, dict) and isinstance(attestation, dict) and verification.get("passed") is True
                         and all(attestation.get(k) == v for k, v in expected.items())
@@ -2902,7 +2955,7 @@ class Engine:
     async def expire(self, job_id: str, task_id: int, state: dict, reason: str, fault: RuntimeFault | None = None):
         fault = fault or RuntimeFault(code="DEADLINE_EXCEEDED", phase="scheduler", action="await_expiry", message=reason)
         try:
-            await self.submit(job_id, "expireTask", [job_id, task_id, state["attempt"]])
+            await self.submit(job_id, "expireTask", [job_id, task_id])
         except ChainReverted:
             # A public watcher may have expired this round, or settlement may already have won.
             current = await asyncio.to_thread(self.chain.task, job_id, task_id)
@@ -2920,7 +2973,9 @@ class Engine:
         self.db.put("failed_wallets", key, failed)
         plan = Plan.model_validate(self.db.get("jobs", job_id)["plan"])
         if plan.execution_policy.recovery == "abort":
-            await self.submit(job_id, "requestStop", [job_id], owner=True)
+            job = self.db.get("jobs", job_id)
+            job["stopRequested"] = True
+            self.db.put("jobs", job_id, job)
             self.db.event(job_id, "RECOVERY_ABORTED", {"taskId": task_id, "attempt": state["attempt"], "reason": reason,
                                                       "fault": fault.model_dump()})
         if current["state"] == 0:
@@ -2931,6 +2986,8 @@ class Engine:
         record = self.db.get("jobs", job_id)
         plan = Plan.model_validate(record["plan"])
         chain_job = self.chain.job(job_id)
+        chain_job["planHash"] = plan.plan_hash
+        chain_job["stopping"] = bool(record.get("stopRequested"))
         tasks = []
         for i, spec in enumerate(plan.topological()):
             onchain = self.chain.task(job_id, i)
@@ -2956,7 +3013,7 @@ class Engine:
                     paid.add(selected["wallet"])
         job = self.chain.job(job_id)
         if job["refundCredit"]:
-            await self.submit(job_id, "claimRefund", [job_id], owner=True)
+            await self.submit(job_id, "withdrawRefund", [job_id], owner=True)
         events = await asyncio.to_thread(self.chain.event_scan, job_id)
         result = self.snapshot(job_id)
         result["chainEvents"] = events
@@ -3165,21 +3222,24 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     @app.post("/api/jobs/{job_id}/resume")
     async def resume(job_id: str):
         require_job(job_id)
+        if engine.db.get("jobs", job_id).get("stopRequested"):
+            raise HTTPException(409, "a stopped Job cannot resume new delegation")
         return {"resumed": job_id, "started": start(job_id)}
 
     @app.post("/api/jobs/{job_id}/stop")
     async def stop(job_id: str):
         require_job(job_id)
         job = await asyncio.to_thread(engine.chain.job, job_id)
+        record = engine.db.get("jobs", job_id)
+        job["stopping"] = bool(record.get("stopRequested"))
         if job["finalized"] and not job["stopping"]:
             raise HTTPException(409, "Job already finalized")
-        try:
-            receipt = await engine.submit(job_id, "requestStop", [job_id], owner=True)
-        except ChainReverted as exc:
-            # Finalization can win the race after the read above.
-            raise HTTPException(409, "Job cannot be stopped in its current chain state") from exc
+        if not record.get("stopRequested"):
+            record["stopRequested"] = True
+            engine.db.put("jobs", job_id, record)
+            engine.db.event(job_id, "STOP_REQUESTED", {"mode": "stop_future_delegation"})
         start(job_id)
-        return receipt
+        return {"stopping": True, "mode": "stop_future_delegation"}
 
     @app.get("/api/jobs/{job_id}/quotes")
     def quotes(job_id: str):
@@ -3189,7 +3249,7 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     @app.get("/api/jobs/{job_id}/settlements")
     def settlements(job_id: str):
         require_job(job_id)
-        return {"job": engine.chain.job(job_id), "events": engine.chain.event_scan(job_id)}
+        return {"job": engine.snapshot(job_id)["chain"], "events": engine.chain.event_scan(job_id)}
 
     @app.post("/api/jobs/{job_id}/claims")
     async def claims(job_id: str):
@@ -3304,12 +3364,15 @@ def configure_deployment(settings: dict) -> dict:
     if w3.eth.contract(address=token, abi=ERC20_ABI).functions.decimals().call() != 6:
         raise ValueError("the current money model requires an ERC-20 token with 6 decimals")
     escrow_contract = w3.eth.contract(address=escrow, abi=artifact("TaskEscrow")["abi"])
-    if escrow_contract.functions.token().call() != token:
+    if escrow_contract.functions.paymentToken().call() != token:
         raise ValueError("escrow is bound to a different payment token")
     wallets = {role: Account.from_key(configured_key(settings, role)).address
                for role in ("owner", "coordinator", "validator")}
     if len(set(wallets.values())) != 3:
         raise ValueError("owner, coordinator and independent validator must use distinct wallets")
+    verifier_role = escrow_contract.functions.VERIFIER_ROLE().call()
+    if not escrow_contract.functions.hasRole(verifier_role, wallets["validator"]).call():
+        raise ValueError("configured validator does not have VERIFIER_ROLE on the C TaskEscrow")
     start_block = int(spec.get("startBlock", 0))
     if not 0 <= start_block <= w3.eth.block_number:
         raise ValueError("startBlock must be between genesis and the current head")
