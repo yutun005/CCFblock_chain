@@ -23,7 +23,9 @@ class E2EBatchTests(unittest.TestCase):
                 {"run_id": "run-1", "status": "PASS", "duration_seconds": 3.2},
                 {"run_id": "run-2", "status": "PASS", "duration_seconds": 4.1},
             ])
-            with patch.object(SCENARIO, "OUTPUT", output), patch.object(SCENARIO, "run", side_effect=lambda: next(evidence)):
+            with patch.object(SCENARIO, "OUTPUT", output), patch.object(
+                SCENARIO, "run", side_effect=lambda *_args: next(evidence)
+            ):
                 summary = SCENARIO.run_batch(2)
 
             self.assertEqual((summary["requested_runs"], summary["passed_runs"], summary["failed_runs"]), (2, 2, 0))
@@ -34,6 +36,24 @@ class E2EBatchTests(unittest.TestCase):
         finally:
             import shutil
             shutil.rmtree(output, ignore_errors=True)
+
+    def test_synthetic_travel_scenario_produces_independently_verified_outputs(self):
+        import app
+
+        inputs = app.load_travel_inputs(ROOT / "tests" / "fixtures" / "travel")
+        plan = app.travel_plan([item["sha256"] for item in inputs])
+        self.assertEqual([task.skill for task in plan.topological()], [
+            "attraction_search", "hotel_search", "route_planning", "travel_report"
+        ])
+        attractions = app.attraction_search(inputs)
+        hotels = app.hotel_search(inputs)
+        route_packets = app.route_planning(attractions + hotels)
+        route = app.artifact_json(app.unpack(route_packets[0]))
+        app.verify_travel_route(attractions + hotels, route)
+        report_packets = app.travel_report(route_packets)
+        app.verify_travel_report(route_packets, {item["name"]: app.unpack(item) for item in report_packets})
+        self.assertEqual(len(route["days"]), 3)
+        self.assertEqual({item["name"] for item in report_packets}, {"travel-report.md", "travel-references.json"})
 
     def test_batch_rejects_zero_runs(self):
         with self.assertRaisesRegex(ValueError, "at least 1"):

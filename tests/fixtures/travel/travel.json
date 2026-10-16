@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "request": {
+    "destination": "示例城",
+    "start_date": "2026-11-01",
+    "days": 3,
+    "travelers": 2,
+    "budget_cents": 200000,
+    "interests": ["culture"],
+    "day_start": "09:00",
+    "day_end": "18:00"
+  },
+  "source": "Dmodule synthetic travel fixture v1",
+  "as_of": "2026-10-15",
+  "attractions": [
+    {"id": "museum", "name": "示例博物馆", "destination": "示例城", "category": "culture", "visit_minutes": 90, "opens_at": "09:00", "closes_at": "17:00", "ticket_cents": 3000},
+    {"id": "garden", "name": "示例园林", "destination": "示例城", "category": "culture", "visit_minutes": 90, "opens_at": "09:00", "closes_at": "17:00", "ticket_cents": 4000},
+    {"id": "hall", "name": "示例历史馆", "destination": "示例城", "category": "culture", "visit_minutes": 90, "opens_at": "09:00", "closes_at": "17:00", "ticket_cents": 5000}
+  ],
+  "hotels": [
+    {"id": "stay", "name": "示例住宿点", "destination": "示例城", "nightly_cents": 30000, "room_capacity": 2, "available_rooms": 2, "available_from": "2026-11-01", "available_until": "2026-11-04"}
+  ],
+  "transfers": [
+    {"from_id": "stay", "to_id": "museum", "minutes": 20, "cost_cents": 300},
+    {"from_id": "museum", "to_id": "stay", "minutes": 20, "cost_cents": 300},
+    {"from_id": "stay", "to_id": "garden", "minutes": 30, "cost_cents": 400},
+    {"from_id": "garden", "to_id": "stay", "minutes": 30, "cost_cents": 400},
+    {"from_id": "stay", "to_id": "hall", "minutes": 25, "cost_cents": 300},
+    {"from_id": "hall", "to_id": "stay", "minutes": 25, "cost_cents": 300}
+  ]
+}

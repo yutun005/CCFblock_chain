@@ -1,9 +1,9 @@
 """Run the Dmodule main scenario through the API, real A2A services and local EVM."""
 from __future__ import annotations
 
-import copy
 import argparse
 import csv
+import copy
 import hashlib
 import json
 import os
@@ -87,13 +87,15 @@ def deploy(w3: Web3, owner, verifier, evidence: dict) -> tuple[str, str]:
     return addresses["token"], addresses["escrow"]
 
 
-def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, *, delay: bool) -> tuple[Path, dict]:
+def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, *, delay: bool,
+                   scenario: str = "cross_org_analysis") -> tuple[Path, dict]:
     project = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))
     runtime = copy.deepcopy(project["runtime"])
     runtime_root = root / "runtime"
     runtime["directory"] = str(runtime_root)
     runtime["inputDirectory"] = str(ROOT / "tests" / "fixtures" / "sales")
-    runtime["scenarioInputDirectories"] = {}
+    runtime["scenarioInputDirectories"] = ({"travel_planning": str(ROOT / "tests" / "fixtures" / "travel")}
+                                          if scenario == "travel_planning" else {})
     runtime["bind"] = "127.0.0.1"
     ports = [free_port() for _ in range(9)]
     runtime["api"] = f"http://127.0.0.1:{ports[0]}"
@@ -151,15 +153,16 @@ def request_headers() -> dict:
     return {"Authorization": "Bearer " + os.environ["AGENTFLOW_E2E_API_TOKEN"]}
 
 
-def create_job(client: httpx.Client, api: str, scenario_label: str, sla: int) -> str:
+def create_job(client: httpx.Client, api: str, scenario_label: str, sla: int,
+               scenario: str = "cross_org_analysis") -> str:
     preview = client.post(api + "/api/plans/preview", headers=request_headers(), json={
-        "scenario": "cross_org_analysis", "slaSeconds": sla, "deposit": "100",
+        "scenario": scenario, "slaSeconds": sla, "deposit": "100",
         "requestId": scenario_label + "-preview",
     })
     preview.raise_for_status()
     plan_hash = preview.json()["planHash"]
     response = client.post(api + "/api/jobs", headers=request_headers(), json={
-        "scenario": "cross_org_analysis", "slaSeconds": sla, "deposit": "100",
+        "scenario": scenario, "slaSeconds": sla, "deposit": "100",
         "requestId": scenario_label, "expectedPlanHash": plan_hash,
     })
     response.raise_for_status()
@@ -209,7 +212,8 @@ def wait_job(client: httpx.Client, api: str, job_id: str, *, recovery: bool = Fa
     raise TimeoutError(f"Job {job_id} did not complete within {JOB_TIMEOUT}s")
 
 
-def validate_settlement(client: httpx.Client, api: str, job: dict, *, recovery: bool) -> dict:
+def validate_settlement(client: httpx.Client, api: str, job: dict, *, recovery: bool,
+                        scenario: str = "cross_org_analysis") -> dict:
     job_id = job["jobId"]
     tasks = job["tasks"]
     if len(tasks) != 4 or any(task["onchain"]["state"] != 2 for task in tasks):
@@ -228,8 +232,13 @@ def validate_settlement(client: httpx.Client, api: str, job: dict, *, recovery: 
     artifact_response = client.get(f"{api}/api/jobs/{job_id}/artifacts", headers=request_headers())
     artifact_response.raise_for_status()
     artifacts = artifact_response.json()
-    if len(artifacts) != 4:
-        raise AssertionError(f"expected four result artifacts, got {len(artifacts)}")
+    if len(artifacts) < 4:
+        raise AssertionError(f"expected artifacts from all four DAG tasks, got {len(artifacts)}")
+    artifact_names = {ref.get("name") for item in artifacts for ref in item["manifest"]["artifacts"]}
+    if scenario == "travel_planning" and not {
+        "attractions.json", "hotels.json", "itinerary.json", "travel-report.md", "travel-references.json"
+    }.issubset(artifact_names):
+        raise AssertionError("travel run is missing a required result or reference artifact")
     for item in artifacts:
         for ref in item["manifest"]["artifacts"]:
             download = client.get(f"{api}/api/jobs/{job_id}/artifacts/{ref['sha256']}", headers=request_headers())
@@ -253,10 +262,13 @@ def validate_settlement(client: httpx.Client, api: str, job: dict, *, recovery: 
             "invalidatedEvents": invalidated}
 
 
-def run() -> dict:
+def run(scenario: str = "cross_org_analysis") -> dict:
+    if scenario not in {"cross_org_analysis", "travel_planning"}:
+        raise ValueError("unsupported E2E scenario")
     started = time.monotonic()
     run_id = str(uuid.uuid4())
-    evidence = {"case_id": "E2E-DATA-01", "run_id": run_id, "status": "RUNNING",
+    case_id = "E2E-TRAVEL-01" if scenario == "travel_planning" else "E2E-DATA-01"
+    evidence = {"case_id": case_id, "scenario": scenario, "run_id": run_id, "status": "RUNNING",
                 "scope": "Dmodule A2A + API + local Anvil + C TaskEscrow", "seed": "Anvil test mnemonic index allocation",
                 "started_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "transactions": []}
     output_dir = OUTPUT / run_id
@@ -286,7 +298,8 @@ def run() -> dict:
         results = []
         for scenario_label, inject_delay, sla in (("normal", False, 30), ("recovery", True, 10)):
             settings_root = CACHE / "e2e" / run_id / scenario_label
-            settings_path, settings = build_settings(settings_root, rpc, token, escrow, keyset, delay=inject_delay)
+            settings_path, settings = build_settings(settings_root, rpc, token, escrow, keyset, delay=inject_delay,
+                                                      scenario=scenario)
             chain = configure(settings, rpc, token, escrow, keyset[0])
             if inject_delay:
                 failed_agent_wallet = Account.from_key(keyset[3].key).address
@@ -297,10 +310,10 @@ def run() -> dict:
                 registered.raise_for_status()
                 if len(registered.json()) < 6:
                     raise AssertionError("expected six live A2A service instances")
-                job_id = create_job(client, settings["api"], f"{run_id}-{scenario_label}", sla)
+                job_id = create_job(client, settings["api"], f"{run_id}-{scenario_label}", sla, scenario)
                 job = wait_job(client, settings["api"], job_id, recovery=inject_delay,
                                w3=w3 if inject_delay else None, failed_agent=failed_agent_wallet)
-                proof = validate_settlement(client, settings["api"], job, recovery=inject_delay)
+                proof = validate_settlement(client, settings["api"], job, recovery=inject_delay, scenario=scenario)
                 results.append({"label": scenario_label, "job_id": job_id, "status": job["status"],
                                 "tasks": job["tasks"], "quoteRecords": proof["quoteRecords"],
                                 "artifacts": proof["artifacts"], "settledEvents": proof["settledEvents"],
@@ -332,7 +345,7 @@ def run() -> dict:
             write_json(output_dir / "result.json", evidence)
 
 
-def run_batch(repeat: int) -> dict:
+def run_batch(repeat: int, scenario: str = "cross_org_analysis") -> dict:
     if repeat < 1:
         raise ValueError("repeat must be at least 1")
     batch_id = str(uuid.uuid4())
@@ -344,7 +357,7 @@ def run_batch(repeat: int) -> dict:
     for index in range(1, repeat + 1):
         before = {path.name for path in OUTPUT.iterdir() if path.is_dir() and not path.name.startswith("batch-")}
         try:
-            evidence = run()
+            evidence = run(scenario)
         except Exception as exc:
             after = [path for path in OUTPUT.iterdir()
                      if path.is_dir() and not path.name.startswith("batch-") and path.name not in before]
@@ -359,7 +372,8 @@ def run_batch(repeat: int) -> dict:
         runs.append(record)
         write_json(batch_dir / f"run-{index:02d}.json", evidence)
     passed = sum(item["status"] == "PASS" for item in runs)
-    batch = {"case_id": "E2E-DATA-BATCH", "batch_id": batch_id, "requested_runs": repeat,
+    case_id = "E2E-TRAVEL-BATCH" if scenario == "travel_planning" else "E2E-DATA-BATCH"
+    batch = {"case_id": case_id, "scenario": scenario, "batch_id": batch_id, "requested_runs": repeat,
              "passed_runs": passed, "failed_runs": repeat - passed,
              "status": "PASS" if passed == repeat else "FAIL",
              "duration_seconds": round(time.monotonic() - batch_started, 3), "runs": runs,
@@ -376,8 +390,10 @@ def run_batch(repeat: int) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repeat", type=int, default=1, help="independent normal and recovery E2E runs")
+    parser.add_argument("--scenario", choices=("cross_org_analysis", "travel_planning"),
+                        default="cross_org_analysis", help="application scenario to exercise")
     args = parser.parse_args()
-    result = run_batch(args.repeat)
+    result = run_batch(args.repeat, args.scenario)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["status"] != "PASS":
         raise SystemExit(1)

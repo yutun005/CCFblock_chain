@@ -9,6 +9,7 @@ interface VmD {
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
     function prank(address sender) external;
     function warp(uint256 timestamp) external;
+    function chainId(uint256 newChainId) external;
     function expectRevert(bytes4 selector) external;
 }
 
@@ -93,6 +94,48 @@ contract TaskEscrowDTest {
         _assertAccounting();
     }
 
+    function testQuoteAgentWalletTamperingIsRejected() public {
+        TaskEscrow.Quote memory q = _quote(0, AGENT_KEY);
+        bytes memory sig = _sign(AGENT_KEY, escrow.hashQuote(q));
+        q.agentWallet = backup;
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidSignature.selector);
+        escrow.assignTask(q, sig);
+        _assertAccounting();
+    }
+
+    function testQuoteTaskIdSubstitutionIsRejected() public {
+        TaskEscrow.Quote memory q = _quote(0, AGENT_KEY);
+        bytes memory sig = _sign(AGENT_KEY, escrow.hashQuote(q));
+        q.taskId = 1;
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidSignature.selector);
+        escrow.assignTask(q, sig);
+        _assertAccounting();
+    }
+
+    function testQuoteJobIdSubstitutionIsRejected() public {
+        bytes32 otherJob = keccak256("SEC-04-cross-job");
+        _create(otherJob, 100 * U);
+        TaskEscrow.Quote memory q = _quote(0, AGENT_KEY);
+        bytes memory sig = _sign(AGENT_KEY, escrow.hashQuote(q));
+        q.jobId = otherJob;
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidSignature.selector);
+        escrow.assignTask(q, sig);
+        _assertAccounting();
+    }
+
+    function testQuoteCrossChainReplayIsRejected() public {
+        TaskEscrow.Quote memory q = _quote(0, AGENT_KEY);
+        bytes memory sig = _sign(AGENT_KEY, escrow.hashQuote(q));
+        vm.chainId(31338);
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidSignature.selector);
+        escrow.assignTask(q, sig);
+        _assertAccounting();
+    }
+
     function testExpiredQuoteIsRejected() public {
         TaskEscrow.Quote memory q = _quote(0, AGENT_KEY);
         q.validUntil = uint64(block.timestamp);
@@ -171,6 +214,47 @@ contract TaskEscrowDTest {
         _assertAccounting();
     }
 
+    function testForgedResultSignatureIsRejected() public {
+        _assign(0, AGENT_KEY);
+        (TaskEscrow.Result memory r, TaskEscrow.Attestation memory a) = _proof(0, AGENT_KEY);
+        bytes memory forgedAgentSig = _sign(STRANGER_KEY, escrow.hashResult(r));
+        bytes memory verifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(a));
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidSignature.selector);
+        escrow.settleTask(r, forgedAgentSig, a, verifierSig);
+        require(escrow.withdrawable(agent) == 0, "forged result paid");
+        _assertAccounting();
+    }
+
+    function testAttestationForDifferentResultIsRejected() public {
+        _assign(0, AGENT_KEY);
+        (TaskEscrow.Result memory r, TaskEscrow.Attestation memory a) = _proof(0, AGENT_KEY);
+        bytes memory agentSig = _sign(AGENT_KEY, escrow.hashResult(r));
+        a.resultHash = keccak256("different-result");
+        bytes memory verifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(a));
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidAttestation.selector);
+        escrow.settleTask(r, agentSig, a, verifierSig);
+        _assertAccounting();
+    }
+
+    function testOldAttemptAttestationIsRejectedForNewAttempt() public {
+        _assign(0, AGENT_KEY);
+        (, TaskEscrow.Attestation memory staleAttestation) = _proof(0, AGENT_KEY);
+        uint64 oldDeadline = escrow.getTask(JOB, 0).deadline;
+        vm.warp(oldDeadline);
+        escrow.expireTask(JOB, 0);
+        _assign(0, AGENT_KEY);
+        (TaskEscrow.Result memory currentResult,) = _proof(0, AGENT_KEY);
+        bytes memory currentAgentSig = _sign(AGENT_KEY, escrow.hashResult(currentResult));
+        bytes memory staleVerifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(staleAttestation));
+        vm.prank(coordinator);
+        vm.expectRevert(TaskEscrow.InvalidAttestation.selector);
+        escrow.settleTask(currentResult, currentAgentSig, staleAttestation, staleVerifierSig);
+        require(escrow.withdrawable(agent) == 0, "stale attestation paid");
+        _assertAccounting();
+    }
+
     function testResultTamperingIsRejected() public {
         _assign(0, AGENT_KEY);
         (TaskEscrow.Result memory r, TaskEscrow.Attestation memory a) = _proof(0, AGENT_KEY);
@@ -226,6 +310,48 @@ contract TaskEscrowDTest {
         vm.expectRevert(TaskEscrow.InvalidConfiguration.selector);
         escrow.createJob(keccak256("overcommitted"), coordinator, 50 * U,
                          uint64(block.timestamp + 1 days), configs);
+        _assertAccounting();
+    }
+
+    function testSelfDependencyConfigurationIsRejected() public {
+        TaskEscrow.TaskConfig[] memory configs = _configs();
+        configs[0].depsMask = 1;
+        vm.prank(owner);
+        vm.expectRevert(TaskEscrow.InvalidConfiguration.selector);
+        escrow.createJob(keccak256("self-dependency"), coordinator, 100 * U,
+                         uint64(block.timestamp + 1 days), configs);
+        _assertAccounting();
+    }
+
+    function testNonCoordinatorCannotAssignTask() public {
+        TaskEscrow.Quote memory q = _quote(0, AGENT_KEY);
+        bytes memory sig = _sign(AGENT_KEY, escrow.hashQuote(q));
+        vm.prank(stranger);
+        vm.expectRevert(TaskEscrow.Unauthorized.selector);
+        escrow.assignTask(q, sig);
+        _assertAccounting();
+    }
+
+    function testNonOwnerCannotWithdrawRefund() public {
+        vm.prank(owner);
+        escrow.cancelTask(JOB, 0);
+        vm.prank(owner);
+        escrow.cancelTask(JOB, 1);
+        escrow.finalizeJob(JOB);
+        vm.prank(stranger);
+        vm.expectRevert(TaskEscrow.Unauthorized.selector);
+        escrow.withdrawRefund(JOB);
+        _assertAccounting();
+    }
+
+    function testSettleBeforeDeadlineWinsAndCannotExpireAfterward() public {
+        _assign(0, AGENT_KEY);
+        uint64 deadline = escrow.getTask(JOB, 0).deadline;
+        vm.warp(deadline - 1);
+        _settle(0, AGENT_KEY);
+        vm.expectRevert(TaskEscrow.InvalidState.selector);
+        escrow.expireTask(JOB, 0);
+        require(escrow.withdrawable(agent) == 20 * U, "settlement at deadline boundary lost");
         _assertAccounting();
     }
 
