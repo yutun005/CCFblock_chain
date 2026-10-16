@@ -128,7 +128,7 @@ def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, 
     if delay:
         os.environ["AGENTFLOW_E2E_FAULTS_ENABLED"] = "1"
         os.environ["AGENTFLOW_E2E_DELAY_AGENT_ID"] = "clean-a"
-        os.environ["AGENTFLOW_E2E_DELAY_SECONDS"] = "8"
+        os.environ["AGENTFLOW_E2E_DELAY_SECONDS"] = "15"
     else:
         for name in ("AGENTFLOW_E2E_FAULTS_ENABLED", "AGENTFLOW_E2E_DELAY_AGENT_ID", "AGENTFLOW_E2E_DELAY_SECONDS"):
             os.environ.pop(name, None)
@@ -177,12 +177,19 @@ def wait_job(client: httpx.Client, api: str, job_id: str, *, recovery: bool = Fa
             first = tasks[0]
             if (first["onchain"]["state"] == 1 and first["onchain"]["payee"].lower() == failed_agent.lower()
                     and first["checkpoint"]["status"] in {"RUNNING", "VERIFYING"}):
-                w3.provider.make_request("anvil_increaseTime", [10])
+                w3.provider.make_request("anvil_increaseTime", [12])
                 w3.provider.make_request("anvil_mine", ["0x1"])
                 advanced = True
         if job["status"] in {"SUCCEEDED", "PARTIAL_FAILED"}:
             if job["status"] != "SUCCEEDED":
-                raise AssertionError(f"Job {job_id} ended in {job['status']}: {job.get('lastError')}")
+                task_summary = [{"taskId": task["taskId"], "state": task["onchain"]["state"],
+                                 "attempt": task["onchain"]["attempt"],
+                                 "checkpoint": task["checkpoint"].get("status"),
+                                 "agent": task["checkpoint"].get("selected", {}).get("agentId"),
+                                 "fault": task["checkpoint"].get("fault")}
+                                for task in tasks]
+                raise AssertionError(f"Job {job_id} ended in {job['status']}: {job.get('lastError')}; "
+                                     + json.dumps(task_summary, ensure_ascii=False))
             if recovery and not advanced:
                 raise AssertionError("timeout fault injection did not reach the assigned attempt")
             return job
@@ -266,7 +273,7 @@ def run() -> dict:
         evidence.update(token=token, escrow=escrow, escrow_code_hash=Web3.to_hex(Web3.keccak(w3.eth.get_code(escrow))))
 
         results = []
-        for scenario_label, inject_delay, sla in (("normal", False, 30), ("recovery", True, 2)):
+        for scenario_label, inject_delay, sla in (("normal", False, 30), ("recovery", True, 10)):
             settings_root = CACHE / "e2e" / run_id / scenario_label
             settings_path, settings = build_settings(settings_root, rpc, token, escrow, keyset, delay=inject_delay)
             chain = configure(settings, rpc, token, escrow, keyset[0])
@@ -297,6 +304,10 @@ def run() -> dict:
                         completed_at_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         raise
     finally:
+        for scenario_label in ("normal", "recovery"):
+            service_logs = CACHE / "e2e" / run_id / scenario_label / "runtime" / "logs"
+            if service_logs.is_dir():
+                shutil.copytree(service_logs, output_dir / f"{scenario_label}-service-logs", dirs_exist_ok=True)
         anvil.terminate()
         try:
             anvil.wait(timeout=10)
