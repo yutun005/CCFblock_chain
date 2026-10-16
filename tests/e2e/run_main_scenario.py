@@ -176,7 +176,10 @@ def wait_job(client: httpx.Client, api: str, job_id: str, *, recovery: bool = Fa
         if recovery and not advanced and w3 and failed_agent:
             first = tasks[0]
             if (first["onchain"]["state"] == 1 and first["onchain"]["payee"].lower() == failed_agent.lower()
-                    and first["checkpoint"]["status"] in {"RUNNING", "VERIFYING"}):
+                    and first["checkpoint"]["status"] in {"RUNNING", "VERIFYING"}
+                    # Advancing the shared chain clock also expires other in-flight root tasks.
+                    # Let the fixed scenario's parallel validation root finish before injecting timeout.
+                    and tasks[1]["onchain"]["state"] == 2):
                 w3.provider.make_request("anvil_increaseTime", [12])
                 w3.provider.make_request("anvil_mine", ["0x1"])
                 advanced = True
