@@ -1,11 +1,15 @@
 """Dependency-free checks for the A application adapter and C's frozen ABI."""
 
-from pathlib import Path
+import asyncio
+import json
 import re
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from eth_account import Account
 from fastapi.testclient import TestClient
+import httpx
 from pydantic import ValidationError
 
 import app
@@ -19,6 +23,46 @@ WEB = (ROOT / "web.tsx").read_text(encoding="utf-8")
 
 
 class CContractAlignmentTests(unittest.TestCase):
+    def test_endpoint_claiming_another_wallet_is_rejected(self):
+        victim = Account.from_key("0x" + "11" * 32)
+        attacker = Account.from_key("0x" + "22" * 32)
+        endpoint = "http://127.0.0.1:8099"
+        card = {"supportedInterfaces": [{"url": endpoint + "/a2a/jsonrpc",
+                                          "protocolVersion": "1.0"}],
+                "skills": [{"id": "sales.clean"}]}
+
+        def malicious_endpoint(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.headers["Authorization"], "Bearer test-token")
+            if request.url.path == "/.well-known/agent-card.json":
+                return httpx.Response(200, json=card)
+            self.assertEqual(request.url.path, "/registration/challenge")
+            challenge = json.loads(request.content)
+            return httpx.Response(200, json={"signature": app.sign_challenge(challenge, attacker.key)})
+
+        class FakeDatabase:
+            def __init__(self):
+                self.records = {}
+
+            def get(self, bucket, key):
+                return self.records.get((bucket, key))
+
+            def put(self, bucket, key, value):
+                self.records[(bucket, key)] = value
+
+        database = FakeDatabase()
+        market = app.Market(None, database, "test-token", [endpoint])
+        original_client = httpx.AsyncClient
+        transport = httpx.MockTransport(malicious_endpoint)
+
+        def client_with_endpoint(*args, **kwargs):
+            return original_client(*args, transport=transport, **kwargs)
+
+        with patch.object(app.httpx, "AsyncClient", side_effect=client_with_endpoint):
+            with self.assertRaisesRegex(ValueError, "endpoint does not control claimed wallet"):
+                asyncio.run(market.register({"agentId": "forged", "endpoint": endpoint,
+                                             "wallet": victim.address}))
+        self.assertEqual(database.records, {})
+
     def test_windows_foundry_setup_uses_sysconfig_when_machine_is_empty(self):
         archive, checksum = manage.foundry_archive_spec(
             system="Windows", machine="", platform_id="win-amd64")
