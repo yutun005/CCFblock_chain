@@ -1,6 +1,6 @@
-# CCFblock_chain · AgentFlow Pay（成员 A）
+# CCFblock_chain · AgentFlow Pay（Dmodule 集成分支）
 
-多智能体任务编排、服务交易和依赖感知结算。当前分支为 **A**，在此分支开发、提交和推送；暂不创建 PR、不合并到 main。其他成员分支不受本分支提交影响。
+多智能体任务编排、服务交易和依赖感知结算。当前说明面向 **Dmodule**：集成 A 应用与 C 的 DASC 合约，并验证真实 REST/A2A/ABI 主流程及超时恢复。提交和推送目标为 Dmodule；不会自动创建 PR 或合并到 main。
 
 ## 业务范围
 
@@ -40,6 +40,20 @@
 在 Run → Edit Configurations → + → Python 新建配置：脚本选择工程内 manage.py，工作目录选择工程根目录，解释器先选本机 Python 3.12。参数填 setup，点击运行。首次安装需要网络，完成后生成 .cache/venv 与前端/合约构建结果。以后解释器选项目中的 .cache/venv/Scripts/python.exe（Windows）或 .cache/venv/bin/python（Linux/macOS）。
 
 克隆到新设备时重新执行 setup，不能把旧设备的 venv 或 node_modules 当作可移植源码复制过去。
+
+### Dmodule 集成验证
+
+完成 `setup` 后，在工程根目录运行：
+
+| 命令 | 检查内容 |
+|---|---|
+| `python -m unittest discover -s tests -v` | A 与 C 的接口、签名和账本边界检查 |
+| `python manage.py test-contract` | Foundry 合约安全与资金守恒测试 |
+| `python tests/e2e/run_main_scenario.py` | 本地 Anvil 上的四节点销售 DAG、真实 A2A 报价/交付、REST API、链上结算和一次超时重派 |
+
+端到端脚本仅启动本机 `127.0.0.1` 上的临时 chainId `31337`，使用公开的 Foundry 测试助记词和临时部署，不连接真实网络或资产。每次运行的交易回执、任务快照、报价、成果哈希、合约事件和 Anvil 日志写入 `experiments/raw/e2e/<run-id>/`；Foundry 原始结果写入 `experiments/raw/forge/`。这些原始文件保留在本机或 CI 构建产物中，不提交到 Git。
+
+GitHub Actions 会在推送到 Dmodule 后运行以上检查，并归档原始日志。当前流程没有自动化真实浏览器操作；Web 的静态构建由 `setup` 覆盖，浏览器验收仍需手动执行并单独记录。
 
 ### 2. 配置链、账户与业务数据
 

@@ -1553,7 +1553,10 @@ def jsonable(value):
 
 
 def artifact(name: str) -> dict:
-    return json.loads((BUILD / "contracts" / "out" / "TaskEscrow.sol" / f"{name}.json").read_text())
+    matches = list((BUILD / "contracts" / "out").glob(f"*/{name}.json"))
+    if len(matches) != 1:
+        raise FileNotFoundError(f"expected one compiled artifact for {name}, found {len(matches)}")
+    return json.loads(matches[0].read_text(encoding="utf-8"))
 
 
 def struct_dict(components: list, values: tuple) -> dict:
@@ -1954,6 +1957,15 @@ class ServiceExecutor(AgentExecutor):
             return {"quote": quote, "signature": signature, "agentId": self.config["id"]}
         if request["operation"] != "execute":
             raise ValueError("unknown operation")
+        delayed_agent = os.environ.get("AGENTFLOW_E2E_DELAY_AGENT_ID")
+        if delayed_agent == self.config["id"] and os.environ.get("AGENTFLOW_E2E_FAULTS_ENABLED") == "1":
+            endpoint_host = urlparse(self.config["endpoint"]).hostname
+            delay = float(os.environ.get("AGENTFLOW_E2E_DELAY_SECONDS", "0"))
+            if self.chain.chain_id != 31337 or endpoint_host not in {"127.0.0.1", "localhost", "::1"}:
+                raise ValueError("E2E fault injection is restricted to localhost chainId 31337")
+            if not 1 <= delay <= 30:
+                raise ValueError("E2E delay must be between 1 and 30 seconds")
+            await asyncio.sleep(delay)
         state = await asyncio.to_thread(self.chain.task, request["jobId"], request["taskId"])
         plan = Plan.model_validate(request["plan"])
         spec = plan.topological()[request["taskId"]]

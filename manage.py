@@ -43,7 +43,9 @@ def foundry(name):
     return executable
 
 def install_foundry():
-    if (TOOLS / ("forge.exe" if os.name == "nt" else "forge")).exists() or shutil.which("forge"):
+    forge_available = (TOOLS / ("forge.exe" if os.name == "nt" else "forge")).exists() or shutil.which("forge")
+    anvil_available = (TOOLS / ("anvil.exe" if os.name == "nt" else "anvil")).exists() or shutil.which("anvil")
+    if forge_available and anvil_available:
         version = run([foundry("forge"), "--version"], capture_output=True, text=True).stdout
         if "Version: 1.8.5" not in version:
             raise RuntimeError("Expected Foundry 1.8.5, found: " + version.splitlines()[0])
@@ -63,14 +65,14 @@ def install_foundry():
         raise RuntimeError("Foundry archive SHA-256 mismatch; extraction refused")
     if os.name == "nt":
         with zipfile.ZipFile(archive) as package:
-            for name in ("forge.exe",):
+            for name in ("forge.exe", "anvil.exe", "cast.exe"):
                 matches = [i for i in package.infolist() if Path(i.filename).name == name]
                 if len(matches) != 1:
                     raise RuntimeError("unexpected Foundry archive contents")
                 (TOOLS / name).write_bytes(package.read(matches[0]))
     else:
         with tarfile.open(archive, "r:gz") as package:
-            for name in ("forge",):
+            for name in ("forge", "anvil", "cast"):
                 matches = [i for i in package.getmembers() if Path(i.name).name == name and i.isfile()]
                 if len(matches) != 1:
                     raise RuntimeError("unexpected Foundry archive contents")
@@ -123,6 +125,23 @@ def prepare_generated():
     (web / "src/style.css").write_text(styles.split("\n@end-agentflow-styles */", 1)[0], encoding="utf-8")
     (contracts / "foundry.toml").write_text(config["foundryConfig"], encoding="utf-8")
     shutil.copyfile(ROOT / "TaskEscrow.sol", contracts / "src/TaskEscrow.sol")
+    shutil.copyfile(ROOT / "MockUSDC.sol", contracts / "src/MockUSDC.sol")
+    test_target = contracts / "test/TaskEscrowDTest.t.sol"
+    test_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "tests/contracts/TaskEscrowDTest.t.sol", test_target)
+
+
+def test_contracts():
+    prepare_generated()
+    result_path = ROOT / "experiments/raw/forge/forge-results.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run([foundry("forge"), "test", "--json"], cwd=CACHE / "contracts",
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
+    result_path.write_text(result.stdout, encoding="utf-8")
+    result_path.with_suffix(".stderr.txt").write_text(result.stderr, encoding="utf-8")
+    if result.returncode:
+        raise RuntimeError("Foundry tests failed; inspect " + str(result_path))
+    print("Foundry contract tests passed; raw output saved to " + str(result_path))
 
 
 def build():
@@ -146,7 +165,7 @@ def setup():
 
 def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
-    parser.add_argument("command", choices=["setup", "build", "schema", "configure", "approve", "start"], nargs="?", default="start")
+    parser.add_argument("command", choices=["setup", "build", "test-contract", "schema", "configure", "approve", "start"], nargs="?", default="start")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
@@ -159,6 +178,9 @@ def main():
         raise SystemExit(subprocess.call([str(PYTHON), str(ROOT / "manage.py"), *sys.argv[1:]], cwd=ROOT))
     if args.command == "build":
         build()
+        return
+    if args.command == "test-contract":
+        test_contracts()
         return
     if args.command == "schema":
         from app import (

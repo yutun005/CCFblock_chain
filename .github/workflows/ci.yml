@@ -9,6 +9,7 @@ on:
 jobs:
   build-and-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,3 +30,16 @@ jobs:
         run: .cache/venv/bin/python -m unittest discover -s tests -v
       - name: Check Python syntax
         run: .cache/venv/bin/python -m py_compile app.py manage.py
+      - name: Run DASC security and accounting tests
+        run: python manage.py test-contract
+      - name: Run REST, A2A, ABI and recovery scenarios
+        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py
+      - name: Archive raw verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmodule-verification-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            experiments/raw/e2e/**
+            experiments/raw/forge/**
