@@ -1,0 +1,21 @@
+services:
+  verify:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ccfblock-chain-dmodule:local
+    environment:
+      CI: "1"
+      AGENTFLOW_SOURCE_COMMIT_SHA: ${AGENTFLOW_SOURCE_COMMIT_SHA:-unversioned-container}
+    volumes:
+      - ./experiments/raw:/workspace/experiments/raw
+      - ./experiments/results:/workspace/experiments/results
+    command:
+      - sh
+      - -c
+      - >-
+        python manage.py test-contract &&
+        python manage.py test-browser-live &&
+        python manage.py run-travel &&
+        python manage.py collect-results

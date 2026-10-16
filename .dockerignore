@@ -1,0 +1,10 @@
+.git
+.cache
+experiments/raw
+experiments/results
+__pycache__
+*.pyc
+.env
+runtime.json
+*.pem
+*.key

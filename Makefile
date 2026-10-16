@@ -1,4 +1,4 @@
-.PHONY: setup build check test-integration test-contract test-security test-e2e test-travel run-data run-travel collect-results reset-demo package dev
+.PHONY: setup build check test-integration test-contract test-security test-e2e test-travel run-data run-travel collect-results reset-demo package dev container-verify
 
 setup:
 	python manage.py setup
@@ -42,3 +42,6 @@ package:
 
 dev:
 	python manage.py start
+
+container-verify:
+	docker compose run --build --rm verify

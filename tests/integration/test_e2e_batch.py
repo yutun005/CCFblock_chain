@@ -15,6 +15,12 @@ SPEC.loader.exec_module(SCENARIO)
 
 
 class E2EBatchTests(unittest.TestCase):
+    def test_source_revision_accepts_container_build_revision(self):
+        import manage
+
+        with patch.dict("os.environ", {"AGENTFLOW_SOURCE_COMMIT_SHA": "container-build-sha"}):
+            self.assertEqual(manage.source_revision(), "container-build-sha")
+
     def test_batch_writes_raw_runs_and_summary_for_each_iteration(self):
         output = ROOT / ".cache" / "test-e2e-batch"
         output.mkdir(parents=True, exist_ok=True)

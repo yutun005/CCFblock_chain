@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from app import Chain, ServiceCluster, artifact, settings_file  # noqa: E402
-from manage import CACHE, foundry, pnpm, prepare_generated  # noqa: E402
+from manage import CACHE, foundry, pnpm, prepare_generated, source_revision  # noqa: E402
 
 MNEMONIC = "test test test test test test test test test test test junk"
 OUTPUT = ROOT / "experiments" / "raw" / "e2e"
@@ -287,11 +287,9 @@ def run(scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
     started = time.monotonic()
     run_id = str(uuid.uuid4())
     case_id = "E2E-TRAVEL-01" if scenario == "travel_planning" else "E2E-DATA-01"
-    source_commit = None
+    source_commit = source_revision()
     worktree_dirty = None
     if (ROOT / ".git").exists() and shutil.which("git"):
-        source_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
-                                       capture_output=True, text=True).stdout.strip()
         worktree_dirty = bool(subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, check=True,
                                              capture_output=True, text=True).stdout.strip())
     evidence = {"case_id": case_id, "scenario": scenario, "run_id": run_id, "status": "RUNNING",

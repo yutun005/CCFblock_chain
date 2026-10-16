@@ -61,3 +61,23 @@ jobs:
             experiments/results/**
             .cache/delivery/**
           include-hidden-files: true
+
+  container-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AGENTFLOW_SOURCE_COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run clean Compose verification
+        run: docker compose run --build --rm verify
+      - name: Archive container verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmodule-container-verification-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            experiments/raw/**
+            experiments/results/**
+          include-hidden-files: true

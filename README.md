@@ -60,6 +60,7 @@
 | `python manage.py reset-demo` | 备份并重建当前 runtime 配置指向的本地缓存目录；拒绝操作缓存目录外路径 |
 | `python manage.py package` | 从干净的 Dmodule 提交生成版本化 ZIP 和 `SHA256SUMS`，输出在 `.cache/delivery/` |
 | `python manage.py archive-evidence` | 将本地原始结果和汇总打包为证据 ZIP，附逐文件 SHA-256；默认要求汇总对应当前提交 |
+| `docker compose run --build --rm verify` | 在容器中安装锁定依赖并运行合约、真实浏览器及旅游场景验证；本机尚无 Docker，未实跑 |
 
 首次运行浏览器 smoke 前执行 `pnpm --dir .cache/web exec playwright install chromium` 下载 Chromium；若要使用本机已安装的 Chrome，可在运行前设置 `AGENTFLOW_BROWSER_EXECUTABLE` 为浏览器可执行文件的路径。浏览器测试使用路由 mock 验证交互，不代替真实链上 E2E。
 

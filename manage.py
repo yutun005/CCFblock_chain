@@ -39,6 +39,18 @@ def pnpm():
         raise RuntimeError("pnpm 11.25.0 is required on PATH (npm install -g pnpm@11.25.0)")
     return executable
 
+def source_revision() -> str:
+    configured = os.environ.get("AGENTFLOW_SOURCE_COMMIT_SHA")
+    if configured:
+        return configured
+    if (ROOT / ".git").exists() and shutil.which("git"):
+        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                                capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    return "unversioned"
+
+
 def foundry(name):
     local = TOOLS / (name + (".exe" if os.name == "nt" else ""))
     executable = str(local) if local.exists() else shutil.which(name)
@@ -187,8 +199,7 @@ def write_security_evidence(cases, result_path: Path, *, commit_sha=None, destin
         # Foundry JSON uses Solidity signatures (for example testCase() and
         # testFuzzCase(uint256)); SECURITY_CASES stores the function names.
         test_results[name.split("(", 1)[0]] = {"contract": contract, **case}
-    commit = commit_sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
-                                          capture_output=True, text=True).stdout.strip()
+    commit = commit_sha or source_revision()
     destination = destination or ROOT / "experiments/raw/security"
     destination.mkdir(parents=True, exist_ok=True)
     for case_id, (title, functions, action, expected) in SECURITY_CASES.items():
@@ -410,8 +421,7 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
             writer = csv.DictWriter(stream, fieldnames=fields)
             writer.writeheader()
             writer.writerows(rows)
-    commit_sha = commit_sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
-                                               capture_output=True, text=True).stdout.strip()
+    commit_sha = commit_sha or source_revision()
     durations = {}
     for row in e2e_rows:
         if row["status"] == "PASS" and row["duration_seconds"] is not None:
