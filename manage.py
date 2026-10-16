@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import platform
@@ -166,8 +167,24 @@ def package_delivery():
     commit = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, check=True,
                             capture_output=True, text=True).stdout.strip()
     prefix = f"{ROOT.name}-Dmodule-{commit}/"
-    archive = subprocess.run(["git", "archive", "--format=zip", f"--prefix={prefix}", "HEAD"],
-                             cwd=ROOT, check=True, capture_output=True).stdout
+    source_tar = subprocess.run(["git", "archive", "--format=tar", f"--prefix={prefix}", "HEAD"],
+                                cwd=ROOT, check=True, capture_output=True).stdout
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=io.BytesIO(source_tar), mode="r:") as source, \
+            zipfile.ZipFile(archive_buffer, mode="w", compression=zipfile.ZIP_STORED) as target:
+        for member in sorted(source.getmembers(), key=lambda item: item.name):
+            if not member.isfile():
+                continue
+            content = source.extractfile(member)
+            if content is None:
+                raise RuntimeError("Unable to read archived source file: " + member.name)
+            info = zipfile.ZipInfo(member.name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.compress_type = zipfile.ZIP_STORED
+            executable = bool(member.mode & 0o111)
+            info.external_attr = ((0o100755 if executable else 0o100644) << 16)
+            target.writestr(info, content.read())
+    archive = archive_buffer.getvalue()
     destination = CACHE / "delivery"
     destination.mkdir(parents=True, exist_ok=True)
     filename = f"{ROOT.name}-Dmodule-{commit}.zip"

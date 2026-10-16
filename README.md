@@ -56,7 +56,7 @@
 
 GitHub Actions 会在推送到 Dmodule 后运行以上检查，并归档原始日志。当前流程没有自动化真实浏览器操作；Web 的静态构建由 `setup` 覆盖，浏览器验收仍需手动执行并单独记录。
 
-打包前需先提交所有源码和文档变更。ZIP 由当前 `HEAD` 的已跟踪文件生成，名称包含 12 位提交号；`SHA256SUMS` 与 ZIP 一起写入 `.cache/delivery/`。CI 也会生成同一包并作为 Actions artifact 保留。
+打包前需先提交所有源码和文档变更。ZIP 由当前 `HEAD` 的已跟踪文件生成，按固定文件顺序和时间戳写入，名称包含 12 位提交号；`SHA256SUMS` 与 ZIP 一起写入 `.cache/delivery/`。CI 也会生成同一包并作为 Actions artifact 保留。
 
 ### 2. 配置链、账户与业务数据
 
