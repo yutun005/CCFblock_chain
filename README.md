@@ -14,7 +14,7 @@
 
 ## 文件结构
 
-根目录维护十个文件：
+主要文件如下：
 
 | 文件 | 用途 |
 |---|---|
@@ -27,7 +27,8 @@
 | pnpm-lock.yaml | 前端依赖锁 |
 | README.md | 部署、接口和使用说明 |
 | .gitignore | 排除环境、数据、密钥、缓存和测试产物 |
-| AGENTS.md | A 分支协作及提交规则 |
+| AGENTS.md | Dmodule 的协作与提交规则 |
+| Makefile、Dockerfile、compose.yaml | 本地命令入口与容器验证配置；容器入口尚未实跑 |
 
 源码与运行数据分离。依赖、构建结果、日志、SQLite 与部署记录写入 .cache；原始业务 CSV 默认放在 data。二者都不进入 Git。构建配置由 project.json 生成，不需要手动维护隐藏目录中的副本。
 
