@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,7 +33,7 @@ jobs:
       - name: Run DASC security and accounting tests
         run: python manage.py test-contract
       - name: Run REST, A2A, ABI and recovery scenarios
-        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py
+        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --repeat 10
       - name: Build versioned Dmodule package and checksum
         run: python manage.py package
       - name: Archive raw verification evidence

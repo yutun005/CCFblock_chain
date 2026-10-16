@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import argparse
+import csv
 import hashlib
 import json
 import os
@@ -252,6 +254,7 @@ def validate_settlement(client: httpx.Client, api: str, job: dict, *, recovery: 
 
 
 def run() -> dict:
+    started = time.monotonic()
     run_id = str(uuid.uuid4())
     evidence = {"case_id": "E2E-DATA-01", "run_id": run_id, "status": "RUNNING",
                 "scope": "Dmodule A2A + API + local Anvil + C TaskEscrow", "seed": "Anvil test mnemonic index allocation",
@@ -305,10 +308,12 @@ def run() -> dict:
                                 "invalidatedEvents": proof["invalidatedEvents"],
                                 "claimResponse": proof["claims"]})
         evidence.update(status="PASS", jobs=results,
+                        duration_seconds=round(time.monotonic() - started, 3),
                         completed_at_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         return evidence
     except Exception as exc:
         evidence.update(status="FAIL", failure=f"{type(exc).__name__}: {exc}",
+                        duration_seconds=round(time.monotonic() - started, 3),
                         completed_at_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         raise
     finally:
@@ -327,7 +332,52 @@ def run() -> dict:
             write_json(output_dir / "result.json", evidence)
 
 
+def run_batch(repeat: int) -> dict:
+    if repeat < 1:
+        raise ValueError("repeat must be at least 1")
+    batch_id = str(uuid.uuid4())
+    batch_dir = OUTPUT / ("batch-" + batch_id)
+    batch_dir.mkdir(parents=True, exist_ok=False)
+    batch_started = time.monotonic()
+    batch_started_at = time.time()
+    runs = []
+    for index in range(1, repeat + 1):
+        before = {path.name for path in OUTPUT.iterdir() if path.is_dir() and not path.name.startswith("batch-")}
+        try:
+            evidence = run()
+        except Exception as exc:
+            after = [path for path in OUTPUT.iterdir()
+                     if path.is_dir() and not path.name.startswith("batch-") and path.name not in before]
+            failed = next((json.loads((path / "result.json").read_text(encoding="utf-8"))
+                           for path in after if (path / "result.json").is_file()), None)
+            evidence = failed or {"run_id": None, "status": "FAIL",
+                                  "failure": f"{type(exc).__name__}: {exc}", "duration_seconds": None}
+        record = {"iteration": index, "run_id": evidence.get("run_id"),
+                  "status": evidence.get("status", "FAIL"),
+                  "duration_seconds": evidence.get("duration_seconds"),
+                  "failure": evidence.get("failure")}
+        runs.append(record)
+        write_json(batch_dir / f"run-{index:02d}.json", evidence)
+    passed = sum(item["status"] == "PASS" for item in runs)
+    batch = {"case_id": "E2E-DATA-BATCH", "batch_id": batch_id, "requested_runs": repeat,
+             "passed_runs": passed, "failed_runs": repeat - passed,
+             "status": "PASS" if passed == repeat else "FAIL",
+             "duration_seconds": round(time.monotonic() - batch_started, 3), "runs": runs,
+             "started_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(batch_started_at)),
+             "completed_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    write_json(batch_dir / "summary.json", batch)
+    with (batch_dir / "summary.csv").open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.DictWriter(stream, fieldnames=("iteration", "run_id", "status", "duration_seconds", "failure"))
+        writer.writeheader()
+        writer.writerows(runs)
+    return batch
+
+
 if __name__ == "__main__":
-    result = run()
-    print(json.dumps({"case_id": result["case_id"], "status": result["status"],
-                      "run_id": result["run_id"], "jobs": [job["job_id"] for job in result["jobs"]]}, indent=2))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repeat", type=int, default=1, help="independent normal and recovery E2E runs")
+    args = parser.parse_args()
+    result = run_batch(args.repeat)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result["status"] != "PASS":
+        raise SystemExit(1)

@@ -17,7 +17,7 @@ test-contract:
 	python manage.py test-contract
 
 test-e2e:
-	python tests/e2e/run_main_scenario.py
+	python tests/e2e/run_main_scenario.py --repeat 10
 
 package:
 	python manage.py package

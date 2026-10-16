@@ -11,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import time
 import urllib.request
@@ -43,6 +44,18 @@ def foundry(name):
         raise RuntimeError("Foundry missing. Run setup or install Foundry v1.8.5.")
     return executable
 
+def foundry_archive_spec(system=None, machine=None, platform_id=None):
+    system = system or platform.system()
+    machine = (machine or platform.machine() or "").strip().lower()
+    if not machine:
+        platform_id = platform_id or sysconfig.get_platform()
+        machine = platform_id.strip().lower().rsplit("-", 1)[-1]
+    if system not in {"Windows", "Linux"} or machine not in {"amd64", "x86_64"}:
+        raise RuntimeError("Install Foundry v1.8.5 for this platform, then rerun setup; see README.md")
+    if system == "Windows":
+        return "win32_amd64.zip", WINDOWS_ARCHIVE_SHA256
+    return "linux_amd64.tar.gz", LINUX_ARCHIVE_SHA256
+
 def install_foundry():
     forge_available = (TOOLS / ("forge.exe" if os.name == "nt" else "forge")).exists() or shutil.which("forge")
     anvil_available = (TOOLS / ("anvil.exe" if os.name == "nt" else "anvil")).exists() or shutil.which("anvil")
@@ -51,11 +64,8 @@ def install_foundry():
         if "Version: 1.8.5" not in version:
             raise RuntimeError("Expected Foundry 1.8.5, found: " + version.splitlines()[0])
         return
-    if platform.system() not in {"Windows", "Linux"} or platform.machine().lower() not in {"amd64", "x86_64"}:
-        raise RuntimeError("Install Foundry v1.8.5 for this platform, then rerun setup; see README.md")
     TOOLS.mkdir(parents=True, exist_ok=True)
-    asset = "win32_amd64.zip" if os.name == "nt" else "linux_amd64.tar.gz"
-    checksum = WINDOWS_ARCHIVE_SHA256 if os.name == "nt" else LINUX_ARCHIVE_SHA256
+    asset, checksum = foundry_archive_spec()
     archive = TOOLS.parent / ("foundry_v1.8.5_" + asset)
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != checksum:
         url = "https://github.com/foundry-rs/foundry/releases/download/v1.8.5/" + archive.name

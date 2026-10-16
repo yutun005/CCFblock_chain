@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import app
+import manage
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +19,16 @@ WEB = (ROOT / "web.tsx").read_text(encoding="utf-8")
 
 
 class CContractAlignmentTests(unittest.TestCase):
+    def test_windows_foundry_setup_uses_sysconfig_when_machine_is_empty(self):
+        archive, checksum = manage.foundry_archive_spec(
+            system="Windows", machine="", platform_id="win-amd64")
+        self.assertEqual(archive, "win32_amd64.zip")
+        self.assertEqual(checksum, manage.WINDOWS_ARCHIVE_SHA256)
+
+    def test_foundry_setup_rejects_unsupported_architectures(self):
+        with self.assertRaisesRegex(RuntimeError, "Install Foundry v1.8.5"):
+            manage.foundry_archive_spec(system="Windows", machine="arm64", platform_id="win-arm64")
+
     def test_job_and_task_abi_matches_c_interface(self):
         self.assertIn("IERC20 public immutable paymentToken", CONTRACT)
         self.assertRegex(CONTRACT, r"function createJob\([\s\S]*?TaskConfig\[\] calldata configs\s*\)")
