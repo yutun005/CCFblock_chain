@@ -50,6 +50,11 @@ class E2EBatchTests(unittest.TestCase):
         route_packets = app.route_planning(attractions + hotels)
         route = app.artifact_json(app.unpack(route_packets[0]))
         app.verify_travel_route(attractions + hotels, route)
+        tampered_route = dict(route)
+        tampered_route["total_cents"] += 1
+        tampered_packet = app.packet("itinerary.json", app.canonical(tampered_route), "application/json")
+        with self.assertRaisesRegex(ValueError, "timing, costs, source or budget"):
+            app.verify_content("route_planning", attractions + hotels, [tampered_packet])
         report_packets = app.travel_report(route_packets)
         app.verify_travel_report(route_packets, {item["name"]: app.unpack(item) for item in report_packets})
         self.assertEqual(len(route["days"]), 3)
@@ -139,6 +144,69 @@ class E2EBatchTests(unittest.TestCase):
         finally:
             import shutil
             shutil.rmtree(output, ignore_errors=True)
+
+
+class MarketIdentityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_registration_binds_agent_card_and_wallet_challenge(self):
+        import app
+        from eth_account import Account
+
+        endpoint = "http://agent.local"
+        signer = Account.from_key((99).to_bytes(32, "big"))
+        card = {"supportedInterfaces": [{"url": endpoint + "/a2a/jsonrpc", "protocolVersion": "1.0"}],
+                "skills": [{"id": "data_cleaning"}], "name": "clean-test"}
+
+        class Response:
+            def __init__(self, body):
+                self.body = body
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self.body
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                self.challenge = None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def get(self, url):
+                self.asserted_url = url
+                return Response(card)
+
+            async def post(self, url, json):
+                self.challenge = json
+                return Response({"signature": app.sign_challenge(json, signer.key)})
+
+        class FakeDatabase:
+            def __init__(self):
+                self.data = {}
+
+            def get(self, bucket, key, default=None):
+                return self.data.get((bucket, key), default)
+
+            def put(self, bucket, key, value):
+                self.data[(bucket, key)] = value
+
+        database = FakeDatabase()
+        market = app.Market(object(), database, "token", [endpoint])
+        payload = {"agentId": "clean-test", "endpoint": endpoint, "wallet": signer.address}
+        with patch.object(app.httpx, "AsyncClient", FakeClient):
+            registered = await market.register(payload)
+        self.assertEqual(registered["wallet"], signer.address)
+        self.assertEqual(registered["skills"], ["data_cleaning"])
+        self.assertEqual(app.recover_challenge(registered["challenge"], registered["signature"]), signer.address)
+
+        impostor = Account.from_key((100).to_bytes(32, "big"))
+        with patch.object(app.httpx, "AsyncClient", FakeClient):
+            with self.assertRaisesRegex(ValueError, "does not control claimed wallet"):
+                await market.register({**payload, "agentId": "impostor", "wallet": impostor.address})
 
 
 if __name__ == "__main__":
