@@ -26,6 +26,10 @@ jobs:
           version: "v1.8.5"
       - name: Install locked dependencies and build
         run: python manage.py setup
+      - name: Install Playwright Chromium
+        run: pnpm --dir .cache/web exec playwright install --with-deps chromium
+      - name: Run browser workflow smoke
+        run: pnpm --dir .cache/web run test:browser
       - name: Run D interface checks
         run: .cache/venv/bin/python -m unittest discover -s tests -v
       - name: Check Python syntax

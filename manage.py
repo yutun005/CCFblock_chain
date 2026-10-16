@@ -131,6 +131,9 @@ def prepare_generated():
     (web / "src/vite-env.d.ts").write_text('/// <reference types="vite/client" />\n', encoding="utf-8")
     (web / "package.json").write_text(json.dumps(config["webPackage"], indent=2), encoding="utf-8")
     shutil.copyfile(ROOT / "pnpm-lock.yaml", web / "pnpm-lock.yaml")
+    browser_tests = ROOT / "tests" / "e2e" / "browser"
+    if browser_tests.is_dir():
+        shutil.copytree(browser_tests, web / "tests", dirs_exist_ok=True)
     source = (ROOT / "web.tsx").read_text(encoding="utf-8")
     code, styles = source.split("/* @agentflow-styles\n", 1)
     (web / "src/main.tsx").write_text(code, encoding="utf-8")

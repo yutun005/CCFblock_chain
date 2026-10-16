@@ -50,6 +50,7 @@
 | 命令 | 检查内容 |
 |---|---|
 | `python -m unittest discover -s tests -v` | A 与 C 的接口、签名和账本边界检查 |
+| `pnpm --dir .cache/web run test:browser` | Chromium 浏览器登录、计划预览、提交任务及工作区渲染 smoke；API 由测试路由模拟 |
 | `python manage.py test-contract` | Foundry 合约安全与资金守恒测试 |
 | `python manage.py test-e2e` | 本地 Anvil 上 10 次销售场景正常结算与超时恢复 |
 | `python manage.py run-travel` | 本地 Anvil 上旅游场景正常结算和超时恢复 |
@@ -58,9 +59,11 @@
 | `python manage.py reset-demo` | 备份并重建当前 runtime 配置指向的本地缓存目录；拒绝操作缓存目录外路径 |
 | `python manage.py package` | 从干净的 Dmodule 提交生成版本化 ZIP 和 `SHA256SUMS`，输出在 `.cache/delivery/` |
 
+首次运行浏览器 smoke 前执行 `pnpm --dir .cache/web exec playwright install chromium` 下载 Chromium；若要使用本机已安装的 Chrome，可在运行前设置 `AGENTFLOW_BROWSER_EXECUTABLE` 为浏览器可执行文件的路径。浏览器测试使用路由 mock 验证交互，不代替真实链上 E2E。
+
 端到端脚本仅启动本机 `127.0.0.1` 上的临时 chainId `31337`，使用公开的 Foundry 测试助记词和临时部署，不连接真实网络或资产。每次运行的交易回执、任务快照、报价、成果哈希、合约事件和 Anvil 日志写入 `experiments/raw/e2e/<run-id>/`；Foundry 原始结果写入 `experiments/raw/forge/`。这些原始文件保留在本机或 CI 构建产物中，不提交到 Git。
 
-GitHub Actions 会在推送到 Dmodule 后运行以上检查，并归档原始日志。当前流程没有自动化真实浏览器操作；Web 的静态构建由 `setup` 覆盖，浏览器验收仍需手动执行并单独记录。
+GitHub Actions 会在 Dmodule 变更后运行以上检查，并归档原始日志。浏览器 smoke 验证 Web 交互和请求契约；真实 REST/A2A/ABI/Anvil 业务链仍由独立端到端脚本验证。
 
 打包前需先提交所有源码和文档变更。ZIP 由当前 `HEAD` 的已跟踪文件生成，按固定文件顺序和时间戳写入，名称包含 12 位提交号；`SHA256SUMS` 与 ZIP 一起写入 `.cache/delivery/`。CI 也会生成同一包并作为 Actions artifact 保留。
 
