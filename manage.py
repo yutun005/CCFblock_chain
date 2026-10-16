@@ -180,7 +180,9 @@ SECURITY_CASES = {
 def write_security_evidence(cases, result_path: Path, *, commit_sha=None, destination=None) -> None:
     test_results = {}
     for contract, name, case in cases:
-        test_results[name] = {"contract": contract, **case}
+        # Foundry JSON uses Solidity signatures (for example testCase() and
+        # testFuzzCase(uint256)); SECURITY_CASES stores the function names.
+        test_results[name.split("(", 1)[0]] = {"contract": contract, **case}
     commit = commit_sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
                                           capture_output=True, text=True).stdout.strip()
     destination = destination or ROOT / "experiments/raw/security"

@@ -67,11 +67,18 @@ class E2EBatchTests(unittest.TestCase):
         output = ROOT / ".cache" / "test-security-evidence"
         output.mkdir(parents=True, exist_ok=True)
         try:
-            cases = [("TaskEscrowDTest", "testQuotePriceTamperingIsRejected", {"status": "Success"})]
+            cases = [
+                ("TaskEscrowDTest", "testQuotePriceTamperingIsRejected()", {"status": "Success"}),
+                ("TaskEscrowDTest", "testAttestationNonceCannotBeReused()", {"status": "Success"}),
+                ("TaskEscrowDTest", "testDuplicateSettlementCannotPayTwice()", {"status": "Success"}),
+                ("TaskEscrowDTest", "testFuzzPriceNeverExceedsTaskCap(uint256)", {"status": "Success"}),
+            ]
             raw_log = ROOT / "experiments" / "raw" / "forge" / "forge-results.json"
             manage.write_security_evidence(cases, raw_log, commit_sha="test-commit", destination=output)
             self.assertEqual(len(list(output.glob("SEC-*.json"))), 30)
             self.assertEqual(json.loads((output / "SEC-01.json").read_text(encoding="utf-8"))["status"], "PASS")
+            self.assertEqual(json.loads((output / "SEC-22.json").read_text(encoding="utf-8"))["status"], "PASS")
+            self.assertEqual(json.loads((output / "SEC-25.json").read_text(encoding="utf-8"))["status"], "PASS")
             self.assertEqual(json.loads((output / "SEC-02.json").read_text(encoding="utf-8"))["status"], "SKIP")
             limitation = json.loads((output / "SEC-30.json").read_text(encoding="utf-8"))
             self.assertEqual(limitation["status"], "LIMITATION")

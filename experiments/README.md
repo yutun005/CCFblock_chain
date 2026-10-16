@@ -32,6 +32,8 @@ python manage.py collect-results
 
 `collect-results` 不修改原始数据。没有可读取的原始结果时返回 `NO_DATA`，而不是空成功报告。Foundry 单元测试在隔离 EVM 中执行，因此其逐案例记录不伪造持久链地址或交易哈希；需要真实部署交易和事件时，应查对应 E2E `result.json`。
 
-## 已有基线证据
+## 已有 CI 证据
 
-历史 CI 证据只证明[测试报告第 2 节](../docs/测试报告.md)列出的基线提交。新的重复运行、旅游场景、安全矩阵与汇总脚本必须在相应代码版本上实际执行后才能标记为通过；代码中存在用例或 CI 配置不等于已获得运行证据。
+Dmodule 提交 `b6304fac01a405bd81fd4d229f753dea1eb99e4c` 的 [CI run 38871130279](https://github.com/yutun005/CCFblock_chain/actions/runs/38871130279) 已完成 10 轮数据分析和 1 轮旅游场景，结果汇总为 22/22 E2E PASS；Foundry 原始 JSON 包含 27 个 `Success`。CI artifact ID 为 `12033637899`，同时包含测试日志、交易/任务快照和交付 ZIP。
+
+该 artifact 初次生成的 `security-summary.csv` 因 Foundry JSON 使用 `testName()` 或 `testFuzzName(uint256)` 而证据映射器只匹配无签名名称，错误地标记 29 个 `SKIP`。映射器现已按函数名归一化；用归档中的原始 `forge-results.json` 重算，30 个案例状态为 25 `PASS`、4 `SKIP`、1 `LIMITATION`。旧 artifact 保留原始内容，不会被重写；后续 CI 应产出包含修正汇总的新 artifact。其余未执行实验仍需按真实结果标记，代码中存在用例或 CI 配置本身不构成通过证据。
