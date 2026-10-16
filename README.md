@@ -55,9 +55,10 @@
 | `python manage.py test-e2e` | 本地 Anvil 上 10 次销售场景正常结算与超时恢复 |
 | `python manage.py run-travel` | 本地 Anvil 上旅游场景正常结算和超时恢复 |
 | `python manage.py test-security` | Foundry 安全测试并生成 SEC-01 至 SEC-30 案例状态 JSON |
-| `python manage.py collect-results` | 汇总已存在的 E2E 与安全原始结果为 CSV/JSON；没有原始数据时返回 `NO_DATA` |
+| `python manage.py collect-results` | 按唯一 `run_id` 汇总 E2E 与安全原始结果为 CSV/JSON；失败或无数据时返回非零退出码 |
 | `python manage.py reset-demo` | 备份并重建当前 runtime 配置指向的本地缓存目录；拒绝操作缓存目录外路径 |
 | `python manage.py package` | 从干净的 Dmodule 提交生成版本化 ZIP 和 `SHA256SUMS`，输出在 `.cache/delivery/` |
+| `python manage.py archive-evidence` | 将本地原始结果和汇总打包为证据 ZIP，附逐文件 SHA-256；默认要求汇总对应当前提交 |
 
 首次运行浏览器 smoke 前执行 `pnpm --dir .cache/web exec playwright install chromium` 下载 Chromium；若要使用本机已安装的 Chrome，可在运行前设置 `AGENTFLOW_BROWSER_EXECUTABLE` 为浏览器可执行文件的路径。浏览器测试使用路由 mock 验证交互，不代替真实链上 E2E。
 
@@ -66,6 +67,8 @@
 GitHub Actions 会在 Dmodule 变更后运行以上检查，并归档原始日志。浏览器 smoke 验证 Web 交互和请求契约；真实 REST/A2A/ABI/Anvil 业务链仍由独立端到端脚本验证。
 
 打包前需先提交所有源码和文档变更。ZIP 由当前 `HEAD` 的已跟踪文件生成，按固定文件顺序和时间戳写入，名称包含 12 位提交号；`SHA256SUMS` 与 ZIP 一起写入 `.cache/delivery/`。CI 也会生成同一包并作为 Actions artifact 保留。
+
+证据归档单独生成在 `.cache/delivery/`，使用 `EVIDENCE-SHA256SUMS` 核验。若原始实验在上一提交运行、当前提交只修改统计器或报告，先重新执行 `collect-results`，再用 `archive-evidence --run-commit <实验提交SHA>` 保留实验版本与分析版本的区别。
 
 ### 2. 配置链、账户与业务数据
 
@@ -568,6 +571,6 @@ totalLiability 表示尚留在合约内的应付责任；正常入出金下应�
 
 A 分支已有可配置 DAG、市场询价与签名校验、真实 A2A 任务交付、独立内容核验、合约结算、恢复与持久化、网页/API 和可移植部署配置。接口提供消息模型、运行时校验和离线导出；调度按节点完成重新检查依赖，并保证显式执行策略的计划哈希在保存与重载后保持一致。整体设计包含架构、数据模型、时序、状态、恢复与实验证据流程图。
 
-A 的独立设计稿、调度/恢复对照和本地验收材料已整理；原始记录、统计图表与验收报告按提交规则保存在本地忽略目录。旅游 P1 已补齐资料契约、执行器、验证器和网页入口。SEC-01～29 与 INV-01～08 已完成当前版本的本地核验，SEC-30 已复现并记录上述信任限制，不计为拦截成功。EXP-1 已完成最简托管与 DASC 的攻击、实际付款和 Gas 对照；EXP-4 已完成最低价与风险感知策略在冷启动、故障持续及服务恢复条件下的重复对照。风险策略减少已知故障下的恢复开销，但在服务恢复后可能因旧历史继续选择较贵服务，不保证始终更优。
+A 的独立设计与实验材料可作为联调输入，不能直接充当 Dmodule 的验证结论。Dmodule 当前已在本机完成 27/27 Foundry 用例、11 次数据分析与 1 次旅游场景真实 E2E；安全矩阵为 25 PASS、4 SKIP、1 LIMITATION。SEC-09、10、28、29 的完整攻击实验及同口径性能对照仍待完成，具体证据和信任边界见[测试报告](docs/测试报告.md)。
 
-接口文件仍是 A 提案。后续由 B 确认 Card/RFQ/A2A 与钱包绑定，由 C 确认 TypedData/ABI、取消语义和资金不变量，由 D 确认网页字段与故障展示，再完成共同部署的联调验收、全新设备复现及比赛最终报告整合。多租户与争议处理尚未实现。
+接口文件起源于 A 提案；Dmodule 已按 C 的 DASC v1 接口适配，并在真实 REST/A2A/ABI 端到端场景中验证主要路径。浏览器与真实后端联合验收、恶意 Agent 完整对抗、全新设备复现及比赛最终报告整合仍需继续。多租户与争议处理尚未实现。

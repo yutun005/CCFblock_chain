@@ -42,6 +42,8 @@ jobs:
         run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning --repeat 1
       - name: Collect reproducible evidence summaries
         run: .cache/venv/bin/python manage.py collect-results
+      - name: Archive raw evidence with checksums
+        run: .cache/venv/bin/python manage.py archive-evidence
       - name: Build versioned Dmodule package and checksum
         run: python manage.py package
       - name: Archive raw verification evidence

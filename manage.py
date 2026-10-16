@@ -10,6 +10,7 @@ import os
 import platform
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import sysconfig
@@ -283,6 +284,60 @@ def package_delivery():
     print(json.dumps({"package": str(package), "sha256": digest, "commit": commit}, ensure_ascii=False))
 
 
+def archive_evidence(run_commit_sha: str | None = None):
+    summary_path = ROOT / "experiments/results/manifest.json"
+    if not summary_path.is_file():
+        raise RuntimeError("Collect results before archiving evidence")
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("status") != "PASS":
+        raise RuntimeError("Evidence summary must report PASS before archiving")
+    current_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+                                    capture_output=True, text=True).stdout.strip()
+    if summary.get("commit_sha") != current_commit:
+        raise RuntimeError("Evidence summary commit differs from HEAD; rerun collect-results")
+    if run_commit_sha:
+        run_commit_sha = subprocess.run(["git", "rev-parse", "--verify", run_commit_sha + "^{commit}"],
+                                        cwd=ROOT, check=True, capture_output=True, text=True).stdout.strip()
+    else:
+        run_commit_sha = current_commit
+    files = []
+    for folder in (ROOT / "experiments/raw", ROOT / "experiments/results"):
+        if folder.is_dir():
+            for path in folder.rglob("*"):
+                if path.is_symlink():
+                    raise RuntimeError("Evidence archive cannot include symlinks: " + str(path))
+                if path.is_file():
+                    files.append(path)
+    if not files:
+        raise RuntimeError("No raw or summarized evidence to archive")
+    checksums = {}
+    package_buffer = io.BytesIO()
+    prefix = f"{ROOT.name}-evidence-{current_commit[:12]}/"
+    with zipfile.ZipFile(package_buffer, "w", compression=zipfile.ZIP_DEFLATED) as package:
+        for path in sorted(files, key=lambda item: item.relative_to(ROOT).as_posix()):
+            relative = path.relative_to(ROOT).as_posix()
+            content = path.read_bytes()
+            checksums[relative] = hashlib.sha256(content).hexdigest()
+            info = zipfile.ZipInfo(prefix + relative, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            package.writestr(info, content)
+        manifest = {"analysis_commit_sha": current_commit, "run_commit_sha": run_commit_sha,
+                    "summary": summary, "sha256_by_path": checksums}
+        info = zipfile.ZipInfo(prefix + "EVIDENCE-MANIFEST.json", date_time=(1980, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        package.writestr(info, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    destination = CACHE / "delivery"
+    destination.mkdir(parents=True, exist_ok=True)
+    filename = f"{ROOT.name}-evidence-{current_commit[:12]}.zip"
+    archive = destination / filename
+    archive.write_bytes(package_buffer.getvalue())
+    digest = hashlib.sha256(package_buffer.getvalue()).hexdigest()
+    (destination / "EVIDENCE-SHA256SUMS").write_text(f"{digest}  {filename}\n", encoding="utf-8")
+    print(json.dumps({"evidence_archive": str(archive), "sha256": digest,
+                      "files": len(files), "analysis_commit_sha": current_commit,
+                      "run_commit_sha": run_commit_sha}, ensure_ascii=False))
+
+
 def run_e2e(scenario: str, repeat: int = 1) -> None:
     run([PYTHON, ROOT / "tests/e2e/run_main_scenario.py", "--scenario", scenario,
          "--repeat", repeat])
@@ -293,22 +348,36 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
     raw = root / "experiments/raw"
     destination = root / "experiments/results"
     e2e_rows = []
+    batch_runs = {}
     e2e_root = raw / "e2e"
     if e2e_root.is_dir():
         for batch_path in sorted(e2e_root.glob("batch-*/summary.json")):
             batch = json.loads(batch_path.read_text(encoding="utf-8"))
             for item in batch.get("runs", []):
-                e2e_rows.append({"scenario": batch.get("scenario"), "batch_id": batch.get("batch_id"),
-                                 "iteration": item.get("iteration"), "run_id": item.get("run_id"),
-                                 "status": item.get("status"),
-                                 "duration_seconds": item.get("duration_seconds"),
-                                 "failure": item.get("failure")})
+                row = {"scenario": batch.get("scenario"), "batch_id": batch.get("batch_id"),
+                       "iteration": item.get("iteration"), "run_id": item.get("run_id"),
+                       "status": item.get("status"),
+                       "duration_seconds": item.get("duration_seconds"),
+                       "failure": item.get("failure")}
+                run_id = row["run_id"]
+                if run_id is not None:
+                    if run_id in batch_runs:
+                        raise RuntimeError("duplicate E2E run ID in batch summaries: " + str(run_id))
+                    batch_runs[run_id] = row
+                e2e_rows.append(row)
         for result_path in sorted(e2e_root.glob("*/result.json")):
             if result_path.parent.name.startswith("batch-"):
                 continue
             item = json.loads(result_path.read_text(encoding="utf-8"))
+            run_id = item.get("run_id")
+            if run_id in batch_runs:
+                batch_row = batch_runs[run_id]
+                for field in ("scenario", "status", "duration_seconds", "failure"):
+                    if item.get(field) != batch_row[field]:
+                        raise RuntimeError(f"E2E batch/raw mismatch for {run_id}: {field}")
+                continue
             e2e_rows.append({"scenario": item.get("scenario"), "batch_id": None, "iteration": None,
-                             "run_id": item.get("run_id"), "status": item.get("status"),
+                             "run_id": run_id, "status": item.get("status"),
                              "duration_seconds": item.get("duration_seconds"),
                              "failure": item.get("failure")})
     security_rows = []
@@ -330,19 +399,36 @@ def collect_results(root: Path | None = None, commit_sha: str | None = None):
             writer.writerows(rows)
     commit_sha = commit_sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
                                                capture_output=True, text=True).stdout.strip()
-    manifest = {"commit_sha": commit_sha,
+    durations = {}
+    for row in e2e_rows:
+        if row["status"] == "PASS" and row["duration_seconds"] is not None:
+            durations.setdefault(row["scenario"], []).append(float(row["duration_seconds"]))
+    statuses = [row["status"] for row in e2e_rows] + [row["status"] for row in security_rows]
+    if not statuses:
+        summary_status = "NO_DATA"
+    elif any(row["status"] != "PASS" for row in e2e_rows) or any(
+        row["status"] not in {"PASS", "SKIP", "LIMITATION"} for row in security_rows
+    ):
+        summary_status = "FAIL"
+    else:
+        summary_status = "PASS"
+    manifest = {"status": summary_status, "commit_sha": commit_sha,
                 "e2e_runs": len(e2e_rows),
                 "e2e_status_counts": {status: sum(row["status"] == status for row in e2e_rows)
                                       for status in sorted({row["status"] for row in e2e_rows})},
+                "e2e_duration_seconds": {
+                    scenario: {"n": len(values), "mean": round(statistics.mean(values), 3),
+                               "median": round(statistics.median(values), 3),
+                               "min": min(values), "max": max(values)}
+                    for scenario, values in sorted(durations.items())},
                 "security_cases": len(security_rows),
                 "security_status_counts": {status: sum(row["status"] == status for row in security_rows)
                                             for status in sorted({row["status"] for row in security_rows})},
                 "outputs": ["e2e-summary.csv", "security-summary.csv"]}
     (destination / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                                                 encoding="utf-8")
-    result = {"status": "PASS" if e2e_rows or security_rows else "NO_DATA", **manifest}
-    print(json.dumps(result, ensure_ascii=False))
-    return result
+    print(json.dumps(manifest, ensure_ascii=False))
+    return manifest
 
 
 def reset_demo(runtime: Path | None = None, cache: Path | None = None):
@@ -391,11 +477,12 @@ def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
     parser.add_argument("command", choices=["setup", "build", "test-contract", "test-security", "test-e2e", "run-data",
                         "run-travel", "collect-results", "reset-demo", "package", "schema", "configure",
-                        "approve", "start"], nargs="?", default="start")
+                        "approve", "start", "archive-evidence"], nargs="?", default="start")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
     parser.add_argument("--amount", help="exact six-decimal token allowance for approve")
+    parser.add_argument("--run-commit", help="commit used for raw E2E and Foundry runs when archiving evidence")
     args = parser.parse_args()
     if args.command == "setup":
         setup()
@@ -421,13 +508,18 @@ def main():
         run_e2e("travel_planning")
         return
     if args.command == "collect-results":
-        collect_results()
+        result = collect_results()
+        if result["status"] != "PASS":
+            raise SystemExit(1)
         return
     if args.command == "reset-demo":
         reset_demo(settings_file(args.config, args.runtime)["directory"])
         return
     if args.command == "package":
         package_delivery()
+        return
+    if args.command == "archive-evidence":
+        archive_evidence(args.run_commit)
         return
     if args.command == "schema":
         from app import (

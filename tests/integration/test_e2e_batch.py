@@ -100,6 +100,12 @@ class E2EBatchTests(unittest.TestCase):
         ]}
         raw_summary = batch_dir / "summary.json"
         raw_summary.write_text(json.dumps(summary), encoding="utf-8")
+        run_dir = root / "experiments" / "raw" / "e2e" / "run-1"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        raw_result = {"scenario": "cross_org_analysis", "run_id": "run-1", "status": "PASS",
+                      "duration_seconds": 3.0, "failure": None}
+        result_path = run_dir / "result.json"
+        result_path.write_text(json.dumps(raw_result), encoding="utf-8")
         (security_dir / "SEC-30.json").write_text(json.dumps({
             "case_id": "SEC-30", "title": "trust boundary", "status": "LIMITATION",
             "skip_reason": "documented", "commit_sha": "test", "raw_log": "forge.json"
@@ -107,9 +113,36 @@ class E2EBatchTests(unittest.TestCase):
         try:
             result = manage.collect_results(root=root, commit_sha="test-commit")
             self.assertEqual(result["e2e_runs"], 1)
+            self.assertEqual(result["e2e_duration_seconds"]["cross_org_analysis"],
+                             {"n": 1, "mean": 3.0, "median": 3.0, "min": 3.0, "max": 3.0})
             self.assertEqual(result["security_status_counts"], {"LIMITATION": 1})
             self.assertEqual(json.loads(raw_summary.read_text(encoding="utf-8")), summary)
             self.assertTrue((root / "experiments" / "results" / "e2e-summary.csv").is_file())
+            self.assertEqual(len((root / "experiments" / "results" / "e2e-summary.csv").read_text(
+                encoding="utf-8-sig").splitlines()), 2)
+            raw_result["status"] = "FAIL"
+            result_path.write_text(json.dumps(raw_result), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "E2E batch/raw mismatch"):
+                manage.collect_results(root=root, commit_sha="test-commit")
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_collect_results_reports_failed_or_missing_evidence(self):
+        import manage
+        import shutil
+
+        root = ROOT / ".cache" / "test-result-collection-status"
+        run_dir = root / "experiments" / "raw" / "e2e" / "failed-run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        result_path = run_dir / "result.json"
+        result_path.write_text(json.dumps({
+            "scenario": "cross_org_analysis", "run_id": "failed-run", "status": "FAIL",
+            "duration_seconds": 1.0, "failure": "verification failed"
+        }), encoding="utf-8")
+        try:
+            self.assertEqual(manage.collect_results(root=root, commit_sha="test-commit")["status"], "FAIL")
+            result_path.unlink()
+            self.assertEqual(manage.collect_results(root=root, commit_sha="test-commit")["status"], "NO_DATA")
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
