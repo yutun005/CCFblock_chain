@@ -78,6 +78,38 @@ class CContractAlignmentTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["signedFields"]["Attestation"][-3]["type"], "bool")
 
+    def test_settlement_api_returns_chain_events_with_transaction_hashes(self):
+        job_id = "0x" + "11" * 32
+        event = {"event": "TaskSettled", "transactionHash": "0x" + "22" * 32,
+                 "args": {"jobId": job_id, "taskId": 0, "amount": "20000000"}}
+
+        class FakeDatabase:
+            def get(self, bucket, key, default=None):
+                return {"jobId": job_id} if bucket == "jobs" and key == job_id else default
+
+            def values(self, bucket):
+                return []
+
+        class FakeEngine:
+            def __init__(self, *args):
+                self.db = FakeDatabase()
+                self.chain = type("FakeChain", (), {"event_scan": lambda self, requested: [event]})()
+
+            def snapshot(self, requested):
+                return {"chain": {"jobId": requested, "state": "ACTIVE"}}
+
+        config = {"deployment": {}, "market": "http://127.0.0.1:8081", "validator": "http://127.0.0.1:8082",
+                  "token": "test-token", "tokenSymbol": "TEST", "signers": {}}
+        with patch.object(app, "Engine", FakeEngine):
+            service = app.api_app(config, ROOT / ".cache" / "settlement-api-runtime")
+            with TestClient(service) as client:
+                response = client.get(f"/api/jobs/{job_id}/settlements",
+                                      headers={"Authorization": "Bearer test-token"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["events"], [event])
+        self.assertEqual(response.json()["events"][0]["transactionHash"], event["transactionHash"])
+        self.assertIn(f"/api/jobs/${{jobId}}/settlements", WEB)
+
     def test_backend_uses_canonical_chain_methods(self):
         self.assertIn("functions.paymentToken().call()", APP)
         self.assertIn("functions.VERIFIER_ROLE().call()", APP)
