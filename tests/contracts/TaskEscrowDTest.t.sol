@@ -45,8 +45,9 @@ contract TaskEscrowDTest {
         stranger = vm.addr(STRANGER_KEY);
         token = new MockUSDC(owner);
         escrow = new TaskEscrow(address(token), owner);
+        bytes32 verifierRole = escrow.VERIFIER_ROLE();
         vm.prank(owner);
-        escrow.grantRole(escrow.VERIFIER_ROLE(), verifier);
+        escrow.grantRole(verifierRole, verifier);
         vm.prank(owner);
         token.mint(owner, 10_000 * U);
         vm.prank(owner);
@@ -95,21 +96,24 @@ contract TaskEscrowDTest {
     function testExpiredQuoteIsRejected() public {
         TaskEscrow.Quote memory q = _quote(0, AGENT_KEY);
         q.validUntil = uint64(block.timestamp);
+        bytes memory sig = _sign(AGENT_KEY, escrow.hashQuote(q));
         vm.prank(coordinator);
         vm.expectRevert(TaskEscrow.Expired.selector);
-        escrow.assignTask(q, _sign(AGENT_KEY, escrow.hashQuote(q)));
+        escrow.assignTask(q, sig);
         _assertAccounting();
     }
 
     function testBidNonceCannotBeReusedByTheSameAgent() public {
         TaskEscrow.Quote memory first = _quote(0, AGENT_KEY);
+        bytes memory firstSig = _sign(AGENT_KEY, escrow.hashQuote(first));
         vm.prank(coordinator);
-        escrow.assignTask(first, _sign(AGENT_KEY, escrow.hashQuote(first)));
+        escrow.assignTask(first, firstSig);
         TaskEscrow.Quote memory second = _quote(1, AGENT_KEY);
         second.bidNonce = first.bidNonce;
+        bytes memory secondSig = _sign(AGENT_KEY, escrow.hashQuote(second));
         vm.prank(coordinator);
         vm.expectRevert(TaskEscrow.NonceUsed.selector);
-        escrow.assignTask(second, _sign(AGENT_KEY, escrow.hashQuote(second)));
+        escrow.assignTask(second, secondSig);
         _assertAccounting();
     }
 
@@ -159,10 +163,11 @@ contract TaskEscrowDTest {
     function testUnauthorizedVerifierCannotSettle() public {
         _assign(0, AGENT_KEY);
         (TaskEscrow.Result memory r, TaskEscrow.Attestation memory a) = _proof(0, AGENT_KEY);
+        bytes memory agentSig = _sign(AGENT_KEY, escrow.hashResult(r));
+        bytes memory verifierSig = _sign(STRANGER_KEY, escrow.hashAttestation(a));
         vm.prank(coordinator);
         vm.expectRevert(TaskEscrow.Unauthorized.selector);
-        escrow.settleTask(r, _sign(AGENT_KEY, escrow.hashResult(r)), a,
-                          _sign(STRANGER_KEY, escrow.hashAttestation(a)));
+        escrow.settleTask(r, agentSig, a, verifierSig);
         _assertAccounting();
     }
 
@@ -172,9 +177,10 @@ contract TaskEscrowDTest {
         bytes memory agentSig = _sign(AGENT_KEY, escrow.hashResult(r));
         r.resultHash = keccak256("tampered-result");
         a.resultHash = r.resultHash;
+        bytes memory verifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(a));
         vm.prank(coordinator);
         vm.expectRevert(TaskEscrow.InvalidSignature.selector);
-        escrow.settleTask(r, agentSig, a, _sign(VERIFIER_KEY, escrow.hashAttestation(a)));
+        escrow.settleTask(r, agentSig, a, verifierSig);
         require(escrow.withdrawable(agent) == 0, "tampered result paid");
         _assertAccounting();
     }
@@ -184,16 +190,18 @@ contract TaskEscrowDTest {
         _assign(1, AGENT_KEY);
         (TaskEscrow.Result memory firstResult, TaskEscrow.Attestation memory firstProof) = _proof(0, AGENT_KEY);
         firstProof.attestationNonce = 77;
+        bytes memory firstAgentSig = _sign(AGENT_KEY, escrow.hashResult(firstResult));
+        bytes memory firstVerifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(firstProof));
         vm.prank(coordinator);
-        escrow.settleTask(firstResult, _sign(AGENT_KEY, escrow.hashResult(firstResult)), firstProof,
-                          _sign(VERIFIER_KEY, escrow.hashAttestation(firstProof)));
+        escrow.settleTask(firstResult, firstAgentSig, firstProof, firstVerifierSig);
 
         (TaskEscrow.Result memory secondResult, TaskEscrow.Attestation memory secondProof) = _proof(1, AGENT_KEY);
         secondProof.attestationNonce = 77;
+        bytes memory secondAgentSig = _sign(AGENT_KEY, escrow.hashResult(secondResult));
+        bytes memory secondVerifierSig = _sign(VERIFIER_KEY, escrow.hashAttestation(secondProof));
         vm.prank(coordinator);
         vm.expectRevert(TaskEscrow.NonceUsed.selector);
-        escrow.settleTask(secondResult, _sign(AGENT_KEY, escrow.hashResult(secondResult)), secondProof,
-                          _sign(VERIFIER_KEY, escrow.hashAttestation(secondProof)));
+        escrow.settleTask(secondResult, secondAgentSig, secondProof, secondVerifierSig);
         require(escrow.withdrawable(agent) == 20 * U, "replayed proof paid twice");
         _assertAccounting();
     }
@@ -273,8 +281,9 @@ contract TaskEscrowDTest {
 
     function _assign(uint8 taskId, uint256 key) private {
         TaskEscrow.Quote memory q = _quote(taskId, key);
+        bytes memory signature = _sign(key, escrow.hashQuote(q));
         vm.prank(coordinator);
-        escrow.assignTask(q, _sign(key, escrow.hashQuote(q)));
+        escrow.assignTask(q, signature);
     }
 
     function _proof(uint8 taskId, uint256 key)
@@ -289,9 +298,10 @@ contract TaskEscrowDTest {
 
     function _settle(uint8 taskId, uint256 key) private {
         (TaskEscrow.Result memory r, TaskEscrow.Attestation memory a) = _proof(taskId, key);
+        bytes memory agentSignature = _sign(key, escrow.hashResult(r));
+        bytes memory verifierSignature = _sign(VERIFIER_KEY, escrow.hashAttestation(a));
         vm.prank(coordinator);
-        escrow.settleTask(r, _sign(key, escrow.hashResult(r)), a,
-                          _sign(VERIFIER_KEY, escrow.hashAttestation(a)));
+        escrow.settleTask(r, agentSignature, a, verifierSignature);
     }
 
     function _sign(uint256 key, bytes32 digest) private returns (bytes memory) {
