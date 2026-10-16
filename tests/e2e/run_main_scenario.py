@@ -182,12 +182,17 @@ def wait_job(client: httpx.Client, api: str, job_id: str, *, recovery: bool = Fa
                 advanced = True
         if job["status"] in {"SUCCEEDED", "PARTIAL_FAILED"}:
             if job["status"] != "SUCCEEDED":
-                task_summary = [{"taskId": task["taskId"], "state": task["onchain"]["state"],
-                                 "attempt": task["onchain"]["attempt"],
-                                 "checkpoint": task["checkpoint"].get("status"),
-                                 "agent": task["checkpoint"].get("selected", {}).get("agentId"),
-                                 "fault": task["checkpoint"].get("fault")}
-                                for task in tasks]
+                task_summary = []
+                for task in tasks:
+                    checkpoint = task.get("checkpoint") or {}
+                    selected = checkpoint.get("selected") or {}
+                    onchain = task.get("onchain") or {}
+                    task_summary.append({"taskId": task.get("taskId"),
+                                         "state": onchain.get("state"),
+                                         "attempt": onchain.get("attempt"),
+                                         "checkpoint": checkpoint.get("status"),
+                                         "agent": selected.get("agentId"),
+                                         "fault": checkpoint.get("fault")})
                 raise AssertionError(f"Job {job_id} ended in {job['status']}: {job.get('lastError')}; "
                                      + json.dumps(task_summary, ensure_ascii=False))
             if recovery and not advanced:
