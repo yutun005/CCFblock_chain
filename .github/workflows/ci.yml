@@ -36,6 +36,8 @@ jobs:
         run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --repeat 10
       - name: Run travel planning REST, A2A, ABI and recovery scenarios
         run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning --repeat 1
+      - name: Collect reproducible evidence summaries
+        run: .cache/venv/bin/python manage.py collect-results
       - name: Build versioned Dmodule package and checksum
         run: python manage.py package
       - name: Archive raw verification evidence
@@ -48,5 +50,6 @@ jobs:
             experiments/raw/e2e/**
             experiments/raw/forge/**
             experiments/raw/security/**
+            experiments/results/**
             .cache/delivery/**
           include-hidden-files: true

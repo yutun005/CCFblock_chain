@@ -49,7 +49,11 @@
 |---|---|
 | `python -m unittest discover -s tests -v` | A 与 C 的接口、签名和账本边界检查 |
 | `python manage.py test-contract` | Foundry 合约安全与资金守恒测试 |
-| `python tests/e2e/run_main_scenario.py` | 本地 Anvil 上的四节点销售 DAG、真实 A2A 报价/交付、REST API、链上结算和一次超时重派 |
+| `python manage.py test-e2e` | 本地 Anvil 上 10 次销售场景正常结算与超时恢复 |
+| `python manage.py run-travel` | 本地 Anvil 上旅游场景正常结算和超时恢复 |
+| `python manage.py test-security` | Foundry 安全测试并生成 SEC-01 至 SEC-30 案例状态 JSON |
+| `python manage.py collect-results` | 汇总已存在的 E2E 与安全原始结果为 CSV/JSON；没有原始数据时返回 `NO_DATA` |
+| `python manage.py reset-demo` | 备份并重建当前 runtime 配置指向的本地缓存目录；拒绝操作缓存目录外路径 |
 | `python manage.py package` | 从干净的 Dmodule 提交生成版本化 ZIP 和 `SHA256SUMS`，输出在 `.cache/delivery/` |
 
 端到端脚本仅启动本机 `127.0.0.1` 上的临时 chainId `31337`，使用公开的 Foundry 测试助记词和临时部署，不连接真实网络或资产。每次运行的交易回执、任务快照、报价、成果哈希、合约事件和 Anvil 日志写入 `experiments/raw/e2e/<run-id>/`；Foundry 原始结果写入 `experiments/raw/forge/`。这些原始文件保留在本机或 CI 构建产物中，不提交到 Git。

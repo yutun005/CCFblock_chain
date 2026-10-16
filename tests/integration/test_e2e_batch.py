@@ -74,6 +74,52 @@ class E2EBatchTests(unittest.TestCase):
         finally:
             shutil.rmtree(output, ignore_errors=True)
 
+    def test_collect_results_reduces_batches_without_changing_raw_records(self):
+        import manage
+        import shutil
+
+        root = ROOT / ".cache" / "test-result-collection"
+        batch_dir = root / "experiments" / "raw" / "e2e" / "batch-example"
+        security_dir = root / "experiments" / "raw" / "security"
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        security_dir.mkdir(parents=True, exist_ok=True)
+        summary = {"batch_id": "example", "scenario": "cross_org_analysis", "runs": [
+            {"iteration": 1, "run_id": "run-1", "status": "PASS", "duration_seconds": 3.0, "failure": None}
+        ]}
+        raw_summary = batch_dir / "summary.json"
+        raw_summary.write_text(json.dumps(summary), encoding="utf-8")
+        (security_dir / "SEC-30.json").write_text(json.dumps({
+            "case_id": "SEC-30", "title": "trust boundary", "status": "LIMITATION",
+            "skip_reason": "documented", "commit_sha": "test", "raw_log": "forge.json"
+        }), encoding="utf-8")
+        try:
+            result = manage.collect_results(root=root, commit_sha="test-commit")
+            self.assertEqual(result["e2e_runs"], 1)
+            self.assertEqual(result["security_status_counts"], {"LIMITATION": 1})
+            self.assertEqual(json.loads(raw_summary.read_text(encoding="utf-8")), summary)
+            self.assertTrue((root / "experiments" / "results" / "e2e-summary.csv").is_file())
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_reset_demo_only_removes_its_dedicated_cache(self):
+        import manage
+        import shutil
+
+        cache = ROOT / ".cache" / "test-reset-root"
+        demo = cache / "runtime"
+        sibling = cache / "keep.txt"
+        demo.mkdir(parents=True, exist_ok=True)
+        (demo / "state.sqlite").write_text("test", encoding="utf-8")
+        sibling.write_text("keep", encoding="utf-8")
+        try:
+            with patch.object(manage, "CACHE", cache):
+                result = manage.reset_demo(runtime=demo, cache=cache)
+            self.assertTrue(demo.is_dir())
+            self.assertTrue(Path(result["backup_directory"], "state.sqlite").is_file())
+            self.assertEqual(sibling.read_text(encoding="utf-8"), "keep")
+        finally:
+            shutil.rmtree(cache, ignore_errors=True)
+
     def test_batch_rejects_zero_runs(self):
         with self.assertRaisesRegex(ValueError, "at least 1"):
             SCENARIO.run_batch(0)

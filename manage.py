@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import io
 import json
@@ -277,6 +278,91 @@ def package_delivery():
     print(json.dumps({"package": str(package), "sha256": digest, "commit": commit}, ensure_ascii=False))
 
 
+def run_e2e(scenario: str, repeat: int = 1) -> None:
+    run([PYTHON, ROOT / "tests/e2e/run_main_scenario.py", "--scenario", scenario,
+         "--repeat", repeat])
+
+
+def collect_results(root: Path | None = None, commit_sha: str | None = None):
+    root = root or ROOT
+    raw = root / "experiments/raw"
+    destination = root / "experiments/results"
+    e2e_rows = []
+    e2e_root = raw / "e2e"
+    if e2e_root.is_dir():
+        for batch_path in sorted(e2e_root.glob("batch-*/summary.json")):
+            batch = json.loads(batch_path.read_text(encoding="utf-8"))
+            for item in batch.get("runs", []):
+                e2e_rows.append({"scenario": batch.get("scenario"), "batch_id": batch.get("batch_id"),
+                                 "iteration": item.get("iteration"), "run_id": item.get("run_id"),
+                                 "status": item.get("status"),
+                                 "duration_seconds": item.get("duration_seconds"),
+                                 "failure": item.get("failure")})
+        for result_path in sorted(e2e_root.glob("*/result.json")):
+            if result_path.parent.name.startswith("batch-"):
+                continue
+            item = json.loads(result_path.read_text(encoding="utf-8"))
+            e2e_rows.append({"scenario": item.get("scenario"), "batch_id": None, "iteration": None,
+                             "run_id": item.get("run_id"), "status": item.get("status"),
+                             "duration_seconds": item.get("duration_seconds"),
+                             "failure": item.get("failure")})
+    security_rows = []
+    security_root = raw / "security"
+    if security_root.is_dir():
+        for case_path in sorted(security_root.glob("SEC-*.json")):
+            item = json.loads(case_path.read_text(encoding="utf-8"))
+            security_rows.append({"case_id": item.get("case_id"), "title": item.get("title"),
+                                  "status": item.get("status"), "skip_reason": item.get("skip_reason"),
+                                  "commit_sha": item.get("commit_sha"), "raw_log": item.get("raw_log")})
+    destination.mkdir(parents=True, exist_ok=True)
+    e2e_fields = ("scenario", "batch_id", "iteration", "run_id", "status", "duration_seconds", "failure")
+    security_fields = ("case_id", "title", "status", "skip_reason", "commit_sha", "raw_log")
+    for filename, rows, fields in (("e2e-summary.csv", e2e_rows, e2e_fields),
+                                   ("security-summary.csv", security_rows, security_fields)):
+        with (destination / filename).open("w", newline="", encoding="utf-8-sig") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+    commit_sha = commit_sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
+                                               capture_output=True, text=True).stdout.strip()
+    manifest = {"commit_sha": commit_sha,
+                "e2e_runs": len(e2e_rows),
+                "e2e_status_counts": {status: sum(row["status"] == status for row in e2e_rows)
+                                      for status in sorted({row["status"] for row in e2e_rows})},
+                "security_cases": len(security_rows),
+                "security_status_counts": {status: sum(row["status"] == status for row in security_rows)
+                                            for status in sorted({row["status"] for row in security_rows})},
+                "outputs": ["e2e-summary.csv", "security-summary.csv"]}
+    (destination / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                                                encoding="utf-8")
+    result = {"status": "PASS" if e2e_rows or security_rows else "NO_DATA", **manifest}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
+
+
+def reset_demo(runtime: Path | None = None, cache: Path | None = None):
+    cache = (cache or CACHE).resolve()
+    if runtime is None:
+        from app import settings_file
+        runtime = settings_file().get("directory")
+    demo = Path(runtime).resolve()
+    if demo == cache or not demo.is_relative_to(cache):
+        raise RuntimeError("refusing to reset a runtime directory outside the dedicated cache")
+    backup = None
+    if demo.exists():
+        backup_root = cache / "demo-backups"
+        backup_root.mkdir(parents=True, exist_ok=True)
+        backup = backup_root / time.strftime("demo-%Y%m%d-%H%M%S")
+        if backup.exists():
+            backup = backup.with_name(backup.name + "-" + str(uuid.uuid4())[:8])
+        shutil.move(str(demo), str(backup))
+    demo.mkdir(parents=True, exist_ok=True)
+    result = {"status": "PASS", "reset_directory": str(demo),
+              "backup_directory": str(backup) if backup else None}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
+
+
 def build():
     prepare_generated()
     run([foundry("forge"), "build", "--skip", "test", "--skip", "script"], cwd=CACHE / "contracts")
@@ -298,7 +384,9 @@ def setup():
 
 def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
-    parser.add_argument("command", choices=["setup", "build", "test-contract", "package", "schema", "configure", "approve", "start"], nargs="?", default="start")
+    parser.add_argument("command", choices=["setup", "build", "test-contract", "test-security", "test-e2e", "run-data",
+                        "run-travel", "collect-results", "reset-demo", "package", "schema", "configure",
+                        "approve", "start"], nargs="?", default="start")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
@@ -314,6 +402,24 @@ def main():
         return
     if args.command == "test-contract":
         test_contracts()
+        return
+    if args.command == "test-security":
+        test_contracts()
+        return
+    if args.command == "test-e2e":
+        run_e2e("cross_org_analysis", repeat=10)
+        return
+    if args.command == "run-data":
+        run_e2e("cross_org_analysis")
+        return
+    if args.command == "run-travel":
+        run_e2e("travel_planning")
+        return
+    if args.command == "collect-results":
+        collect_results()
+        return
+    if args.command == "reset-demo":
+        reset_demo(settings_file(args.config, args.runtime)["directory"])
         return
     if args.command == "package":
         package_delivery()
