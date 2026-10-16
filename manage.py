@@ -139,9 +139,19 @@ def test_contracts():
                             capture_output=True, text=True, encoding="utf-8", errors="replace")
     result_path.write_text(result.stdout, encoding="utf-8")
     result_path.with_suffix(".stderr.txt").write_text(result.stderr, encoding="utf-8")
-    if result.returncode:
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Foundry returned invalid JSON; inspect " + str(result_path)) from exc
+    cases = [(contract, name, case) for contract, suite in report.items()
+             for name, case in suite.get("test_results", {}).items()]
+    failures = [(contract, name, case.get("reason")) for contract, name, case in cases
+                if case.get("status") != "Success"]
+    if result.returncode or failures:
+        for contract, name, reason in failures:
+            print(f"FAIL {contract}::{name}: {reason}")
         raise RuntimeError("Foundry tests failed; inspect " + str(result_path))
-    print("Foundry contract tests passed; raw output saved to " + str(result_path))
+    print(f"Foundry contract tests passed: {len(cases)} cases; raw output saved to {result_path}")
 
 
 def build():

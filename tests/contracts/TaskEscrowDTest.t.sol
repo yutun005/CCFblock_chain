@@ -231,7 +231,9 @@ contract TaskEscrowDTest {
 
     function testRefundCannotBeClaimedTwice() public {
         // Cancel both roots; the contract cascades cancellation to their descendants.
+        vm.prank(owner);
         escrow.cancelTask(JOB, 0);
+        vm.prank(owner);
         escrow.cancelTask(JOB, 1);
         escrow.finalizeJob(JOB);
         vm.prank(owner);
