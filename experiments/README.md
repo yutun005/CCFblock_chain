@@ -40,6 +40,6 @@ python manage.py archive-evidence
 
 Dmodule 提交 `b6304fac01a405bd81fd4d229f753dea1eb99e4c` 的 [CI run 38871130279](https://github.com/yutun005/CCFblock_chain/actions/runs/38871130279) 已完成 10 轮数据分析和 1 轮旅游场景，实际为 11/11 次 E2E PASS；Foundry 原始 JSON 包含 27 个 `Success`。CI artifact ID 为 `12033637899`，同时包含测试日志、交易/任务快照和交付 ZIP。旧汇总把批次与逐次结果重复计为 22 行；新收集器按 `run_id` 去重并核对两份记录。旧 artifact 的文件保持原样。
 
-2026-10-16 本机 Foundry/Anvil v1.8.5 又完成 27/27 合约测试、11 次 API 数据分析、1 次浏览器数据分析和 1 次旅游场景，13/13 次实际 E2E 通过。对应原始记录留在忽略目录 `experiments/raw/`，执行 `python manage.py collect-results` 后查看 `experiments/results/manifest.json` 与 CSV。耗时按 `api`/`browser` 分组，且均包含临时链和服务启动；对照策略与 Gas 汇总尚未完成，详见 `docs/测试报告.md`。
+2026-10-16 本机 Foundry/Anvil v1.8.5 又完成 27/27 合约测试、11 次 API 数据分析、2 次浏览器数据分析和 1 次旅游场景，14/14 次实际 E2E 通过。第二次浏览器运行的 `result.json` 记录源提交 `3ff636a85165e933d120e5b7904f0c6a532520c7` 且工作树干净；第一次浏览器运行是开发过程中的工作树结果。对应原始记录留在忽略目录 `experiments/raw/`，执行 `python manage.py collect-results` 后查看 `experiments/results/manifest.json` 与 CSV。耗时按 `api`/`browser` 分组，且均包含临时链和服务启动；对照策略与 Gas 汇总尚未完成，详见 `docs/测试报告.md`。
 
 该 artifact 初次生成的 `security-summary.csv` 因 Foundry JSON 使用 `testName()` 或 `testFuzzName(uint256)` 而证据映射器只匹配无签名名称，错误地标记 29 个 `SKIP`。映射器现已按函数名归一化；用归档中的原始 `forge-results.json` 重算，30 个案例状态为 25 `PASS`、4 `SKIP`、1 `LIMITATION`。旧 artifact 保留原始内容，不会被重写；后续 CI 应产出包含修正汇总的新 artifact。其余未执行实验仍需按真实结果标记，代码中存在用例或 CI 配置本身不构成通过证据。
