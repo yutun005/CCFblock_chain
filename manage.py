@@ -167,7 +167,8 @@ def package_delivery():
     commit = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, check=True,
                             capture_output=True, text=True).stdout.strip()
     prefix = f"{ROOT.name}-Dmodule-{commit}/"
-    source_tar = subprocess.run(["git", "archive", "--format=tar", f"--prefix={prefix}", "HEAD"],
+    source_tar = subprocess.run(["git", "-c", "core.autocrlf=false", "archive", "--format=tar",
+                                 f"--prefix={prefix}", "HEAD"],
                                 cwd=ROOT, check=True, capture_output=True).stdout
     archive_buffer = io.BytesIO()
     with tarfile.open(fileobj=io.BytesIO(source_tar), mode="r:") as source, \
