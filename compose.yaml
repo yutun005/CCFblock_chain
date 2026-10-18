@@ -1,0 +1,23 @@
+name: agentflow-pay-unified
+services:
+  verify:
+    image: agentflow-pay-unified:verified
+    build: .
+    environment:
+      PYTHONUTF8: "1"
+      AGENTFLOW_SOURCE_COMMIT_SHA: ${AGENTFLOW_SOURCE_COMMIT_SHA:-unversioned-container}
+    command: >-
+      sh -c "python manage.py chain-up &&
+      .cache/venv/bin/python scripts/module_c.py deploy &&
+      python manage.py test-contract &&
+      .cache/venv/bin/python scripts/module_c.py test-security &&
+      .cache/venv/bin/python -m pytest -q &&
+      .cache/venv/bin/python tests/e2e/run_platform_acceptance.py &&
+      .cache/venv/bin/python tests/e2e/run_main_scenario.py --browser &&
+      .cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning &&
+       .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1 &&
+      .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1 --scenario travel_planning &&
+      python manage.py collect-results"
+    volumes:
+      - ./experiments/raw:/workspace/experiments/raw
+      - ./experiments/results:/workspace/experiments/results

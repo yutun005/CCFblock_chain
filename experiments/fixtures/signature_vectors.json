@@ -1,0 +1,39 @@
+{
+  "domain": {
+    "name": "AgentFlow Pay",
+    "version": "1",
+    "chain_id": 31337,
+    "verifying_contract": "0x0000000000000000000000000000000000000001"
+  },
+  "quote": {
+    "job_id": "0xd06611e660bbbd7ad8fe0f0c58fd8d67bac6ad2270119df675624804355e371d",
+    "task_id": 0,
+    "attempt": 0,
+    "agent_wallet": "0xbee3523fac14ee4ab0e0d93e42361b876d65801d",
+    "price": 11,
+    "requirement_hash": "0x02d4fada265d747876f204aa88be717703fdaef4e0b782961e996230e3176cd2",
+    "payment_token": "0x0202020202020202020202020202020202020202",
+    "valid_until": 2000000000,
+    "bid_nonce": 1,
+    "signature": "0x4e49ef338bd7cd36941c68e24942ec1b1598f3d00133679b43a066df2640f7834068f26dace4f9cde10ca15ac28337bc28b155a9e8aa75139a597ff8fc7a20f61c"
+  },
+  "result": {
+    "job_id": "0xd06611e660bbbd7ad8fe0f0c58fd8d67bac6ad2270119df675624804355e371d",
+    "task_id": 0,
+    "attempt": 0,
+    "agent_wallet": "0xbee3523fac14ee4ab0e0d93e42361b876d65801d",
+    "result_hash": "0x42a857de79cd7d7c1cc518ef8ad91293a87188979f1bc81e227c777d398fb664",
+    "artifact_uri_hash": "0xa47c360e05e16d2d0b67801b2da25b8a5a5f954677f71a17d69442aa2d2136e1",
+    "submitted_at": 1792302152,
+    "artifact": {
+      "skill": "data_cleaning",
+      "rows": [
+        {
+          "value": 1
+        }
+      ],
+      "row_count": 1
+    },
+    "signature": "0x3b85b09662791c9c0e9bb4373b27d40fd1bbad2f91095005d71f9459ac2bafae2f8733d7035280c450902af0002e704f28c0fb84f2e729cc8cb60557bb6f96a81b"
+  }
+}

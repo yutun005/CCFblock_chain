@@ -1,0 +1,16 @@
+[project]
+name = "agentflow-pay"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+description = "Unified A/B/C/D multi-agent orchestration, marketplace and secure EVM settlement"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "validators/tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

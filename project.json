@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "directory": ".cache/runtime",
+    "inputDirectory": "data",
+    "scenarioInputDirectories": {
+      "travel_planning": "data/travel"
+    },
+    "bind": "127.0.0.1",
+    "api": "http://127.0.0.1:8080",
+    "market": "http://127.0.0.1:8081",
+    "validator": "http://127.0.0.1:8082",
+    "apiTokenEnv": "AGENTFLOW_API_TOKEN",
+    "chain": {
+      "rpcEnv": "AGENTFLOW_RPC_URL",
+      "chainIdEnv": "AGENTFLOW_CHAIN_ID",
+      "tokenEnv": "AGENTFLOW_TOKEN_ADDRESS",
+      "escrowEnv": "AGENTFLOW_ESCROW_ADDRESS",
+      "startBlock": 0,
+      "tokenSymbol": "USDC"
+    },
+    "signers": {
+      "owner": "AGENTFLOW_OWNER_KEY",
+      "coordinator": "AGENTFLOW_COORDINATOR_KEY",
+      "validator": "AGENTFLOW_VALIDATOR_KEY"
+    },
+    "agents": [
+      {
+        "id": "clean-a",
+        "keyEnv": "AGENTFLOW_CLEAN_A_KEY",
+        "endpoint": "http://127.0.0.1:8090",
+        "prices": {
+          "data_cleaning": "20",
+          "attraction_search": "20"
+        }
+      },
+      {
+        "id": "clean-b",
+        "keyEnv": "AGENTFLOW_CLEAN_B_KEY",
+        "endpoint": "http://127.0.0.1:8091",
+        "prices": {
+          "data_cleaning": "22",
+          "attraction_search": "22"
+        }
+      },
+      {
+        "id": "quality-a",
+        "keyEnv": "AGENTFLOW_QUALITY_A_KEY",
+        "endpoint": "http://127.0.0.1:8092",
+        "prices": {
+          "data_validation": "16",
+          "hotel_search": "16"
+        }
+      },
+      {
+        "id": "stats-a",
+        "keyEnv": "AGENTFLOW_STATS_A_KEY",
+        "endpoint": "http://127.0.0.1:8093",
+        "prices": {
+          "statistical_analysis": "24",
+          "route_planning": "24"
+        }
+      },
+      {
+        "id": "stats-b",
+        "keyEnv": "AGENTFLOW_STATS_B_KEY",
+        "endpoint": "http://127.0.0.1:8094",
+        "prices": {
+          "statistical_analysis": "26",
+          "route_planning": "26"
+        }
+      },
+      {
+        "id": "report-a",
+        "keyEnv": "AGENTFLOW_REPORT_A_KEY",
+        "endpoint": "http://127.0.0.1:8095",
+        "prices": {
+          "report_generation": "12",
+          "travel_report": "12"
+        }
+      }
+    ]
+  }
+}

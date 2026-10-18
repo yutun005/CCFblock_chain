@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentflow-pay/agent-protocol-v1",
+  "title": "AgentFlow Pay A2A protocol",
+  "type": "object",
+  "required": ["agent_card", "task_request", "quote", "result"],
+  "properties": {
+    "agent_card": {"type":"object","required":["agent_id","name","url","skills","wallet"],"properties":{"agent_id":{"type":"string"},"name":{"type":"string"},"url":{"type":"string","format":"uri"},"skills":{"type":"array","items":{"type":"string"}},"wallet":{"type":"string","pattern":"^0x[0-9a-fA-F]{40}$"}}},
+    "task_request": {"type":"object","required":["job_id","task_id","attempt","skill","payload","requirement_hash"]},
+    "quote": {"type":"object","required":["job_id","task_id","attempt","agent_wallet","price","requirement_hash","payment_token","valid_until","bid_nonce","signature"]},
+    "result": {"type":"object","required":["job_id","task_id","attempt","agent_wallet","result_hash","artifact_uri_hash","submitted_at","signature"]}
+  }
+}

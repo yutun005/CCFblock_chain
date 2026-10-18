@@ -1,0 +1,112 @@
+{
+  "version": "DASC-1",
+  "domain": {
+    "name": "DASC",
+    "version": "1"
+  },
+  "types": {
+    "Quote": [
+      {
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "name": "taskId",
+        "type": "uint8"
+      },
+      {
+        "name": "attempt",
+        "type": "uint32"
+      },
+      {
+        "name": "agentWallet",
+        "type": "address"
+      },
+      {
+        "name": "price",
+        "type": "uint256"
+      },
+      {
+        "name": "requirementHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "paymentToken",
+        "type": "address"
+      },
+      {
+        "name": "validUntil",
+        "type": "uint64"
+      },
+      {
+        "name": "bidNonce",
+        "type": "uint256"
+      }
+    ],
+    "Result": [
+      {
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "name": "taskId",
+        "type": "uint8"
+      },
+      {
+        "name": "attempt",
+        "type": "uint32"
+      },
+      {
+        "name": "agentWallet",
+        "type": "address"
+      },
+      {
+        "name": "resultHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "artifactURIHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "submittedAt",
+        "type": "uint64"
+      }
+    ],
+    "Attestation": [
+      {
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "name": "taskId",
+        "type": "uint8"
+      },
+      {
+        "name": "attempt",
+        "type": "uint32"
+      },
+      {
+        "name": "resultHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "validationPolicyId",
+        "type": "bytes32"
+      },
+      {
+        "name": "verdict",
+        "type": "bool"
+      },
+      {
+        "name": "validUntil",
+        "type": "uint64"
+      },
+      {
+        "name": "attestationNonce",
+        "type": "uint256"
+      }
+    ]
+  },
+  "nonce_scope": "global per signer per contract, independently for bids and attestations"
+}

@@ -1,0 +1,24 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/", "forge-std/=lib/forge-std/src/"]
+
+[profile.default.fuzz]
+runs = 256
+seed = "0x20261013"
+
+[profile.default.invariant]
+runs = 128
+depth = 64
+fail_on_revert = false
+
+[fmt]
+line_length = 110

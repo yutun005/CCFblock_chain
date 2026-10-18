@@ -1,0 +1,36 @@
+{
+  "profile": "dasc-a2a-integrated-v3",
+  "policies": {
+    "data_cleaning": "0x6682268b4e32aa3da9fb7ff4b5a5abd47ad2e61b44f75bb5d4fad36e69d522d7",
+    "data_validation": "0x3a6e787509050cfbdde1f21532e636d6cce13fe02823c9d50dccaf280bf894fb",
+    "statistical_analysis": "0x9267d6734468dcc3293270664b9c0fcdd2eb84a4b5f99e27b5c45df7a57ec6d6",
+    "report_generation": "0x1075c812ca3bb9427a7b74f055fd1a3fc35f5b8dcd3bba703af1264d5e352790",
+    "attraction_search": "0x847317dca933668a097a1e64d9bb51d971e4cd8b34e91fb082574276efac368f",
+    "hotel_search": "0xc7049fc1670f5f85925e8eb40a4c7ced59dab9dcac81add25ec0fbaf7623547f",
+    "route_planning": "0xa1bc40a4f9753e23df4874bfa377aabf8ab5bcd1543e743cbea3cea4c85a99f2",
+    "travel_report": "0x77dcb484481adf49143e72eb3021aa49c956af06d6bc699f5543724a133cc04d"
+  },
+  "sales_rules": {
+    "version": "sales-v1",
+    "categories": [
+      "book",
+      "food",
+      "tool"
+    ],
+    "integer_range": [
+      1,
+      1000000
+    ],
+    "duplicate": "first_valid_file_order",
+    "money": "integer_cents",
+    "mean": "exact_rational",
+    "date": "canonical_iso_date",
+    "report_sections": [
+      "数据与质量",
+      "季度统计",
+      "结论与限制",
+      "来源"
+    ],
+    "report_chart": "quarter-revenue-v1"
+  }
+}

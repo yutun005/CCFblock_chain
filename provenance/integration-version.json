@@ -1,0 +1,205 @@
+{
+  "kind": "local integrated workspace; no remote push",
+  "branch": "integration/unified-20261018",
+  "runtime_source_sha256": "811c151bd084a9a8d46c11d21967b1ef404800a9c6150799617b6e25d14f5aac",
+  "runtime_files": [
+    {
+      "path": "app.py",
+      "sha256": "28baa66857006881dcb5e78da4ec582cd9b57d007abbd9e7889956df28ad3e35"
+    },
+    {
+      "path": "apps/web/package.json",
+      "sha256": "7616fbd0f8d61f811e551afb9cfba2423ec8ce9054c44d2ab38af01e8195c17a"
+    },
+    {
+      "path": "apps/web/pnpm-lock.yaml",
+      "sha256": "687259c4f655a84eb65347df287a93a1d83114d9e3c18ba05ae63a3ef5e81b89"
+    },
+    {
+      "path": "apps/web/src/main.tsx",
+      "sha256": "5cc52849f5542895993e38d1e51ef9fd713ea19984699d0bc6494213cfe8a048"
+    },
+    {
+      "path": "apps/web/src/style.css",
+      "sha256": "7ec59f75344f104d0dd4c7c9f8168e92432805d35d10513ece8171234d4e45dc"
+    },
+    {
+      "path": "apps/web/src/vite-env.d.ts",
+      "sha256": "424faf9241dd699dda995b367ed36665732da1e6ec1f33b2fd40394488ecac92"
+    },
+    {
+      "path": "contracts/src/MockUSDC.sol",
+      "sha256": "5ea91326b0e5a23fe5d47e327d948cae58acfd3cc7c55dd6ee8f19358ce1e84e"
+    },
+    {
+      "path": "contracts/src/TaskEscrow.sol",
+      "sha256": "3daf82f9b037084ec52f55158df95971d0ae0b8eddc41d0e451f792bf6e23231"
+    },
+    {
+      "path": "project.json",
+      "sha256": "3d9e48ec8db1ff00c7a93e8ebd31e91e9a85e5a954ec359cb45f7358f5da1779"
+    },
+    {
+      "path": "requirements.lock",
+      "sha256": "4080b7c3842d66fc7fd364d419c25c25c5256460b475982102ab7fcc13c1b1bb"
+    },
+    {
+      "path": "services/__init__.py",
+      "sha256": "7851bda53226f4ed2d4682ef745bb519bb74eafbc93293ef0c5f7f6e81d33b28"
+    },
+    {
+      "path": "services/agents/__init__.py",
+      "sha256": "eb19c32b0f8c7feb7022502c9d207300e2baf24452357b14e39c7239b90439b8"
+    },
+    {
+      "path": "services/agents/adversarial/__init__.py",
+      "sha256": "28e25bd03cda1dd70a2f8c20990d3068fbca7661cef7f44efe2af0d5ca517c9e"
+    },
+    {
+      "path": "services/agents/base.py",
+      "sha256": "fdd3dffe91697a5054acc4ba430a943ff03e570a12c9cf474522d6f17fead62a"
+    },
+    {
+      "path": "services/agents/business.py",
+      "sha256": "50413dee1423e7c89765ed917cca9aa664a1534fa44d92614fe8c02dc1de2ada"
+    },
+    {
+      "path": "services/agents/common/__init__.py",
+      "sha256": "be3dece0455e1dbe89dcedfb681a6a7e9385de03c00782455e090bd4936113f7"
+    },
+    {
+      "path": "services/agents/data_cleaning/__init__.py",
+      "sha256": "279157a796a02ba1c7bf99b6d11bb702f47b4ba30de18f4692481a3416590fff"
+    },
+    {
+      "path": "services/agents/data_validation/__init__.py",
+      "sha256": "279157a796a02ba1c7bf99b6d11bb702f47b4ba30de18f4692481a3416590fff"
+    },
+    {
+      "path": "services/agents/http_server.py",
+      "sha256": "11742e832c78fe67ab01e522d063ad3d4a2994f1fd6a0627a6dbe4c5ae97cbb6"
+    },
+    {
+      "path": "services/agents/report_generation/__init__.py",
+      "sha256": "279157a796a02ba1c7bf99b6d11bb702f47b4ba30de18f4692481a3416590fff"
+    },
+    {
+      "path": "services/agents/statistical_analysis/__init__.py",
+      "sha256": "279157a796a02ba1c7bf99b6d11bb702f47b4ba30de18f4692481a3416590fff"
+    },
+    {
+      "path": "services/agents/travel/__init__.py",
+      "sha256": "279157a796a02ba1c7bf99b6d11bb702f47b4ba30de18f4692481a3416590fff"
+    },
+    {
+      "path": "services/chain_adapter/__init__.py",
+      "sha256": "2f08561dcd6571beb235cb93a709ab381830c2097fcd4853da34f9da479187a8"
+    },
+    {
+      "path": "services/chain_adapter/client.py",
+      "sha256": "7aaf509edd8cfed4cd5485af1003b8969bec228c61862a52392bdbed8b74d22d"
+    },
+    {
+      "path": "services/chain_adapter/journal.py",
+      "sha256": "971a6c0896b180b8f611d3d78f86e2b10721dc72f4ef46863cb600fc4eb68831"
+    },
+    {
+      "path": "services/chain_adapter/schemas.py",
+      "sha256": "8abefa162e00ee64003e56317247178f3669602856b5ad84480fc581404527d0"
+    },
+    {
+      "path": "services/chain_adapter/signing.py",
+      "sha256": "ca9d7ca1b678ca5f8fe015f486dcb35ed1a7e896494e7be5979dd6311ae63331"
+    },
+    {
+      "path": "services/chain_adapter/validation.py",
+      "sha256": "f63a4c053ac21325b7d70fd1ca1be93c3a10a9ebc8e9fea70404e4b2f2aff97a"
+    },
+    {
+      "path": "services/marketplace/__init__.py",
+      "sha256": "af3134b2cdee9e9ce98abca0d6fcdb2145918f1490e5dada68d28c30c93bbfc5"
+    },
+    {
+      "path": "services/marketplace/__main__.py",
+      "sha256": "ff6d30be5477263e59df3b66eeb1b37d9a6d8cb152fc0f8488243fc53fe0c2a3"
+    },
+    {
+      "path": "services/marketplace/crypto.py",
+      "sha256": "6c141ea508394934f4da519f3625d89ffb105c7162befd05634f875c9381bdc1"
+    },
+    {
+      "path": "services/marketplace/demo.py",
+      "sha256": "b6357b4ec923ca79c07c576e75dba00a462ffe781bf231de82b4b932b6c0a6f5"
+    },
+    {
+      "path": "services/marketplace/http_api.py",
+      "sha256": "bd6bb478ce4010768eda4ea420ff859da2213340823e8b669561a381fa47a3dd"
+    },
+    {
+      "path": "services/marketplace/market.py",
+      "sha256": "3956f4b5deb00de3392226780073b8d0fc6e622bee25bea5febd2377055d8b0c"
+    },
+    {
+      "path": "services/marketplace/models.py",
+      "sha256": "3b89ffed14da15e7fb480caf6df8e16cb65ef72c9519b1d15e5614f3dbd46ccd"
+    },
+    {
+      "path": "services/orchestrator/__init__.py",
+      "sha256": "ca4267f65a35cdf6076fccc4e2eeb7bfd6b98783272171c5b1f996165c857808"
+    },
+    {
+      "path": "services/orchestrator/api/__init__.py",
+      "sha256": "35c2d80e5e85b945fa42369494b62da28f438b73842b5be40e6aea2db0787100"
+    },
+    {
+      "path": "services/orchestrator/application.py",
+      "sha256": "5e483f228a2021298ca34291b98a8e858059a3e8a0c30bce6e4a49b3168ffc9e"
+    },
+    {
+      "path": "services/orchestrator/planner/__init__.py",
+      "sha256": "0e6d0dce54fcf7d3ae463dee03f1dd861555a0a56456e21abf2113a5af9b146e"
+    },
+    {
+      "path": "services/orchestrator/recovery/__init__.py",
+      "sha256": "9a8d3434d07281d7079b12a6583d8ac524d1806a484fdfbe6ca60d4c14a3ef75"
+    },
+    {
+      "path": "services/orchestrator/scheduler/__init__.py",
+      "sha256": "be081a40762594cbfbf467a6dae58606761841b2e8dd720864f5473e1c39e582"
+    },
+    {
+      "path": "validators/__init__.py",
+      "sha256": "34c55b7d3205627324a1a097694357396c59a6441849d8fca7cb1a4e128c8a4a"
+    },
+    {
+      "path": "validators/policies/policies.json",
+      "sha256": "254331e4a897f2e641ce6b33c75542daebca3603fc348b59f71a3194a570b619"
+    }
+  ],
+  "source_branches": [
+    {
+      "branch": "A",
+      "files": 10,
+      "commit": "672b1249eac1fbf19ae8f9faacf3f2a55eab2577",
+      "status": "PASS"
+    },
+    {
+      "branch": "Bmodule",
+      "files": 29,
+      "commit": "95bdf2830a616a14033ce85cb3362a13b1c889be",
+      "status": "PASS"
+    },
+    {
+      "branch": "Cmodule",
+      "files": 1310,
+      "commit": "eca137026a3359def0b80b3acc0bba24de86d87d",
+      "status": "PASS"
+    },
+    {
+      "branch": "Dmodule",
+      "files": 31,
+      "commit": "e9a799bf37b41838821dbb790a60e1daf179b12e",
+      "status": "PASS"
+    }
+  ]
+}

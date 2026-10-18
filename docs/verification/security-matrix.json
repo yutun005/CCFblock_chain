@@ -1,0 +1,251 @@
+[
+  {
+    "case_id": "SEC-01",
+    "title": "报价金额篡改",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-01.json"
+    ]
+  },
+  {
+    "case_id": "SEC-02",
+    "title": "报价执行者篡改",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-02.json"
+    ]
+  },
+  {
+    "case_id": "SEC-03",
+    "title": "报价任务ID替换",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-03.json"
+    ]
+  },
+  {
+    "case_id": "SEC-04",
+    "title": "报价JobID替换",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-04.json"
+    ]
+  },
+  {
+    "case_id": "SEC-05",
+    "title": "跨合约重放",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-05.json"
+    ]
+  },
+  {
+    "case_id": "SEC-06",
+    "title": "跨链重放",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-06.json"
+    ]
+  },
+  {
+    "case_id": "SEC-07",
+    "title": "过期报价",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-07.json"
+    ]
+  },
+  {
+    "case_id": "SEC-08",
+    "title": "报价nonce重放",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-08.json"
+    ]
+  },
+  {
+    "case_id": "SEC-09",
+    "title": "Agent服务身份冒用",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/platform/2f815b6d-febd-49c3-8c8d-3e74a25986a9/result.json",
+      "experiments/raw/platform/6f20ea52-ca21-4a75-a3aa-0b3d2037fe9d/result.json",
+      "experiments/raw/platform/b13d5680-5ee0-4990-8601-a476d2fbea41/result.json",
+      "experiments/raw/platform/f704f7df-8d39-4fd0-b4f0-051939ea49f4/result.json"
+    ],
+    "layer": "live registry / independent validator"
+  },
+  {
+    "case_id": "SEC-10",
+    "title": "虚假服务能力",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/platform/2f815b6d-febd-49c3-8c8d-3e74a25986a9/result.json",
+      "experiments/raw/platform/6f20ea52-ca21-4a75-a3aa-0b3d2037fe9d/result.json",
+      "experiments/raw/platform/b13d5680-5ee0-4990-8601-a476d2fbea41/result.json",
+      "experiments/raw/platform/f704f7df-8d39-4fd0-b4f0-051939ea49f4/result.json"
+    ],
+    "layer": "live registry / independent validator"
+  },
+  {
+    "case_id": "SEC-11",
+    "title": "结果内容改包",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-11.json"
+    ]
+  },
+  {
+    "case_id": "SEC-12",
+    "title": "伪造结果签名",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-12.json"
+    ]
+  },
+  {
+    "case_id": "SEC-13",
+    "title": "旧任务结果重放",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-13.json"
+    ]
+  },
+  {
+    "case_id": "SEC-14",
+    "title": "旧轮次重放",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-14.json"
+    ]
+  },
+  {
+    "case_id": "SEC-15",
+    "title": "超时迟交",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-15.json"
+    ]
+  },
+  {
+    "case_id": "SEC-16",
+    "title": "超时与结算竞态",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-16.json"
+    ]
+  },
+  {
+    "case_id": "SEC-17",
+    "title": "依赖绕过",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-17.json"
+    ]
+  },
+  {
+    "case_id": "SEC-18",
+    "title": "非法DAG",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-18.json"
+    ]
+  },
+  {
+    "case_id": "SEC-19",
+    "title": "伪造验证者",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-19.json"
+    ]
+  },
+  {
+    "case_id": "SEC-20",
+    "title": "验证证明跨结果",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-20.json"
+    ]
+  },
+  {
+    "case_id": "SEC-21",
+    "title": "验证证明跨轮次",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-21.json"
+    ]
+  },
+  {
+    "case_id": "SEC-22",
+    "title": "重复结算",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-22.json"
+    ]
+  },
+  {
+    "case_id": "SEC-23",
+    "title": "未授权结算",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-23.json"
+    ]
+  },
+  {
+    "case_id": "SEC-24",
+    "title": "未授权修改执行者",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-24.json"
+    ]
+  },
+  {
+    "case_id": "SEC-25",
+    "title": "超预算报价",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-25.json"
+    ]
+  },
+  {
+    "case_id": "SEC-26",
+    "title": "预算超额承诺",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-26.json"
+    ]
+  },
+  {
+    "case_id": "SEC-27",
+    "title": "重复退款",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-27.json"
+    ]
+  },
+  {
+    "case_id": "SEC-28",
+    "title": "重入回调",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/forge/forge-results.json"
+    ],
+    "layer": "Foundry malicious callback token; standard-token boundary retained"
+  },
+  {
+    "case_id": "SEC-29",
+    "title": "数据库重复提交",
+    "status": "PASS",
+    "evidence": [
+      "experiments/raw/security/SEC-29.json"
+    ]
+  },
+  {
+    "case_id": "SEC-30",
+    "title": "恶意授权验证者批准",
+    "status": "LIMITATION",
+    "evidence": [
+      "experiments/raw/security/SEC-30.json"
+    ]
+  }
+]

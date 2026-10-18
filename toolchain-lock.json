@@ -1,0 +1,31 @@
+{
+  "foundry": "1.5.1",
+  "solidity": "0.8.28",
+  "evm_version": "paris",
+  "python": "3.13.13",
+  "besu_image": "hyperledger/besu:25.10.0",
+  "besu_image_digest": "sha256:11dd3a2f44ad1cafb39cbe27d6ee57b053733c257812cc8a0264ade9e6cc0778",
+  "openzeppelin": "5.2.0",
+  "forge_std": "1.9.7",
+  "git_dependencies": {
+    "openzeppelin-contracts": "acd4ff74de833399287ed6b31b4debf6b2b35527",
+    "forge-std": "77041d2ce690e692d6e03cc812b57d1ddaa4d505"
+  },
+  "foundry_windows_archive_sha256": "293fedd9ad45eb9d774008815dbda820bddd3c85cab3baf55a0be3775e86d5ae",
+  "foundry_download_source": "https://github.com/foundry-rs/foundry/releases/download/v1.5.1/",
+  "node": "22.22.3",
+  "pnpm": "11.25.0",
+  "foundry_linux_archive_sha256": "73640b01bd9ed29fdb4965085099371f8cf0dbbec3e2086cf54564efc4dcfe88",
+  "solidity_archives": {
+    "openzeppelin-contracts": {
+      "url": "https://codeload.github.com/OpenZeppelin/openzeppelin-contracts/zip/acd4ff74de833399287ed6b31b4debf6b2b35527",
+      "commit": "acd4ff74de833399287ed6b31b4debf6b2b35527",
+      "sha256": "a39137b0ac538e30ecd39089407f46adb91b49b4303090a79524cfb3c64c11ac"
+    },
+    "forge-std": {
+      "url": "https://codeload.github.com/foundry-rs/forge-std/zip/77041d2ce690e692d6e03cc812b57d1ddaa4d505",
+      "commit": "77041d2ce690e692d6e03cc812b57d1ddaa4d505",
+      "sha256": "68207874a8c61d6dcd5c5de9136dd7388f7c53c3f369545e52d1d870823e9878"
+    }
+  }
+}

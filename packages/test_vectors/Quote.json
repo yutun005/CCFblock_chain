@@ -1,0 +1,85 @@
+{
+  "fixture": "PUBLIC UNIT TEST VECTOR ONLY; not a deployment wallet",
+  "typed_data": {
+    "types": {
+      "EIP712Domain": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "name": "chainId",
+          "type": "uint256"
+        },
+        {
+          "name": "verifyingContract",
+          "type": "address"
+        }
+      ],
+      "Quote": [
+        {
+          "name": "jobId",
+          "type": "bytes32"
+        },
+        {
+          "name": "taskId",
+          "type": "uint8"
+        },
+        {
+          "name": "attempt",
+          "type": "uint32"
+        },
+        {
+          "name": "agentWallet",
+          "type": "address"
+        },
+        {
+          "name": "price",
+          "type": "uint256"
+        },
+        {
+          "name": "requirementHash",
+          "type": "bytes32"
+        },
+        {
+          "name": "paymentToken",
+          "type": "address"
+        },
+        {
+          "name": "validUntil",
+          "type": "uint64"
+        },
+        {
+          "name": "bidNonce",
+          "type": "uint256"
+        }
+      ]
+    },
+    "primaryType": "Quote",
+    "domain": {
+      "name": "DASC",
+      "version": "1",
+      "chainId": 31337,
+      "verifyingContract": "0x1111111111111111111111111111111111111111"
+    },
+    "message": {
+      "jobId": "0xe6ae4ecf2c31955bfe5a9089420caa9021a3dc67ca11f6481cfcbda3f2d609fd",
+      "taskId": 0,
+      "attempt": 0,
+      "agentWallet": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+      "price": "20000000",
+      "requirementHash": "0x7f8fa720d34ee4659dd6429ced3f73e9e102647589ac44f6e82135597695aa33",
+      "paymentToken": "0x2222222222222222222222222222222222222222",
+      "validUntil": 2000000000,
+      "bidNonce": "42"
+    }
+  },
+  "signer": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+  "digest": "0x6bc64be015b28017520c3b5b51b0eb345a6e01af83762e3b6d605aae52578130",
+  "signature": "0xb2fd9010caade046bda77ca187009d88fb6c9f6ef425217f41bbbf07dec623de2632cc8333da32931b4270f011af82ce2591201a02460e5b48561ee4276b707e1c",
+  "expected_recovered_address": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+}

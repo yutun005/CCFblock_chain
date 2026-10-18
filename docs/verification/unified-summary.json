@@ -1,0 +1,331 @@
+{
+  "contract_tests": 84,
+  "contract_status_counts": {
+    "Success": 84
+  },
+  "invariant_count": 8,
+  "security_status_counts": {
+    "PASS": 29,
+    "LIMITATION": 1
+  },
+  "platform_cases": 9,
+  "e2e_runs": [
+    {
+      "run_id": "07e125ab-5b2d-45d0-9acd-89a0187b1793",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 44.55,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/07e125ab-5b2d-45d0-9acd-89a0187b1793/result.json"
+    },
+    {
+      "run_id": "18884b6d-5844-4e18-b3e0-5f7d8b52f1d6",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 40.158,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/18884b6d-5844-4e18-b3e0-5f7d8b52f1d6/result.json"
+    },
+    {
+      "run_id": "1d35c143-827a-4061-bbb6-1acdc2391fe0",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": true,
+      "duration_seconds": 60.655,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/1d35c143-827a-4061-bbb6-1acdc2391fe0/result.json"
+    },
+    {
+      "run_id": "224f30dc-9f73-45cb-9396-e274dd161d5c",
+      "scenario": "travel_planning",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 39.534,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/224f30dc-9f73-45cb-9396-e274dd161d5c/result.json"
+    },
+    {
+      "run_id": "30fe8d49-e230-43d0-8110-caa0b574c68c",
+      "scenario": "travel_planning",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 33.278,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/30fe8d49-e230-43d0-8110-caa0b574c68c/result.json"
+    },
+    {
+      "run_id": "34c55e5b-c2b3-4255-aa3f-7606e070c4ed",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 47.837,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/34c55e5b-c2b3-4255-aa3f-7606e070c4ed/result.json"
+    },
+    {
+      "run_id": "540b0768-9c90-458d-8a69-c669b64b2c03",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": true,
+      "duration_seconds": 60.274,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/540b0768-9c90-458d-8a69-c669b64b2c03/result.json"
+    },
+    {
+      "run_id": "62678320-d9a7-4f34-b05c-4ccb5c73a01e",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 57.721,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/62678320-d9a7-4f34-b05c-4ccb5c73a01e/result.json"
+    },
+    {
+      "run_id": "863eceb1-6716-4005-b2aa-bfec27f034ba",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 43.291,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/863eceb1-6716-4005-b2aa-bfec27f034ba/result.json"
+    },
+    {
+      "run_id": "8a5f6e10-3355-4e34-8ea1-34d42c0e2f63",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 34.604,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/8a5f6e10-3355-4e34-8ea1-34d42c0e2f63/result.json"
+    },
+    {
+      "run_id": "9222c348-2b43-4084-9490-eb4586343fdb",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 39.532,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/9222c348-2b43-4084-9490-eb4586343fdb/result.json"
+    },
+    {
+      "run_id": "9692549d-0119-46b6-9e32-52933881b541",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 38.609,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/9692549d-0119-46b6-9e32-52933881b541/result.json"
+    },
+    {
+      "run_id": "98702f7f-194e-4e10-88c1-7ecdebb79840",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 43.409,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/98702f7f-194e-4e10-88c1-7ecdebb79840/result.json"
+    },
+    {
+      "run_id": "a1781809-bb3a-4188-93e0-4ecb1ea7f705",
+      "scenario": "travel_planning",
+      "status": "PASS",
+      "browser": true,
+      "duration_seconds": 61.872,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/a1781809-bb3a-4188-93e0-4ecb1ea7f705/result.json"
+    },
+    {
+      "run_id": "a9884964-8724-4480-ace6-181a775393af",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 41.553,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/a9884964-8724-4480-ace6-181a775393af/result.json"
+    },
+    {
+      "run_id": "b4476ebd-006a-44bf-bfca-8b71e754b41c",
+      "scenario": "travel_planning",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 34.067,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/b4476ebd-006a-44bf-bfca-8b71e754b41c/result.json"
+    },
+    {
+      "run_id": "c40d3fc8-a687-4acb-aab4-b266fdf7c54f",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 50.983,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/c40d3fc8-a687-4acb-aab4-b266fdf7c54f/result.json"
+    },
+    {
+      "run_id": "cd9f8e54-e4f6-4ec0-ad8c-813f8fd73c05",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 39.913,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/cd9f8e54-e4f6-4ec0-ad8c-813f8fd73c05/result.json"
+    },
+    {
+      "run_id": "d6351b79-2737-4f22-9895-4a03f7df3153",
+      "scenario": "travel_planning",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 44.481,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/d6351b79-2737-4f22-9895-4a03f7df3153/result.json"
+    },
+    {
+      "run_id": "d94ee783-a1c0-424a-ac7b-8ae5267e298c",
+      "scenario": "travel_planning",
+      "status": "PASS",
+      "browser": true,
+      "duration_seconds": 60.208,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/d94ee783-a1c0-424a-ac7b-8ae5267e298c/result.json"
+    },
+    {
+      "run_id": "dbf4b1cc-3d02-4572-9582-19a7183f5cb4",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": true,
+      "duration_seconds": 60.049,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/dbf4b1cc-3d02-4572-9582-19a7183f5cb4/result.json"
+    },
+    {
+      "run_id": "dde93c54-a960-4f1e-ad3c-a4788e43fa8f",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 62.141,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/dde93c54-a960-4f1e-ad3c-a4788e43fa8f/result.json"
+    },
+    {
+      "run_id": "f4a6c9f8-1b02-4ab2-ac26-4627adb50cdb",
+      "scenario": "cross_org_analysis",
+      "status": "PASS",
+      "browser": false,
+      "duration_seconds": 42.593,
+      "failure": null,
+      "evidence": "experiments/raw/e2e/f4a6c9f8-1b02-4ab2-ac26-4627adb50cdb/result.json"
+    }
+  ],
+  "ten_run_batches": [
+    {
+      "case_id": "E2E-DATA-BATCH",
+      "scenario": "cross_org_analysis",
+      "batch_id": "0fff0588-2f26-4e29-954a-b6281c29cf06",
+      "browser": false,
+      "requested_runs": 10,
+      "passed_runs": 10,
+      "failed_runs": 0,
+      "status": "PASS",
+      "duration_seconds": 463.263,
+      "runs": [
+        {
+          "iteration": 1,
+          "run_id": "9222c348-2b43-4084-9490-eb4586343fdb",
+          "status": "PASS",
+          "duration_seconds": 39.532,
+          "failure": null
+        },
+        {
+          "iteration": 2,
+          "run_id": "18884b6d-5844-4e18-b3e0-5f7d8b52f1d6",
+          "status": "PASS",
+          "duration_seconds": 40.158,
+          "failure": null
+        },
+        {
+          "iteration": 3,
+          "run_id": "a9884964-8724-4480-ace6-181a775393af",
+          "status": "PASS",
+          "duration_seconds": 41.553,
+          "failure": null
+        },
+        {
+          "iteration": 4,
+          "run_id": "cd9f8e54-e4f6-4ec0-ad8c-813f8fd73c05",
+          "status": "PASS",
+          "duration_seconds": 39.913,
+          "failure": null
+        },
+        {
+          "iteration": 5,
+          "run_id": "f4a6c9f8-1b02-4ab2-ac26-4627adb50cdb",
+          "status": "PASS",
+          "duration_seconds": 42.593,
+          "failure": null
+        },
+        {
+          "iteration": 6,
+          "run_id": "dde93c54-a960-4f1e-ad3c-a4788e43fa8f",
+          "status": "PASS",
+          "duration_seconds": 62.141,
+          "failure": null
+        },
+        {
+          "iteration": 7,
+          "run_id": "62678320-d9a7-4f34-b05c-4ccb5c73a01e",
+          "status": "PASS",
+          "duration_seconds": 57.721,
+          "failure": null
+        },
+        {
+          "iteration": 8,
+          "run_id": "07e125ab-5b2d-45d0-9acd-89a0187b1793",
+          "status": "PASS",
+          "duration_seconds": 44.55,
+          "failure": null
+        },
+        {
+          "iteration": 9,
+          "run_id": "863eceb1-6716-4005-b2aa-bfec27f034ba",
+          "status": "PASS",
+          "duration_seconds": 43.291,
+          "failure": null
+        },
+        {
+          "iteration": 10,
+          "run_id": "c40d3fc8-a687-4acb-aab4-b266fdf7c54f",
+          "status": "PASS",
+          "duration_seconds": 50.983,
+          "failure": null
+        }
+      ],
+      "started_at_utc": "2026-10-18T05:49:50Z",
+      "completed_at_utc": "2026-10-18T05:57:33Z"
+    }
+  ],
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.13",
+    "architecture": "AMD64",
+    "foundry": "1.5.1",
+    "solidity": "0.8.28",
+    "node": "22.22.3",
+    "pnpm": "11.25.0",
+    "evm_version": "paris"
+  },
+  "historical_results_included": false,
+  "docker_build": {
+    "image": "agentflow-pay-unified:verified",
+    "scope": "SDK and B HTTP; data and travel; contracts, RPC security, Python and restart tests",
+    "log": "experiments/raw/environment/docker-verification-final.log",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  "limitations": [
+    "SEC-30 authorized verifier trust",
+    "optional dual verifier not implemented",
+    "deterministic planning and snapshot travel data"
+  ]
+}

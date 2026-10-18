@@ -1,0 +1,64 @@
+{
+  "status": "PASS",
+  "commit_sha": "a74fab4224af54ede47fbd678e1a5c1c8ef08798",
+  "e2e_runs": 23,
+  "e2e_status_counts": {
+    "PASS": 23
+  },
+  "e2e_duration_seconds_by_variant": {
+    "cross_org_analysis/api": {
+      "n": 14,
+      "mean": 44.778,
+      "median": 42.942,
+      "min": 34.604,
+      "max": 62.141
+    },
+    "cross_org_analysis/browser": {
+      "n": 3,
+      "mean": 60.326,
+      "median": 60.274,
+      "min": 60.049,
+      "max": 60.655
+    },
+    "travel_planning/api": {
+      "n": 4,
+      "mean": 37.84,
+      "median": 36.8,
+      "min": 33.278,
+      "max": 44.481
+    },
+    "travel_planning/browser": {
+      "n": 2,
+      "mean": 61.04,
+      "median": 61.04,
+      "min": 60.208,
+      "max": 61.872
+    }
+  },
+  "security_cases": 30,
+  "security_status_counts": {
+    "PASS": 29,
+    "LIMITATION": 1
+  },
+  "outputs": [
+    "e2e-summary.csv",
+    "security-summary.csv"
+  ],
+  "security_scope": "combined live registry/validator + RPC + Foundry",
+  "raw_chain_security_status_counts": {
+    "PASS": 26,
+    "SKIP": 3,
+    "LIMITATION": 1
+  },
+  "contract_tests": 84,
+  "python_tests": 55,
+  "invariants": 8,
+  "docker": {
+    "image": "agentflow-pay-unified:verified",
+    "scope": "SDK and B HTTP; data and travel; contracts, RPC security, Python and restart tests",
+    "log": "experiments/raw/environment/docker-verification-final.log",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  "source_sha256": "811c151bd084a9a8d46c11d21967b1ef404800a9c6150799617b6e25d14f5aac"
+}

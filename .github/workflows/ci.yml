@@ -1,0 +1,95 @@
+name: Unified platform verification
+
+on:
+  push:
+    branches: [main, "integration/**"]
+  pull_request:
+    branches: [main, "integration/**"]
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.25.0"
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: "v1.5.1"
+      - name: Install locked dependencies and build
+        run: python manage.py setup
+      - name: Install Playwright Chromium
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
+      - name: Run browser workflow smoke
+        run: pnpm --dir apps/web run test:browser
+      - name: Run live browser against Anvil and services
+        run: .cache/venv/bin/python manage.py test-browser-live
+      - name: Run unified interface checks
+        run: .cache/venv/bin/python -m pytest -q --junitxml=experiments/raw/python/pytest-results.xml
+      - name: Check Python syntax
+        run: .cache/venv/bin/python -m py_compile app.py manage.py
+      - name: Run DASC security and accounting tests
+        run: python manage.py test-contract
+      - name: Run RPC security and platform acceptance
+        run: |
+          .cache/venv/bin/python scripts/local_demo.py chain-up
+          .cache/venv/bin/python scripts/module_c.py deploy
+          .cache/venv/bin/python scripts/module_c.py test-security
+          .cache/venv/bin/python tests/e2e/run_platform_acceptance.py
+      - name: Run REST, A2A, ABI and recovery scenarios
+        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --repeat 10
+      - name: Run travel planning REST, A2A, ABI and recovery scenarios
+        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning --browser --repeat 1
+      - name: Run original B HTTP compatibility end to end
+        run: |
+          .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1
+          .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1 --scenario travel_planning
+      - name: Collect reproducible evidence summaries
+        run: .cache/venv/bin/python manage.py collect-results
+      - name: Archive raw evidence with checksums
+        run: .cache/venv/bin/python manage.py archive-evidence
+      - name: Build versioned unified package and checksum
+        run: python manage.py package
+      - name: Archive raw verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-verification-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            experiments/raw/e2e/**
+            experiments/raw/forge/**
+            experiments/raw/security/**
+            experiments/results/**
+            .cache/delivery/**
+            submission/*.zip
+            submission/*.sha256
+          include-hidden-files: true
+
+  container-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AGENTFLOW_SOURCE_COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run clean Compose verification
+        run: docker compose run --build --rm verify
+      - name: Archive container verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-container-verification-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            experiments/raw/**
+            experiments/results/**
+          include-hidden-files: true

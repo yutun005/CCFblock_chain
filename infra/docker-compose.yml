@@ -1,0 +1,45 @@
+name: agentflow-pay-c
+x-besu: &besu
+  image: hyperledger/besu:25.10.0@sha256:11dd3a2f44ad1cafb39cbe27d6ee57b053733c257812cc8a0264ade9e6cc0778
+  restart: unless-stopped
+  environment:
+    JAVA_OPTS: "-Xms128m -Xmx512m"
+  volumes:
+    - ./besu/generated:/config:ro
+services:
+  validator1:
+    <<: *besu
+    command: ["--config-file=/config/node1.toml"]
+    volumes: ["./besu/generated:/config:ro", "./besu/generated/static-nodes.json:/data/static-nodes.json:ro", "validator1:/data"]
+    networks: { besu: { ipv4_address: 172.29.37.11 } }
+  validator2:
+    <<: *besu
+    command: ["--config-file=/config/node2.toml"]
+    volumes: ["./besu/generated:/config:ro", "./besu/generated/static-nodes.json:/data/static-nodes.json:ro", "validator2:/data"]
+    networks: { besu: { ipv4_address: 172.29.37.12 } }
+  validator3:
+    <<: *besu
+    command: ["--config-file=/config/node3.toml"]
+    volumes: ["./besu/generated:/config:ro", "./besu/generated/static-nodes.json:/data/static-nodes.json:ro", "validator3:/data"]
+    networks: { besu: { ipv4_address: 172.29.37.13 } }
+  validator4:
+    <<: *besu
+    command: ["--config-file=/config/node4.toml"]
+    volumes: ["./besu/generated:/config:ro", "./besu/generated/static-nodes.json:/data/static-nodes.json:ro", "validator4:/data"]
+    networks: { besu: { ipv4_address: 172.29.37.14 } }
+  rpcnode:
+    <<: *besu
+    command: ["--config-file=/config/node5.toml"]
+    volumes: ["./besu/generated:/config:ro", "./besu/generated/static-nodes.json:/data/static-nodes.json:ro", "rpcnode:/data"]
+    networks: { besu: { ipv4_address: 172.29.37.15 } }
+    ports: ["127.0.0.1:8547:8545"]
+networks:
+  besu:
+    ipam:
+      config: [{ subnet: 172.29.37.0/24 }]
+volumes:
+  validator1:
+  validator2:
+  validator3:
+  validator4:
+  rpcnode:

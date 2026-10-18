@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "branches": [
+    {
+      "branch": "A",
+      "files": 10,
+      "commit": "672b1249eac1fbf19ae8f9faacf3f2a55eab2577",
+      "status": "PASS"
+    },
+    {
+      "branch": "Bmodule",
+      "files": 29,
+      "commit": "95bdf2830a616a14033ce85cb3362a13b1c889be",
+      "status": "PASS"
+    },
+    {
+      "branch": "Cmodule",
+      "files": 1310,
+      "commit": "eca137026a3359def0b80b3acc0bba24de86d87d",
+      "status": "PASS"
+    },
+    {
+      "branch": "Dmodule",
+      "files": 31,
+      "commit": "e9a799bf37b41838821dbb790a60e1daf179b12e",
+      "status": "PASS"
+    }
+  ],
+  "files_verified": 1380
+}

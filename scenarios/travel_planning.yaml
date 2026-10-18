@@ -1,0 +1,36 @@
+{
+  "scenario": "travel_planning",
+  "title": "旅游规划",
+  "deposit": "100",
+  "tasks": [
+    {
+      "key": "first",
+      "skill": "attraction_search",
+      "budget_cap": "25",
+      "dependencies": []
+    },
+    {
+      "key": "second",
+      "skill": "hotel_search",
+      "budget_cap": "20",
+      "dependencies": []
+    },
+    {
+      "key": "combine",
+      "skill": "route_planning",
+      "budget_cap": "30",
+      "dependencies": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "key": "report",
+      "skill": "travel_report",
+      "budget_cap": "15",
+      "dependencies": [
+        "combine"
+      ]
+    }
+  ]
+}

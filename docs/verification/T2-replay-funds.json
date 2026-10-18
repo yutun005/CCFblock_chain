@@ -1,0 +1,46 @@
+{
+  "source": "experiments/raw/security/SEC-14.json",
+  "source_sha256": "c186230e5ba375d5f43228e350aa0324c2a7b26991c7d3aa8fbf5c0d9ce51fe0",
+  "job_id": "0xedb8fdf75f78fd6ae97f3b82a7802fbca821c99f1b669a77a15704ccb6137eca",
+  "replay_receipt": {
+    "type": 0,
+    "status": 0,
+    "cumulativeGasUsed": 40770,
+    "logs": [],
+    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "transactionHash": "0x95801681fd47467128365d2f045522a397bd203ec6e66c41cd0b93c0a21b27ae",
+    "transactionIndex": 0,
+    "blockHash": "0x5c100edc138154fd5430e6c64fd1766c52dc57d635e41383b740a8922c5a024c",
+    "blockNumber": 39,
+    "gasUsed": 40770,
+    "effectiveGasPrice": 1007471379,
+    "blobGasPrice": 1,
+    "from": "0xb9d0498f0Ee9dA31C682c9b0c0cE6D744126aCAa",
+    "to": "0x79E054e3d5D5e3c8BD032B42B2A6632F858FB74B",
+    "contractAddress": null
+  },
+  "units": "test token minimum units (6 decimals)",
+  "metrics": [
+    {
+      "name": "Old agent pending",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "name": "Backup pending",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "name": "Job remaining",
+      "before": 100000000,
+      "after": 100000000
+    },
+    {
+      "name": "Job refundable",
+      "before": 0,
+      "after": 0
+    }
+  ],
+  "scope": "pending is wallet-wide; remaining/refundable are per Job; no successful backup settlement asserted by this attack chart"
+}

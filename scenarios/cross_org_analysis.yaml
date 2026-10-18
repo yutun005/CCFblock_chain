@@ -1,0 +1,36 @@
+{
+  "scenario": "cross_org_analysis",
+  "title": "跨组织数据分析",
+  "deposit": "100",
+  "tasks": [
+    {
+      "key": "first",
+      "skill": "data_cleaning",
+      "budget_cap": "25",
+      "dependencies": []
+    },
+    {
+      "key": "second",
+      "skill": "data_validation",
+      "budget_cap": "20",
+      "dependencies": []
+    },
+    {
+      "key": "combine",
+      "skill": "statistical_analysis",
+      "budget_cap": "30",
+      "dependencies": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "key": "report",
+      "skill": "report_generation",
+      "budget_cap": "15",
+      "dependencies": [
+        "combine"
+      ]
+    }
+  ]
+}
