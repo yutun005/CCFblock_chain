@@ -725,6 +725,7 @@ class DeliveryManifest(StrictModel):
 
 
 class ServiceDelivery(StrictModel):
+    resultEncoding: Literal["manifest-sha256", "b-json-keccak-v1"] = "manifest-sha256"
     manifest: DeliveryManifest
     artifacts: list[BinaryArtifact] = Field(min_length=1)
     result: ResultPayload
@@ -732,13 +733,14 @@ class ServiceDelivery(StrictModel):
 
     @model_validator(mode="after")
     def manifest_matches(self):
-        if self.result.resultHash != object_hash(self.manifest.model_dump()):
+        if self.result.resultHash != delivery_commitment(self.model_dump()):
             raise ValueError("resultHash does not bind the delivery manifest")
         refs = [ArtifactRef.model_validate(reference(packet.model_dump())) for packet in self.artifacts]
         if refs != self.manifest.artifacts:
             raise ValueError("artifact bytes/references differ from manifest")
         for key in ("jobId", "taskId", "attempt", "agentWallet"):
-            if getattr(self.result, key) != getattr(self.manifest, key):
+            left, right = getattr(self.result, key), getattr(self.manifest, key)
+            if (left.lower() != right.lower()) if key == "agentWallet" else (left != right):
                 raise ValueError("result/manifest context mismatch: " + key)
         return self
 
@@ -838,7 +840,188 @@ class RFQReply(StrictModel):
         return self
 
 
+class BAgentCard(StrictModel):
+    agent_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1)
+    url: str
+    skills: list[str]
+    wallet: WalletRef
+    version: str = "1.0.0"
+    description: str = ""
+    active: Annotated[bool, Field(strict=True)] = True
+    metadata: dict = Field(default_factory=dict)
+
+
+class BTaskRequest(StrictModel):
+    job_id: HashRef
+    task_id: NodeIndex
+    attempt: RoundIndex
+    skill: str
+    payload: dict
+    requirement_hash: HashRef
+    deadline: WireUint64 = 0
+
+
+class BDAGPayload(StrictModel):
+    contract: Literal["agentflow-dag-v1"]
+    plan: Plan
+    idempotency_key: ProtocolKey
+    inputs: list[BinaryArtifact]
+    upstream_refs: list[UpstreamReference]
+    exclude_wallets: list[WalletRef]
+    rows: list[dict] | None = None
+    required: list[str] | None = None
+    field: str | None = None
+    title: str | None = None
+    sections: list[ArtifactRef] | None = None
+
+
+class BRFQRequest(BTaskRequest):
+    payment_token: WalletRef
+    budget: WireUint
+
+
+class BQuote(StrictModel):
+    job_id: HashRef
+    task_id: NodeIndex
+    attempt: RoundIndex
+    agent_wallet: WalletRef
+    price: WireUint
+    requirement_hash: HashRef
+    payment_token: WalletRef
+    valid_until: WireUint64
+    bid_nonce: WireUint
+    signature: ProtocolSignature
+    agent_id: str
+    skill: str
+
+
+class BResult(StrictModel):
+    job_id: HashRef
+    task_id: NodeIndex
+    attempt: RoundIndex
+    agent_wallet: WalletRef
+    result_hash: HashRef
+    artifact_uri_hash: HashRef
+    submitted_at: WireUint64
+    artifact: dict
+    signature: ProtocolSignature
+
+
+B_SIGNED_NAMES = {"jobId": "job_id", "taskId": "task_id", "agentWallet": "agent_wallet",
+                  "requirementHash": "requirement_hash", "paymentToken": "payment_token",
+                  "validUntil": "valid_until", "bidNonce": "bid_nonce", "resultHash": "result_hash",
+                  "artifactURIHash": "artifact_uri_hash", "submittedAt": "submitted_at"}
+
+
+def b_signed(kind: str, raw: dict) -> dict:
+    parsed = (BQuote if kind == "Quote" else BResult).model_validate(raw).model_dump()
+    value = {name: parsed[B_SIGNED_NAMES.get(name, name)] for name, _ in FIELDS[kind]}
+    for name, typ in FIELDS[kind]:
+        if typ == "address":
+            value[name] = Web3.to_checksum_address(value[name])
+    validate_protocol(kind + "Payload", value)
+    return value
+
+
+def registry_agents(raw, transport: str = "a2a-v1") -> list[dict]:
+    if transport == "a2a-v1":
+        if not isinstance(raw, list):
+            raise ValueError("market must return an agent array")
+        return raw
+    if not isinstance(raw, dict) or set(raw) != {"agents"} or not isinstance(raw["agents"], list):
+        raise ValueError("B market must return {agents: [AgentCard]}")
+    result, seen = [], set()
+    for raw_card in raw["agents"]:
+        card = BAgentCard.model_validate(raw_card)
+        if card.agent_id in seen:
+            raise ValueError("duplicate B agent_id")
+        seen.add(card.agent_id)
+        proof = card.metadata.get("binding", {})
+        # The challenge commits the public Card before metadata.binding is attached.
+        unsigned_card = {**raw_card, "metadata": {k: v for k, v in raw_card.get("metadata", {}).items() if k != "binding"}}
+        result.append({"agentId": card.agent_id, "endpoint": service_endpoint(card.url),
+                       "wallet": Web3.to_checksum_address(card.wallet), "skills": card.skills,
+                       "status": "ONLINE" if card.active else "OFFLINE", "card": unsigned_card,
+                       "bindingVersion": proof.get("version", 0), "challenge": proof.get("challenge"),
+                       "signature": proof.get("signature"), "transport": "b-http-v1"})
+    return result
+
+
+def b_task_request(payload: dict, state: dict) -> dict:
+    plan = Plan.model_validate(payload["plan"])
+    spec = plan.topological()[payload["taskId"]]
+    # B already owns the outer TaskRequest and free-form payload. Add missing DAG evidence inside payload.
+    body = {"job_id": payload["jobId"], "task_id": payload["taskId"], "attempt": payload["attempt"],
+            "skill": spec.skill, "requirement_hash": state["config"]["requirementHash"],
+            "deadline": str(state["deadline"]),
+            "payload": {"contract": "agentflow-dag-v1", "plan": payload["plan"],
+                        "idempotency_key": payload["idempotencyKey"],
+                        "inputs": payload.get("inputs", []), "upstream_refs": payload.get("upstreamRefs", []),
+                        "exclude_wallets": payload.get("excludeWallets", [])}}
+    rows = [row for item in payload.get("inputs", []) if item["name"].endswith(".csv")
+            for row in csv.DictReader(io.StringIO(unpack(item).decode("utf-8")))]
+    if spec.skill in {"data_cleaning", "data_validation", "statistical_analysis"}:
+        body["payload"]["rows"] = rows
+    if spec.skill == "data_validation":
+        body["payload"]["required"] = COLUMNS
+    if spec.skill == "statistical_analysis":
+        body["payload"]["field"] = "unit_price_cents"
+    if spec.skill == "report_generation":
+        body["payload"].update(title=plan.goal, sections=[reference(item) for item in payload.get("inputs", [])])
+    BDAGPayload.model_validate(body["payload"])
+    BTaskRequest.model_validate(body)
+    return body
+
+
+def b_result_delivery(raw: dict, task_id: int) -> dict:
+    if (not isinstance(raw, dict) or type(raw.get("task_id")) is not int
+            or raw["task_id"] != task_id or raw.get("status") != "completed"):
+        raise ValueError("B task did not complete with matching task_id")
+    signed = BResult.model_validate(raw["artifact"])
+    artifact = signed.artifact
+    if set(artifact) != {"manifest", "artifacts"}:
+        raise ValueError("B result requires payload contract agentflow-dag-v1 artifact envelope")
+    delivery = {**artifact, "result": b_signed("Result", raw["artifact"]),
+                "signature": signed.signature, "resultEncoding": "b-json-keccak-v1"}
+    validate_protocol("ServiceDelivery", delivery)
+    return delivery
+
+
+def delivery_commitment(delivery: dict) -> str:
+    if delivery.get("resultEncoding", "manifest-sha256") == "manifest-sha256":
+        return object_hash(delivery["manifest"])
+    if delivery["resultEncoding"] != "b-json-keccak-v1":
+        raise ValueError("unknown result encoding")
+    artifact = {"manifest": delivery["manifest"], "artifacts": delivery["artifacts"]}
+    canonical(artifact)  # reject floats; B's existing sorted JSON/ASCII escaping and Keccak are retained
+    return "0x" + keccak(json.dumps(artifact, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hex()
+
+
+def delivery_uri_hash(delivery: dict) -> str:
+    result = delivery["result"]
+    if delivery.get("resultEncoding", "manifest-sha256") == "b-json-keccak-v1":
+        return "0x" + keccak(f"{result['jobId']}:{result['taskId']}:artifact".encode()).hex()
+    return sha256(("urn:sha256:" + result["resultHash"][2:]).encode())
+
+
+def ab_handoff_document() -> dict:
+    return {"version": 1, "source": "Bmodule@95bdf2830a616a14033ce85cb3362a13b1c889be",
+            "agentQuote": {"path": "/quotes", "request": "BRFQRequest", "response": "BQuote"},
+            "transport": "b-http-v1", "agentCard": "/.well-known/agent.json", "execute": "/tasks/send",
+            "register": "/api/agents/register", "unregister": "/api/agents/unregister",
+            "discovery": {"path": "/api/agents", "envelope": "agents", "filter": "skill"},
+            "rfq": {"path": "/api/rfq", "envelope": "quotes", "extraRequest": ["payment_token", "budget"]},
+            "payloadContract": "agentflow-dag-v1", "resultEncoding": "b-json-keccak-v1",
+            "signedFieldMapping": B_SIGNED_NAMES, "signing": "use signedFields/domain from protocol schema; no re-signing by A",
+            "notA2AConformance": "B HTTP compatibility transport; official SDK A2A remains the default",
+            "requiredExtensions": ["health.protocol", "metadata.binding", "payload.idempotency_key",
+                                   "payload.plan/inputs/upstream_refs", "Result.artifact.manifest/artifacts", "/withdraw/{jobId}"],
+            "businessSchemas": {skill: {"policyId": policy_id(skill)} for skill in EXECUTORS}}
+
+
 PROTOCOL_MODELS = {model.__name__: model for model in (
+    BAgentCard, BTaskRequest, BDAGPayload, BRFQRequest, BQuote, BResult,
     RFQRequest, RFQReply, QuoteRequest, QuoteReply, ExecutionRequest, ServiceDelivery,
     VerificationRequest, VerificationReply, QuotePayload, ResultPayload, AttestationPayload)}
 
@@ -864,6 +1047,7 @@ def protocol_schema_document():
                         "typedData": "EIP-712 Keccak256"},
             "stopMode": "stop_future_delegation", "withdrawalScope": "job",
             "integerEncoding": "uint64/uint256 use canonical decimal strings on the wire; uint8/uint32 use integers",
+            "abHandoff": ab_handoff_document(),
             "signedFields": {kind: [{"name": name, "type": typ} for name, typ in fields]
                              for kind, fields in FIELDS.items()},
             "schemas": {name: {"$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1538,13 +1722,13 @@ def policy_id(skill: str) -> str:
         checker = "\n".join(inspect.getsource(f) for f in (
             canonical, artifact_json, travel_date, minutes, clock_time, TravelRequest, Attraction, Hotel, Transfer, TravelInput,
             travel_document, travel_context, travel_candidates, verify_travel,
-            verify_travel_route, verify_travel_report, check_context, validate_delivery)).encode()
+            verify_travel_route, verify_travel_report, delivery_commitment, delivery_uri_hash, check_context, validate_delivery)).encode()
         return object_hash({"skill": skill, "rules": {"version": "travel-v1", "notice": TRAVEL_NOTICE,
                             "schema": TravelInput.model_json_schema(), "currency": "CNY_cents",
                             "route": "unique_visits_opening_hours_transfers_daily_return_budget"},
                             "checker_hash": sha256(checker)})
     checker = "\n".join(inspect.getsource(f) for f in (canonical, artifact_json, audit_raw, reference_statistics, verify_chart,
-                                                          verify_content, check_context, validate_delivery)).encode()
+                                                          verify_content, delivery_commitment, delivery_uri_hash, check_context, validate_delivery)).encode()
     return object_hash({"skill": skill, "rules": RULES, "checker_hash": sha256(checker)})
 
 
@@ -2377,7 +2561,7 @@ def check_context(chain: Chain, request: dict) -> tuple[dict, dict, list[dict]]:
             pred_id = indexed[dependency]
             pred = chain.task(job_id, pred_id)
             manifest = delivery["manifest"]
-            if (pred["state"] != 2 or pred["resultHash"] != object_hash(manifest)
+            if (pred["state"] != 2 or pred["resultHash"] != delivery_commitment(delivery)
                     or manifest["jobId"] != job_id or manifest["taskId"] != pred_id):
                 raise ValueError("upstream is not the settled result")
             if manifest["artifacts"] != [reference(x) for x in delivery["artifacts"]]:
@@ -2398,13 +2582,16 @@ def validate_delivery(chain: Chain, request: dict, validator_key: str) -> dict:
                          "agentWallet": task["payee"], "requirementHash": task["config"]["requirementHash"],
                          "inputRefs": [reference(x) for x in inputs], "upstreamRefs": context["upstreamRefs"],
                          "artifacts": [reference(x) for x in delivery["artifacts"]]}
-    if manifest != expected_manifest or result["resultHash"] != object_hash(manifest):
+    if Web3.to_checksum_address(manifest["agentWallet"]) != task["payee"]:
+        raise ValueError("manifest wallet differs from assigned payee")
+    expected_manifest["agentWallet"] = manifest["agentWallet"]
+    if manifest != expected_manifest or result["resultHash"] != delivery_commitment(delivery):
         raise ValueError("result commitment/context mismatch")
     for field in ("jobId", "taskId", "attempt", "agentWallet"):
-        if result[field] != manifest[field]:
+        left, right = result[field], manifest[field]
+        if (left.lower() != right.lower()) if field == "agentWallet" else (left != right):
             raise ValueError("signed result context mismatch")
-    uri = "urn:sha256:" + result["resultHash"][2:]
-    if result["artifactURIHash"] != sha256(uri.encode()):
+    if result["artifactURIHash"] != delivery_uri_hash(delivery):
         raise ValueError("result URI commitment mismatch")
     if not task["deadline"] - task["config"]["slaSeconds"] <= result["submittedAt"] <= chain.now:
         raise ValueError("result timestamp outside execution window")
@@ -2661,12 +2848,13 @@ def market_app(deployment: dict, runtime: Path, token: str, allowed_origins: lis
 # ============================================================================
 class Engine:
     def __init__(self, deployment: dict, runtime: Path, market_url: str, validator_url: str, token: str, signers: dict,
-                 allowed_origins: list[str] | None = None):
+                 allowed_origins: list[str] | None = None, service_transport: str = "a2a-v1"):
         self.chain = Chain(deployment["rpc"], runtime, deployment)
         self.db = Database(runtime / "platform.sqlite")
         self.store = ArtifactStore(runtime / "artifacts")
         self.runtime, self.market_url, self.validator_url, self.token = runtime, market_url, validator_url, token
         self.signers = signers
+        self.service_transport = service_transport
         self.allowed_origins = {service_endpoint(url) for url in (allowed_origins or [])}
         self.delegation_locks: dict[str, asyncio.Lock] = {}
         self.locks: dict[str, asyncio.Lock] = {}
@@ -2690,24 +2878,102 @@ class Engine:
                 or not 0 <= q["price"] <= units(spec.budget_cap)
                 or selected["quoteHash"] != typed_hash("Quote", q, self.chain.chain_id, self.chain.escrow.address)):
             raise ValueError("selected quote signature/domain/terms mismatch")
-        async with httpx.AsyncClient(trust_env=False, timeout=5) as http:
-            response = await http.get(self.market_url + "/api/agents",
-                                      headers={"Authorization": "Bearer " + self.token})
-            response.raise_for_status()
-            agents = response.json()
-        if not isinstance(agents, list):
-            raise ValueError("incompatible market registry; expected dasc-a2a-v2 agent list")  # noqa: TRY004
+        agents = await self.agents()
         binding = next((a for a in agents if a.get("agentId") == selected["agentId"]), None)
         if not binding:
             raise ValueError("selected agent has no registered wallet binding")
-        challenge = binding["challenge"]
+        challenge = binding.get("challenge")
+        if not isinstance(challenge, dict) or not binding.get("signature"):
+            raise ValueError("B must supply metadata.binding wallet proof before delegation")
         if (binding["wallet"] != signer or binding["endpoint"] != origin
                 or binding["bindingVersion"] != selected["bindingVersion"] or spec.skill not in binding["skills"]
-                or challenge["wallet"] != signer or challenge["endpoint"] != origin
+                or Web3.to_checksum_address(challenge["wallet"]) != signer or challenge["endpoint"] != origin
                 or challenge["cardHash"] != object_hash(binding["card"])
                 or recover_challenge(challenge, binding["signature"]) != signer):
             raise ValueError("selected endpoint/wallet binding proof mismatch")
         self.db.put("selected_bindings", selected["quoteHash"], binding)
+
+    async def agents(self) -> list[dict]:
+        async with httpx.AsyncClient(trust_env=False, timeout=5) as http:
+            response = await http.get(self.market_url + "/api/agents",
+                                      headers={"Authorization": "Bearer " + self.token})
+            response.raise_for_status()
+            return registry_agents(response.json(), self.service_transport)
+
+    async def request_quotes(self, request: dict, state: dict) -> dict:
+        if self.service_transport == "a2a-v1":
+            return await self.post(self.market_url + "/api/rfq", request)
+        plan = Plan.model_validate(request["plan"])
+        await asyncio.to_thread(self.chain.check_plan, request["jobId"], plan)
+        spec = plan.topological()[request["taskId"]]
+        body = b_task_request(request, state)
+        body.update(payment_token=self.chain.token.address, budget=str(units(spec.budget_cap)))
+        validate_protocol("BRFQRequest", body)
+        response = await self.post(self.market_url + "/api/rfq", body)
+        if not isinstance(response, dict) or set(response) != {"quotes"} or not isinstance(response["quotes"], list):
+            raise ValueError("B RFQ must return {quotes: [Quote]}")
+        agents = {a["agentId"]: a for a in await self.agents()}
+        candidates = []
+        self.db.put("known_plans", request["jobId"], {"jobId": request["jobId"], "plan": request["plan"]})
+        policy = plan.execution_policy
+        history = (await asyncio.to_thread(Market(self.chain, self.db, self.token, list(self.allowed_origins)).outcomes,
+                                          spec.skill)) if policy.selection == "risk_aware" else {}
+        for raw in response["quotes"]:
+            parsed = BQuote.model_validate(raw)
+            agent = agents.get(parsed.agent_id)
+            if agent is None:
+                raise ValueError("B quote refers to an unregistered agent_id")
+            item = {k: agent[k] for k in ("agentId", "endpoint", "wallet", "bindingVersion")}
+            # Missing binding is an incomplete B contract, never an invented proof/version.
+            if type(item["bindingVersion"]) is not int or item["bindingVersion"] < 1:
+                raise ValueError("B registry is missing metadata.binding.version")
+            try:
+                if not agent["status"] == "ONLINE" or parsed.skill != spec.skill or spec.skill not in agent["skills"]:
+                    raise ValueError("B quote skill or active status mismatch")
+                quote = b_signed("Quote", raw)
+                item.update(quote=quote, signature=parsed.signature, a2aTaskId="b-rfq:" + request["idempotencyKey"],
+                            quoteHash=typed_hash("Quote", quote, self.chain.chain_id, self.chain.escrow.address), valid=True)
+                await self.validate_selection(item, request["jobId"], request["taskId"], state, spec, request["excludeWallets"])
+                counts = history.get(item["wallet"], {"settled": 0, "expired": 0, "evidence": []})
+                score = Market.selection_score(quote["price"], counts, policy)
+                item.update(history=counts, scoreNumerator=str(score.numerator), scoreDenominator=str(score.denominator))
+            except ValueError as exc:
+                item.update(valid=False, reason=str(exc))
+            candidates.append(item)
+        valid = sorted((q for q in candidates if q["valid"]), key=lambda q: (
+            Fraction(int(q["scoreNumerator"]), int(q["scoreDenominator"])), q["agentId"]))
+        return {"jobId": request["jobId"], "taskId": request["taskId"], "attempt": request["attempt"],
+                "candidates": candidates, "selected": valid[0] if valid else None,
+                "selectionRule": policy.selection, "riskPenalty": policy.risk_penalty, "createdAt": int(time.time())}
+
+    async def execute_service(self, endpoint: str, payload: dict, state: dict) -> dict:
+        endpoint = self.agent_origin(endpoint)
+        timeout = max(1, state["deadline"] - self.chain.now + 1)
+        if self.service_transport == "a2a-v1":
+            return await a2a_call(endpoint, payload, self.token, timeout=timeout)
+        response = await self.post(endpoint + "/tasks/send", b_task_request(payload, state), timeout=timeout)
+        return {"a2aTaskId": "b-http:" + payload["idempotencyKey"],
+                "response": b_result_delivery(response, payload["taskId"])}
+
+    async def register_agent(self, data: dict) -> dict:
+        if self.service_transport == "a2a-v1":
+            return await self.post(self.market_url + "/api/agents/register", data)
+        endpoint = self.agent_origin(data["endpoint"])
+        async with httpx.AsyncClient(trust_env=False, timeout=5) as http:
+            response = await http.get(endpoint + "/.well-known/agent.json",
+                                      headers={"Authorization": "Bearer " + self.token})
+            response.raise_for_status()
+            raw = response.json()
+            card = BAgentCard.model_validate(raw)
+        if (card.agent_id != data["agentId"] or service_endpoint(card.url) != endpoint
+                or Web3.to_checksum_address(card.wallet) != Web3.to_checksum_address(data["wallet"])):
+            raise ValueError("B Agent Card identity/endpoint mismatch")
+        return await self.post(self.market_url + "/api/agents/register", raw)
+
+    async def unregister_agent(self, agent_id: str) -> dict:
+        if self.service_transport != "b-http-v1":
+            raise ValueError("native A2A services use their signed offline lease operation")
+        return await self.post(self.market_url + "/api/agents/unregister", {"agent_id": agent_id})
 
     async def stop_delegation(self, job_id: str):
         async with self.delegation_locks.setdefault(job_id, asyncio.Lock()):
@@ -2906,8 +3172,8 @@ class Engine:
                 rfq_id = f"rfq:{job_id}:{task_id}:{attempt}:{uuid.uuid4()}"
                 self.checkpoint(job_id, task_id, "BIDDING", attempt=attempt)
                 try:
-                    quotes = await self.post(self.market_url + "/api/rfq", {"jobId": job_id, "taskId": task_id,
-                        "attempt": attempt, "plan": job["plan"], "idempotencyKey": rfq_id, "excludeWallets": history})
+                    quotes = await self.request_quotes({"jobId": job_id, "taskId": task_id,
+                        "attempt": attempt, "plan": job["plan"], "idempotencyKey": rfq_id, "excludeWallets": history}, state)
                     validate_protocol("RFQReply", quotes)
                     if (quotes["jobId"], quotes["taskId"], quotes["attempt"]) != (job_id, task_id, attempt):
                         raise ValueError("RFQ response context mismatch")
@@ -2964,8 +3230,7 @@ class Engine:
         try:
             if delivery is None:
                 self.checkpoint(job_id, task_id, "RUNNING", deadline=state["deadline"], startedAt=time.time())
-                call = await a2a_call(selected["endpoint"], payload, self.token,
-                                      timeout=max(1, state["deadline"] - self.chain.now + 1))
+                call = await self.execute_service(selected["endpoint"], payload, state)
                 delivery = call["response"]
                 phase = "delivery"
                 # All exact bytes are saved before validation/payment, so successors can recover after a crash.
@@ -3145,7 +3410,8 @@ def input_error_message(exc: Exception) -> str:
 
 def api_app(config: dict, runtime: Path) -> FastAPI:
     engine = Engine(config["deployment"], runtime, config["market"], config["validator"], config["token"], config["signers"],
-                    config.get("allowedAgentOrigins", [a["endpoint"] for a in config.get("agents", [])]))
+                    config.get("allowedAgentOrigins", [a["endpoint"] for a in config.get("agents", [])]),
+                    config.get("serviceTransport", "a2a-v1"))
     active: dict[str, asyncio.Task] = {}
 
     async def run_job(job_id):
@@ -3215,14 +3481,18 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
 
     @app.get("/api/agents")
     async def agents():
-        async with httpx.AsyncClient(trust_env=False, timeout=5, headers={"Authorization": "Bearer " + config["token"]}) as http:
-            response = await http.get(config["market"] + "/api/agents")
-            response.raise_for_status()
-            return response.json()
+        return await engine.agents()
 
     @app.post("/api/agents/register")
     async def register(data: dict):
-        return await engine.post(config["market"] + "/api/agents/register", data)
+        return await engine.register_agent(data)
+
+    @app.post("/api/agents/unregister")
+    async def unregister(data: dict):
+        try:
+            return await engine.unregister_agent(data["agent_id"])
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @app.get("/api/jobs/{job_id}/audit")
     def audit(job_id: str, after: str = "0"):
@@ -3405,6 +3675,12 @@ def settings_file(path: Path | str | None = None, runtime: Path | str | None = N
     if len(roles) != len(set(roles)) or not set(roles) <= all_roles:
         raise ValueError("managedRoles contains duplicate or unknown service ids")
     settings["managedRoles"] = roles
+    transport = settings.get("serviceTransport", "a2a-v1")
+    if transport not in {"a2a-v1", "b-http-v1"}:
+        raise ValueError("unknown serviceTransport")
+    if transport == "b-http-v1" and not set(roles) <= {"api", "validator"}:
+        raise ValueError("b-http-v1 uses B's external market/agents; managedRoles may contain api and validator only")
+    settings["serviceTransport"] = transport
     settings["allowedAgentOrigins"] = [service_endpoint(url) for url in settings.get(
         "allowedAgentOrigins", [a["endpoint"] for a in settings["agents"]])]
     return settings
@@ -3458,12 +3734,15 @@ def configure_deployment(settings: dict) -> dict:
     deployment = {"rpc": rpc, "chainId": chain_id, "token": token, "escrow": escrow,
                   "tokenCodeHash": Web3.keccak(token_code).to_0x_hex(),
                   "escrowCodeHash": Web3.keccak(escrow_code).to_0x_hex(),
-                  "startBlock": start_block, "mode": "SELF_HOSTED", **wallets}
+                  "startBlock": start_block, "mode": "SELF_HOSTED",
+                  "serviceTransport": settings["serviceTransport"], **wallets}
     runtime = settings["directory"]
     runtime.mkdir(parents=True, exist_ok=True)
     target = runtime / "deployment.json"
     if target.exists():
         old = json.loads(target.read_text(encoding="utf-8"))
+        if old.get("serviceTransport", "a2a-v1") != deployment["serviceTransport"]:
+            raise ValueError("service transport changed; use a separate runtime directory")
         identity_fields = ("chainId", "token", "escrow", "tokenCodeHash", "escrowCodeHash", "startBlock", *wallets)
         if any(old.get(field) != deployment[field] for field in identity_fields):
             raise ValueError("deployment identity changed; use a separate runtime directory")
@@ -3477,6 +3756,8 @@ def runtime_config(settings: dict, role: str = "all") -> dict:
         raise ValueError("Deployment is not configured. Run manage.py configure with your RPC and contract settings first.")
     deployment = json.loads(source.read_text(encoding="utf-8"))
     spec = settings["chain"]
+    if deployment.get("serviceTransport", "a2a-v1") != settings["serviceTransport"]:
+        raise ValueError("service transport differs from saved deployment")
     deployment["rpc"] = required_environment(spec["rpcEnv"])
     if deployment["chainId"] != int(required_environment(spec["chainIdEnv"])):
         raise ValueError("configured chain id differs from saved deployment")
@@ -3487,6 +3768,7 @@ def runtime_config(settings: dict, role: str = "all") -> dict:
     if len(token) < 32:
         raise ValueError("API access token must contain at least 32 characters")
     config = {key: settings[key] for key in ("api", "market", "validator", "inputDirectory")}
+    config["serviceTransport"] = settings["serviceTransport"]
     config["scenarioInputDirectories"] = settings.get("scenarioInputDirectories", {})
     config.update(deployment=deployment, token=token, tokenSymbol=spec.get("tokenSymbol", "ERC20"), signers={}, agents=[])
     roles = set(settings["managedRoles"]) if role == "all" else {role}
@@ -3531,7 +3813,9 @@ def check_services(config: dict) -> list[dict]:
             response = client.get(endpoint + "/health")
             response.raise_for_status()
             health = response.json()
-            if health.get("ok") is not True or health.get("protocol") != expected:
+            b_service = config.get("serviceTransport") == "b-http-v1" and role != "validator"
+            healthy = health.get("status") == "ok" if b_service else health.get("ok") is True
+            if not healthy or health.get("protocol") != expected:
                 raise ValueError("incompatible service protocol/domain/policy: " + role)
             if role == "validator" and health.get("wallet") != config["deployment"]["validator"]:
                 raise ValueError("validator wallet differs from deployment")
@@ -3599,7 +3883,8 @@ class ServiceCluster:
                     response = client.get(self.config["market"] + "/api/agents", params={"available_only": "true"},
                                           headers={"Authorization": "Bearer " + self.config["token"]})
                     response.raise_for_status()
-                    registered = {a["agentId"] for a in response.json()}
+                    registered = {a["agentId"] for a in registry_agents(response.json(), self.config["serviceTransport"])
+                                  if a["status"] == "ONLINE"}
                     if all(a["id"] in registered for a in self.config["agents"]):
                         break
                     if time.monotonic() > deadline:

@@ -15,6 +15,56 @@ A 在委派前复核签名报价和端点/钱包绑定，拒绝不在白名单�
 
 A 独立项目保留原合约，协议 profile 为 `dasc-a2a-legacy-a-v2`（Attestation.verdict 为 uint8、按 Job 提现）；合并项目已有 C ABI，profile 为 `dasc-a2a-v2`（verdict 为 bool、按钱包汇总提现）。两份工作区与运行目录独立，不能混接服务。C 适配在合并目录验证，本次不替换 A 的原合约。
 
+## A/B 对接：沿用 B 已有定义，补齐缺失部分
+
+核对依据是 Bmodule 提交 `95bdf2830a616a14033ce85cb3362a13b1c889be` 的 `docs/agent-protocol.md`、`services/marketplace/models.py`、`http_api.py`、`market.py` 和 `services/agents/base.py`、`http_server.py`、`business.py`。A 不修改这些 B 源码。以下约定补充上一版交接说明：B 已有的 HTTP 路径、外层 JSON 和结果哈希由 A 适配，不能笼统要求 B 全部改成 A 的格式。
+
+### 已有内容：A 负责适配
+
+| B 已有定义 | A 已实现的对齐 |
+|---|---|
+| `/.well-known/agent.json`；agent_id/name/url/skills/wallet/version/description/active/metadata | 按原路径读取，映射为 A 页面和调度内部的 agentId/endpoint；不改 B Card 字段 |
+| `GET /api/agents?skill=...` 返回 `{"agents":[Card]}` | 接收 B 的包装结构；按 active 显示在线/下线；保留 B 的 Agent ID 和技能名 |
+| `POST /api/agents/register` 接收 Card；`/unregister` 接收 agent_id | A 注册转发实际读取的 B Card；下线沿用 B 的 active=false 语义；保留审计记录 |
+| `POST /api/rfq` 使用 job_id/task_id/attempt/skill/payload/requirement_hash/payment_token/budget | A 组装原字段，接收 `{"quotes":[Quote]}`，在 A 中核验并选择报价；不要求 B HTTP 响应新增 selected |
+| `POST /tasks/send`，兼容别名 `/a2a/tasks`；TaskRequest 中含 deadline | A 使用 `/tasks/send`，发送原 TaskRequest；接收 `{"task_id":整数,"status":"completed","artifact":Result}` |
+| Quote / Result 的 snake_case 字段、65 字节签名 | A 只映射字段和地址显示形式，保留金额、nonce 和原签名；不代签、不把旧签名改成新域签名 |
+| `Result.artifact` 是 JSON 对象；result_hash 是排序 JSON 的 Keccak-256 | 保留 `json.dumps(...,sort_keys=True,separators=(",",":"),ensure_ascii=True)` 的 UTF-8 字节哈希；A 在验证器和前驱证据校验中支持此编码 |
+| artifact_uri_hash 是 Keccak-256(`job_id + ":" + task_id + ":artifact"`) | 沿用 B 的计算方式；task_id 使用十进制字符串。轮次仍由 Result/manifest 和链上 attempt 绑定 |
+| 四个销售技能；payload 中的 rows/required/field/title/sections | 保留技能名称；A 把 CSV 转为 rows，校验传入 required，统计 field 使用 unit_price_cents，报告传入 title 和成果引用 sections |
+
+A 的主 API 仍返回已有页面使用的内部结构；变化位于对 B 的调用边界。签名金额保持代币最小单位原值，不把 B 示例中的 `11` 自动扩大为 `11 USDC`。若服务收费 11 USDC，应报价 `11000000`。
+
+### B 尚缺的内容：补充约定与责任
+
+| 编号 | 补充约定 | B 需要完成 |
+|---|---|---|
+| AB-01 | 各 B 服务 `/health` 保留 `status:"ok"`，增加 `protocol`；Agent 保留 agent_id | 返回 A 导出协议的 profile/schemaHash/domain/paymentToken/policies，按实际部署配置填写；市场也提供此接口 |
+| AB-02 | Card 的 metadata.binding 保存 `{version,challenge,signature}` | 市场向 Agent 的 `/registration/challenge` 发随机挑战，验证钱包签名后登记；禁止只凭 Card 自报钱包。B 现有 Card metadata 字段承载扩展 |
+| AB-03 | 沿用 B Quote/Result 外层字段，但 EIP-712 域和类型必须匹配实际合约 | 使用 `DASC`、实际 chainId/escrow 和导出 signedFields；taskId:uint8、attempt:uint32、时间:uint64。原 `AgentFlow Pay`/uint256/固定合约地址与 C 冲突，A 明确拒绝。私钥使用部署配置，不从公开 agent_id 派生；报价 nonce 持久化、重启不复用，有效期结合实际链时间生成 |
+| AB-04 | TaskRequest.payload 增加 `contract:"agentflow-dag-v1"`、plan、inputs、upstream_refs、idempotency_key、exclude_wallets | 原业务字段可以继续使用；验证冻结计划与任务轮次，保存幂等结果，同一键不同 payload 拒绝；输入/前驱证据按 Schema 核验 |
+| AB-05 | Result.artifact 在上述 contract 下为 `{manifest:DeliveryManifest, artifacts:BinaryArtifact[]}` | 保留 B 的 Result 外层和 JSON Keccak 算法，补齐清单与实际文件字节。manifest 包含任务/轮次/钱包/需求哈希、原始输入、前驱和成果引用。只交 `{rows:...}` 等简化结果不满足 DAG 交付要求 |
+| AB-06 | B 市场对动态注册的远端 Agent 发起真实询价 | B 现有 HTTP 注册保存 Card，但报价循环要求含 `.card/.quote` 的 Agent 对象；需由 B 补远端调用。新增 `POST /quotes`：B TaskRequest 加 payment_token/budget，响应单个 B Quote；A 仍只访问市场 RFQ，不访问 B 内部对象 |
+| AB-07 | `POST /withdraw/{job_id}` 由 Agent 自己领取链上余额 | Agent 使用自己的钱包签名。C 部署调用 withdraw()，job_id 只作关联；A 旧部署按其原 ABI 提现。已领取返回 amount=0，重复调用不重复转账 |
+| AB-08 | 业务任务以《第三版.md》及冻结策略为准 | 销售成果补齐清洗审计、数据质量、分组统计、报告/图表；旅游补齐 attraction_search、hotel_search、route_planning、travel_report。B 的 travel_itinerary 继续作为额外技能，不能当作这四个节点已完成 |
+
+AB-02 的 challenge 字段沿用 A 已实现的 `market="agentflow-registration-v1"`、endpoint、wallet、cardHash、nonce、expiresAt。cardHash 是移除 `metadata.binding` 后公开 Card 的规范 JSON SHA-256，避免签名包含自身。签名消息为 UTF-8 `AgentFlow registration v1\n` 加该 challenge 的规范 JSON，使用 EIP-191 personal-sign；注册时校验有效期和随机数，钱包/端点/Card 改动要重新挑战并递增 version。A 接收 B Card 时不凭空生成绑定证明。
+
+所有需要工作区权限的接口接收 `Authorization: Bearer <工作区令牌>`；健康与公开 Card 可匿名读取。B 服务仍各自保管私钥。A 只向配置允许的 Agent origin 发送令牌；不跟随服务重定向。
+
+AB-04 的 inputs/artifacts 使用 `{name,sha256,size,media_type,data}`，data 是 Base64 原始字节；清单只保存去掉 data 后的引用。upstream_refs 使用 `{taskId,attempt,resultHash}`，依冻结计划的前驱顺序排列。RFQ 可不带业务文件，执行时由 A 传入完整 inputs。规范的 plan、manifest、二进制成果和签名字段均可通过 `manage.py schema` 导出；B 外层模型为 BAgentCard/BTaskRequest/BRFQRequest/BQuote/BResult，DAG 扩展为 BDAGPayload，转换和扩展说明在 protocol.abHandoff。
+
+业务文件名及内容语义以现有销售/旅游章节和对应 validationPolicyId 为准；B 现有通用清洗/统计示例可复用，但只做均值或把 days 原样返回不能通过完整场景的独立内容验证。B 输出文件中的业务数字可按场景规则表达；签名清单和外层资金字段不使用浮点数。
+
+### 如何启用和验收
+
+在完整的本地 runtime.json 中增加 `"serviceTransport":"b-http-v1"`、`"managedRoles":["api","validator"]`（验证器外置则只填 api）；将 market 和 agents 的地址、ID、技能配置为 B 实际服务。B 的市场与 Agent 必须由 B 自己启动，A 启动器不会用内置服务冒充它们。外部角色公开钱包继续放 wallets；切换 serviceTransport 必须使用新的 directory。
+
+默认仍为 `a2a-v1`。`b-http-v1` 是针对 B 现有 HTTP 的兼容传输，不是官方 A2A 1.0 互通认证；《第三版.md》要求的 SDK/A2A 验收仍需 B 补齐标准传输能力。原 A 与合并版各自使用对应的协议 profile 和实际合约，不混用部署。
+
+验收按顺序进行：① A 能显示 B 原服务列表并转发注册/下线；② check 核对域、规则和健康描述；③ 使用 B 报价原签名完成合约委派；④ B 交付清单经独立验证后结算；⑤ 错域签名、伪造证明、缺失清单、成果篡改和旧轮次拒绝；⑥ 超时换候补、重复调用、提现退款和重启恢复通过。A 的兼容层测试与 B 本人补齐扩展后的联合验收分别记录，前者不能标成后者完成。
+
+
 ## 业务范围
 
 平台将任务表示为带预算、依赖、时限和轮次上限的 DAG，发现并比较服务 Agent 的签名报价，按依赖委派，通过独立验证器核验实际成果，再提交合约结算。超时或履约失败时按策略重派；终态后领取报酬和未使用预算。
