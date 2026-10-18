@@ -2,6 +2,19 @@
 
 多智能体任务编排、服务交易和依赖感知结算。当前分支为 **A**，在此分支开发、提交和推送；暂不创建 PR、不合并到 main。其他成员分支不受本分支提交影响。
 
+
+## A 侧独立部署与接口检查
+
+本次 A 补充支持只启动 `runtime.managedRoles` 指定的角色，例如 `["api"]`；默认仍启动原有全套服务。外部角色的钱包通过 `runtime.wallets` 提供公开地址，例如 `wallets.validator`；A 机器只需 owner/coordinator 私钥，不需要远端验证器或 Agent 私钥。服务地址和 Agent 白名单继续通过配置指定，不依赖设备目录。
+
+在 PyCharm 的 manage.py 运行配置中，参数 `schema` 离线导出接口；`configure` 绑定部署；`check` 检查已运行服务的协议、实际链/合约/代币、验证规则和验证者钱包；`start` 只管理指定的本地进程。使用独立配置时，以上参数都加 `--config runtime.json`。创建新任务前同样执行兼容性检查，不兼容返回 HTTP 503，尚不发送托管交易。健康描述不代替签名校验。
+
+A 在委派前复核签名报价和端点/钱包绑定，拒绝不在白名单的服务地址；完整计划逐项对照链上冻结条款。停止请求和新委派使用同一互斥门，持久化 stopRequested 并记录审计事件，重启后保持停止语义。快照附同一区块的 snapshotBlock/snapshotBlockHash。
+
+验证策略指纹随校验代码变化；升级后重启全部对应服务，使用新任务验证。不要将旧版本在途任务直接视为已完成策略迁移。
+
+A 独立项目保留原合约，协议 profile 为 `dasc-a2a-legacy-a-v2`（Attestation.verdict 为 uint8、按 Job 提现）；合并项目已有 C ABI，profile 为 `dasc-a2a-v2`（verdict 为 bool、按钱包汇总提现）。两份工作区与运行目录独立，不能混接服务。C 适配在合并目录验证，本次不替换 A 的原合约。
+
 ## 业务范围
 
 平台将任务表示为带预算、依赖、时限和轮次上限的 DAG，发现并比较服务 Agent 的签名报价，按依赖委派，通过独立验证器核验实际成果，再提交合约结算。超时或履约失败时按策略重派；终态后领取报酬和未使用预算。
@@ -355,7 +368,7 @@ Task 的完整身份是 `(jobId, taskId)`，Attempt 是 `(jobId, taskId, attempt
 
 ### 5. 核心协议与接口交接
 
-接口版本为 1，交接状态为 `local_proposal`，表示 A 已实现的接口提案，尚未由 B/C/D 联合冻结。在 PyCharm 的 manage.py 运行配置中把参数改为 `schema` 即可离线导出 `.cache/interfaces.json`，无需 RPC、账户或启动服务；导出后将参数改回 `start`。需要其他输出位置时填写 `schema --output 相对目录/文件.json`。同一内容也可通过已登录 API 的 Schema 接口获取。
+接口版本为 2，交接状态为 `integration_candidate`，表示 A 已实现的接口提案，尚未由 B/C/D 联合冻结。在 PyCharm 的 manage.py 运行配置中把参数改为 `schema` 即可离线导出 `.cache/interfaces.json`，无需 RPC、账户或启动服务；导出后将参数改回 `start`。需要其他输出位置时填写 `schema --output 相对目录/文件.json`。同一内容也可通过已登录 API 的 Schema 接口获取。
 
 导出包包含 Plan、Job/Task 运行态、审计事件与 11 个服务消息模型。它由实际 Pydantic 模型生成；EIP-712 消息字段由同一份 FIELDS 定义生成，避免手写副本漂移。JSON Schema 约束字段、类型与范围；跨字段、依赖顺序、内容哈希、业务真实性和链上授权还需运行时检查。
 

@@ -24,6 +24,7 @@ from collections import Counter, defaultdict
 from contextlib import asynccontextmanager, contextmanager
 from datetime import date, datetime, timedelta
 from fractions import Fraction
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, get_args
@@ -421,6 +422,7 @@ class JobRecord(StrictModel):
     lastError: str | None = None
     lastFault: RuntimeFault | None = None
     retryAt: Timestamp | None = None
+    stopRequested: Annotated[bool, Field(strict=True)] = False
 
 
 class ChainTaskConfig(StrictModel):
@@ -451,6 +453,11 @@ class ChainJobView(StrictModel):
     reserved: WireUint
     unallocated: WireUint
     agentCredits: WireUint
+    settledAmount: WireUint
+    withdrawalScope: Literal["job"]
+    snapshotBlock: WireUint
+    snapshotBlockHash: HashRef
+    planBinding: Literal["job_plan_hash"]
     refundCredit: WireUint
     withdrawn: WireUint
     refunded: WireUint
@@ -561,9 +568,13 @@ class A2AEvent(StrictModel):
     requestHash: HashRef
 
 
+class StopEvent(StrictModel):
+    mode: Literal["stop_future_delegation"]
+
+
 EVENT_PAYLOADS = {**dict.fromkeys(get_args(TaskPhase), TaskCheckpoint),
                   "assignTask_PENDING": TaskCheckpoint, "settleTask_PENDING": TaskCheckpoint,
-                  "JOB_FUNDED": FundedEvent, "QUOTES_RECEIVED": QuotesEvent,
+                  "JOB_FUNDED": FundedEvent, "STOP_REQUESTED": StopEvent, "QUOTES_RECEIVED": QuotesEvent,
                   "TX_CONFIRMED": ConfirmedEvent, "TX_REVERTED": RevertedEvent,
                   "SCHEDULER_ERROR": ErrorEvent, "WORKER_INTERRUPTED": WorkerEvent,
                   "RECOVERY_ABORTED": RecoveryEvent, "A2A_COMPLETED": A2AEvent}
@@ -842,7 +853,16 @@ def validate_protocol(name: str, payload: dict) -> None:
 
 
 def protocol_schema_document():
-    return {"$id": "urn:agentflow:handoff:1", "version": 1, "status": "local_proposal",
+    return {"$id": "urn:agentflow:handoff:2", "version": 2, "status": "integration_candidate",
+            "profile": "dasc-a2a-legacy-a-v2",
+            "domain": {"name": "DASC", "version": "1", "chainId": "deployment.chainId",
+                       "verifyingContract": "deployment.escrow"},
+            "transport": {"a2a": "1.0", "agentCard": "/.well-known/agent-card.json",
+                          "rpc": "/a2a/jsonrpc", "market": "/api/rfq", "validator": "/verify"},
+            "hashing": {"plan": "SHA256(canonical JSON)", "result": "SHA256(canonical delivery manifest)",
+                        "artifact": "SHA256(raw bytes)", "artifactURI": "SHA256(UTF8(urn:sha256:<result hex>))",
+                        "typedData": "EIP-712 Keccak256"},
+            "stopMode": "stop_future_delegation", "withdrawalScope": "job",
             "integerEncoding": "uint64/uint256 use canonical decimal strings on the wire; uint8/uint32 use integers",
             "signedFields": {kind: [{"name": name, "type": typ} for name, typ in fields]
                              for kind, fields in FIELDS.items()},
@@ -1512,6 +1532,7 @@ RULES = {"version": "sales-v1", "categories": ["book", "food", "tool"],
          "report_chart": "quarter-revenue-v1"}
 
 
+@lru_cache(maxsize=32)
 def policy_id(skill: str) -> str:
     if SKILL_POLICIES.get(skill) == "travel-v1":
         checker = "\n".join(inspect.getsource(f) for f in (
@@ -1662,16 +1683,45 @@ class Chain:
                 raise ChainReverted(result)
             return result
 
-    def job(self, job_id: str) -> dict:
+    def job(self, job_id: str, block_identifier="latest") -> dict:
+        head = self.w3.eth.get_block(block_identifier)
         fn = self.escrow.functions.getJob(job_id)
-        return struct_dict(fn.abi["outputs"][0]["components"], fn.call())
-
-    def task(self, job_id: str, task_id: int) -> dict:
+        value = struct_dict(fn.abi["outputs"][0]["components"], fn.call(block_identifier=head["number"]))
+        value.update(settledAmount=value["agentCredits"] + value["withdrawn"], withdrawalScope="job",
+                     snapshotBlock=head["number"], snapshotBlockHash=head["hash"].to_0x_hex(),
+                     planBinding="job_plan_hash")
+        return value
+    def task(self, job_id: str, task_id: int, block_identifier="latest") -> dict:
         fn = self.escrow.functions.getTask(job_id, task_id)
-        return struct_dict(fn.abi["outputs"][0]["components"], fn.call())
+        return struct_dict(fn.abi["outputs"][0]["components"], fn.call(block_identifier=block_identifier))
+
+    def check_plan(self, job_id: str, plan: Plan, block_identifier="latest") -> None:
+        # Check the full funded plan and every immutable Task term at one block.
+        head = self.w3.eth.get_block(block_identifier)
+        block = head["number"]
+        fn = self.escrow.functions.getJob(job_id)
+        job = struct_dict(fn.abi["outputs"][0]["components"], fn.call(block_identifier=block))
+        if (job["owner"] == "0x" + "00" * 20 or job["taskCount"] != len(plan.tasks)
+                or job["deposit"] != units(plan.deposit)):
+            raise ValueError("frozen plan does not match funded Job")
+        if job["planHash"] != plan.plan_hash:
+            raise ValueError("frozen plan hash mismatch")
+        masks = plan.masks()
+        for i, spec in enumerate(plan.topological()):
+            cfg = self.task(job_id, i, block)["config"]
+            expected = {"requirementHash": plan.requirement_hash(spec, policy_id(spec.skill)),
+                        "validationPolicyId": policy_id(spec.skill), "depsMask": masks[spec.key],
+                        "budgetCap": units(spec.budget_cap), "slaSeconds": spec.sla_seconds,
+                        "maxAttempts": spec.max_attempts}
+            if any(cfg[key] != value for key, value in expected.items()):
+                raise ValueError("frozen plan/task configuration mismatch")
+        if self.w3.eth.get_block(block)["hash"] != head["hash"]:
+            raise RuntimeError("chain changed during plan validation")
+
 
     @staticmethod
     def wire(kind: str, message: dict) -> tuple:
+        validate_protocol(kind + "Payload", message)
         normalized = signed_from_wire(message)
         return tuple(normalized[name] for name, _ in FIELDS[kind])
 
@@ -1721,7 +1771,7 @@ SIGNED_LARGE_UINTS = {name: int(kind[4:]) for fields in FIELDS.values() for name
                      if kind in {"uint64", "uint256"}}
 WIRE_INTEGER_FIELDS = set(SIGNED_LARGE_UINTS) | {
     "chainId", "deposit", "budgetCap", "acceptedPrice", "reserved", "unallocated", "agentCredits",
-    "refundCredit", "withdrawn", "refunded", "totalLiability", "amount", "deadline", "slaSeconds",
+    "settledAmount", "snapshotBlock", "refundCredit", "withdrawn", "refunded", "totalLiability", "amount", "deadline", "slaSeconds",
     "gasUsed", "cumulativeGasUsed", "effectiveGasPrice",
 }
 
@@ -1887,6 +1937,7 @@ class ServiceExecutor(AgentExecutor):
                 raise ValueError("skill not offered")
             state = await asyncio.to_thread(self.chain.task, request["jobId"], request["taskId"])
             job = await asyncio.to_thread(self.chain.job, request["jobId"])
+            await asyncio.to_thread(self.chain.check_plan, request["jobId"], plan)
             expected = plan.requirement_hash(spec, policy_id(spec.skill))
             if (job["planHash"] != plan.plan_hash or state["config"]["requirementHash"] != expected
                     or state["attempt"] != request["attempt"] or state["state"] != 0):
@@ -1972,7 +2023,7 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
 
     @app.get("/health")
     def health():
-        return {"ok": True, "id": config["id"], "wallet": wallet, "mode": "deterministic_service"}
+        return {"ok": True, "id": config["id"], "wallet": wallet, "mode": "deterministic_service", "protocol": service_protocol(deployment)}
 
     @app.post("/registration/challenge")
     def challenge(data: dict):
@@ -2300,6 +2351,7 @@ def check_context(chain: Chain, request: dict) -> tuple[dict, dict, list[dict]]:
     plan = Plan.model_validate(request["plan"])
     job_id, task_id = request["jobId"], request["taskId"]
     job = chain.job(job_id)
+    chain.check_plan(job_id, plan)
     task = chain.task(job_id, task_id)
     spec = plan.topological()[task_id]
     policy = policy_id(spec.skill)
@@ -2378,7 +2430,7 @@ def validator_app(deployment: dict, runtime: Path, token: str, validator_key: st
 
     @app.get("/health")
     def health():
-        return {"ok": True, "role": "validator", "wallet": deployment["validator"]}
+        return {"ok": True, "role": "validator", "wallet": deployment["validator"], "protocol": service_protocol(deployment)}
 
     @app.post("/verify")
     async def verify(request: dict):
@@ -2479,6 +2531,7 @@ class Market:
         job = await asyncio.to_thread(self.chain.job, request["jobId"])
         if job["planHash"] != plan.plan_hash:
             raise ValueError("market plan does not match funded plan")
+        await asyncio.to_thread(self.chain.check_plan, request["jobId"], plan)
         self.db.put("known_plans", request["jobId"], {"jobId": request["jobId"], "plan": plan.model_dump(mode="json")})
         state = await asyncio.to_thread(self.chain.task, request["jobId"], request["taskId"])
         candidates = self.agents(spec.skill, True)
@@ -2571,7 +2624,7 @@ def market_app(deployment: dict, runtime: Path, token: str, allowed_origins: lis
 
     @app.get("/health")
     def health():
-        return {"ok": True, "role": "market"}
+        return {"ok": True, "role": "market", "protocol": service_protocol(deployment)}
 
     @app.post("/api/agents/register")
     async def register(data: dict):
@@ -2607,13 +2660,66 @@ def market_app(deployment: dict, runtime: Path, token: str, allowed_origins: lis
 # engine
 # ============================================================================
 class Engine:
-    def __init__(self, deployment: dict, runtime: Path, market_url: str, validator_url: str, token: str, signers: dict):
+    def __init__(self, deployment: dict, runtime: Path, market_url: str, validator_url: str, token: str, signers: dict,
+                 allowed_origins: list[str] | None = None):
         self.chain = Chain(deployment["rpc"], runtime, deployment)
         self.db = Database(runtime / "platform.sqlite")
         self.store = ArtifactStore(runtime / "artifacts")
         self.runtime, self.market_url, self.validator_url, self.token = runtime, market_url, validator_url, token
         self.signers = signers
+        self.allowed_origins = {service_endpoint(url) for url in (allowed_origins or [])}
+        self.delegation_locks: dict[str, asyncio.Lock] = {}
         self.locks: dict[str, asyncio.Lock] = {}
+
+    def agent_origin(self, endpoint: str) -> str:
+        origin = service_endpoint(endpoint)
+        if origin not in self.allowed_origins:
+            raise ValueError("selected agent endpoint is not in A's configured origin allowlist")
+        return origin
+
+    async def validate_selection(self, selected: dict, job_id: str, task_id: int,
+                                 state: dict, spec, excluded: list[str]) -> None:
+        validate_protocol("QuoteReply", {k: selected[k] for k in ("agentId", "quote", "signature")})
+        origin = self.agent_origin(selected["endpoint"])
+        q = selected["quote"]
+        signer = recover("Quote", q, selected["signature"], self.chain.chain_id, self.chain.escrow.address)
+        if (signer != selected["wallet"] or signer != q["agentWallet"] or signer in excluded
+                or (q["jobId"], q["taskId"], q["attempt"]) != (job_id, task_id, state["attempt"])
+                or q["requirementHash"] != state["config"]["requirementHash"]
+                or q["paymentToken"] != self.chain.token.address or q["validUntil"] < self.chain.now
+                or not 0 <= q["price"] <= units(spec.budget_cap)
+                or selected["quoteHash"] != typed_hash("Quote", q, self.chain.chain_id, self.chain.escrow.address)):
+            raise ValueError("selected quote signature/domain/terms mismatch")
+        async with httpx.AsyncClient(trust_env=False, timeout=5) as http:
+            response = await http.get(self.market_url + "/api/agents",
+                                      headers={"Authorization": "Bearer " + self.token})
+            response.raise_for_status()
+            agents = response.json()
+        if not isinstance(agents, list):
+            raise ValueError("incompatible market registry; expected dasc-a2a-v2 agent list")  # noqa: TRY004
+        binding = next((a for a in agents if a.get("agentId") == selected["agentId"]), None)
+        if not binding:
+            raise ValueError("selected agent has no registered wallet binding")
+        challenge = binding["challenge"]
+        if (binding["wallet"] != signer or binding["endpoint"] != origin
+                or binding["bindingVersion"] != selected["bindingVersion"] or spec.skill not in binding["skills"]
+                or challenge["wallet"] != signer or challenge["endpoint"] != origin
+                or challenge["cardHash"] != object_hash(binding["card"])
+                or recover_challenge(challenge, binding["signature"]) != signer):
+            raise ValueError("selected endpoint/wallet binding proof mismatch")
+        self.db.put("selected_bindings", selected["quoteHash"], binding)
+
+    async def stop_delegation(self, job_id: str):
+        async with self.delegation_locks.setdefault(job_id, asyncio.Lock()):
+            record = self.db.get("jobs", job_id)
+            job = await asyncio.to_thread(self.chain.job, job_id)
+            if job["finalized"] and not record.get("stopRequested"):
+                raise ValueError("Job already finalized")
+            if not record.get("stopRequested"):
+                await self.submit(job_id, "requestStop", [job_id], owner=True)
+                record["stopRequested"] = True
+                self.db.put("jobs", job_id, record)
+                self.db.event(job_id, "STOP_REQUESTED", {"mode": "stop_future_delegation"})
 
     async def post(self, url: str, payload: dict, timeout: float = 20):
         async with httpx.AsyncClient(trust_env=False, timeout=timeout, headers={"Authorization": "Bearer " + self.token}) as http:
@@ -2734,6 +2840,7 @@ class Engine:
                     job_record = self.db.get("jobs", job_id)
                     plan = Plan.model_validate(job_record["plan"])
                     job = await asyncio.to_thread(self.chain.job, job_id)
+                    job["stopping"] = job["stopping"] or bool(job_record.get("stopRequested"))
                     states = [await asyncio.to_thread(self.chain.task, job_id, i) for i in range(len(plan.tasks))]
                     for i, chain_task in enumerate(states):
                         if i not in workers and chain_task["state"] in (2, 3):
@@ -2746,6 +2853,7 @@ class Engine:
                         if not job["finalized"]:
                             await self.submit(job_id, "finalizeJob", [job_id])
                         succeeded = all(t["state"] == 2 for t in states)
+                        job_record = self.db.get("jobs", job_id)
                         job_record.update(status="SUCCEEDED" if succeeded else "PARTIAL_FAILED", finishedAt=time.time())
                         self.db.put("jobs", job_id, job_record)
                         await asyncio.to_thread(self.chain.event_scan, job_id)
@@ -2820,14 +2928,19 @@ class Engine:
                     else:
                         await asyncio.sleep(1)
                     return
-            checkpoint = self.checkpoint(job_id, task_id, "ASSIGNING", attempt=attempt, selected=selected)
-            await self.submit(job_id, "assignTask", [self.chain.wire("Quote", selected["quote"]), selected["signature"]],
-                              checkpoint=checkpoint)
+            await self.validate_selection(selected, job_id, task_id, state, spec, history)
+            async with self.delegation_locks.setdefault(job_id, asyncio.Lock()):
+                if self.db.get("jobs", job_id).get("stopRequested"):
+                    return
+                checkpoint = self.checkpoint(job_id, task_id, "ASSIGNING", attempt=attempt, selected=selected)
+                await self.submit(job_id, "assignTask", [self.chain.wire("Quote", selected["quote"]), selected["signature"]],
+                                  checkpoint=checkpoint)
             state = await asyncio.to_thread(self.chain.task, job_id, task_id)
         else:
             selected = checkpoint.get("selected")
             if not selected or selected["wallet"] != state["payee"] or checkpoint.get("attempt") != attempt:
                 raise ValueError("cannot recover assigned endpoint from persisted signed quote")
+        self.agent_origin(selected["endpoint"])
         if self.chain.now > state["deadline"]:
             await self.expire(job_id, task_id, state, "deadline_elapsed")
             return
@@ -2920,7 +3033,7 @@ class Engine:
         self.db.put("failed_wallets", key, failed)
         plan = Plan.model_validate(self.db.get("jobs", job_id)["plan"])
         if plan.execution_policy.recovery == "abort":
-            await self.submit(job_id, "requestStop", [job_id], owner=True)
+            await self.stop_delegation(job_id)
             self.db.event(job_id, "RECOVERY_ABORTED", {"taskId": task_id, "attempt": state["attempt"], "reason": reason,
                                                       "fault": fault.model_dump()})
         if current["state"] == 0:
@@ -2931,9 +3044,12 @@ class Engine:
         record = self.db.get("jobs", job_id)
         plan = Plan.model_validate(record["plan"])
         chain_job = self.chain.job(job_id)
+        self.chain.check_plan(job_id, plan, chain_job["snapshotBlock"])
+        chain_job["planHash"] = plan.plan_hash
+        chain_job["stopping"] = chain_job["stopping"] or bool(record.get("stopRequested"))
         tasks = []
         for i, spec in enumerate(plan.topological()):
-            onchain = self.chain.task(job_id, i)
+            onchain = self.chain.task(job_id, i, chain_job["snapshotBlock"])
             checkpoint = self.db.get("tasks", f"{job_id}:{i}", {})
             tasks.append({"taskId": i, "key": spec.key, "title": spec.title, "dependencies": list(spec.dependencies),
                           "onchain": onchain, "checkpoint": checkpoint})
@@ -2943,6 +3059,8 @@ class Engine:
                 "fundedAt": record.get("fundedAt"), "finishedAt": record.get("finishedAt"),
                 "chain": chain_job, "tasks": tasks, "domain": self.chain.domain,
                 "token": self.chain.token.address}
+        if self.chain.w3.eth.get_block(chain_job["snapshotBlock"])["hash"].to_0x_hex() != chain_job["snapshotBlockHash"]:
+            raise RuntimeError("chain changed during snapshot")
         return JobSnapshot.model_validate(value).model_dump(exclude_unset=True)
 
     async def claims(self, job_id: str) -> dict:
@@ -2952,7 +3070,7 @@ class Engine:
             if task["onchain"]["state"] == 2:
                 selected = task["checkpoint"]["selected"]
                 if selected["wallet"] not in paid:
-                    await self.post(selected["endpoint"] + "/withdraw/" + job_id, {})
+                    await self.post(self.agent_origin(selected["endpoint"]) + "/withdraw/" + job_id, {})
                     paid.add(selected["wallet"])
         job = self.chain.job(job_id)
         if job["refundCredit"]:
@@ -3026,7 +3144,8 @@ def input_error_message(exc: Exception) -> str:
 
 
 def api_app(config: dict, runtime: Path) -> FastAPI:
-    engine = Engine(config["deployment"], runtime, config["market"], config["validator"], config["token"], config["signers"])
+    engine = Engine(config["deployment"], runtime, config["market"], config["validator"], config["token"], config["signers"],
+                    config.get("allowedAgentOrigins", [a["endpoint"] for a in config.get("agents", [])]))
     active: dict[str, asyncio.Task] = {}
 
     async def run_job(job_id):
@@ -3071,7 +3190,7 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"ok": True, "mode": "SELF_HOSTED", "chain": engine.chain.domain}
+        return {"ok": True, "mode": "SELF_HOSTED", "chain": engine.chain.domain, "protocol": service_protocol(config["deployment"])}
 
     @app.get("/api/config")
     def public_config():
@@ -3141,6 +3260,10 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
             request = JobRequest.model_validate(data)
             inputs = scenario_inputs(config, request.scenario_id)
             plan = prepare_plan(request, [x["sha256"] for x in inputs])
+            try:
+                await asyncio.to_thread(check_services, config)
+            except (ValueError, httpx.HTTPError) as exc:
+                raise HTTPException(503, "Service compatibility check failed: " + str(exc)) from exc
             job_id = await engine.create(plan, inputs, request.requestId)
         except (ValueError, OSError) as exc:
             raise HTTPException(400, input_error_message(exc)) from exc
@@ -3165,21 +3288,19 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     @app.post("/api/jobs/{job_id}/resume")
     async def resume(job_id: str):
         require_job(job_id)
+        if engine.db.get("jobs", job_id).get("stopRequested"):
+            raise HTTPException(409, "a stopped Job cannot resume new delegation")
         return {"resumed": job_id, "started": start(job_id)}
 
     @app.post("/api/jobs/{job_id}/stop")
     async def stop(job_id: str):
         require_job(job_id)
-        job = await asyncio.to_thread(engine.chain.job, job_id)
-        if job["finalized"] and not job["stopping"]:
-            raise HTTPException(409, "Job already finalized")
         try:
-            receipt = await engine.submit(job_id, "requestStop", [job_id], owner=True)
-        except ChainReverted as exc:
-            # Finalization can win the race after the read above.
-            raise HTTPException(409, "Job cannot be stopped in its current chain state") from exc
+            await engine.stop_delegation(job_id)
+        except (ValueError, ChainReverted) as exc:
+            raise HTTPException(409, str(exc)) from exc
         start(job_id)
-        return receipt
+        return {"stopping": True, "mode": "stop_future_delegation"}
 
     @app.get("/api/jobs/{job_id}/quotes")
     def quotes(job_id: str):
@@ -3189,7 +3310,7 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     @app.get("/api/jobs/{job_id}/settlements")
     def settlements(job_id: str):
         require_job(job_id)
-        return {"job": engine.chain.job(job_id), "events": engine.chain.event_scan(job_id)}
+        return {"job": engine.snapshot(job_id)["chain"], "events": engine.chain.event_scan(job_id)}
 
     @app.post("/api/jobs/{job_id}/claims")
     async def claims(job_id: str):
@@ -3277,6 +3398,15 @@ def settings_file(path: Path | str | None = None, runtime: Path | str | None = N
     endpoints = [settings[k] for k in ("api", "market", "validator")] + [a["endpoint"] for a in settings["agents"]]
     if len(endpoints) != len(set(endpoints)):
         raise ValueError("each managed service must have a distinct endpoint")
+    all_roles = {"api", "market", "validator", *ids}
+    roles = settings.get("managedRoles", ["market", "validator", *[a["id"] for a in settings["agents"]], "api"])
+    if not isinstance(roles, list) or not roles or any(not isinstance(r, str) for r in roles):
+        raise ValueError("managedRoles must be a nonempty list of configured service ids")
+    if len(roles) != len(set(roles)) or not set(roles) <= all_roles:
+        raise ValueError("managedRoles contains duplicate or unknown service ids")
+    settings["managedRoles"] = roles
+    settings["allowedAgentOrigins"] = [service_endpoint(url) for url in settings.get(
+        "allowedAgentOrigins", [a["endpoint"] for a in settings["agents"]])]
     return settings
 
 
@@ -3306,8 +3436,20 @@ def configure_deployment(settings: dict) -> dict:
     escrow_contract = w3.eth.contract(address=escrow, abi=artifact("TaskEscrow")["abi"])
     if escrow_contract.functions.token().call() != token:
         raise ValueError("escrow is bound to a different payment token")
-    wallets = {role: Account.from_key(configured_key(settings, role)).address
-               for role in ("owner", "coordinator", "validator")}
+    wallets = {}
+    for role in ("owner", "coordinator", "validator"):
+        public = settings.get("wallets", {}).get(role)
+        local = (role in {"owner", "coordinator"} and "api" in settings["managedRoles"]) or role in settings["managedRoles"]
+        if public:
+            wallets[role] = Web3.to_checksum_address(public)
+            if local:
+                configured_key(settings, role, wallets[role])
+        elif local:
+            wallets[role] = Account.from_key(configured_key(settings, role)).address
+        else:
+            raise ValueError("configure requires wallets." + role + " for an externally managed role")
+        if wallets[role] == "0x" + "00" * 20:
+            raise ValueError("role wallet cannot be zero")
     if len(set(wallets.values())) != 3:
         raise ValueError("owner, coordinator and independent validator must use distinct wallets")
     start_block = int(spec.get("startBlock", 0))
@@ -3347,13 +3489,15 @@ def runtime_config(settings: dict, role: str = "all") -> dict:
     config = {key: settings[key] for key in ("api", "market", "validator", "inputDirectory")}
     config["scenarioInputDirectories"] = settings.get("scenarioInputDirectories", {})
     config.update(deployment=deployment, token=token, tokenSymbol=spec.get("tokenSymbol", "ERC20"), signers={}, agents=[])
+    roles = set(settings["managedRoles"]) if role == "all" else {role}
+    config["managedRoles"] = settings["managedRoles"]
     for name in ("owner", "coordinator", "validator"):
-        if role == "all" or (role == "api" and name in {"owner", "coordinator"}) or role == name == "validator":
+        if ("api" in roles and name in {"owner", "coordinator"}) or (name == "validator" and "validator" in roles):
             config["signers"][name] = configured_key(settings, name, deployment[name])
     used_wallets = {deployment[name] for name in ("owner", "coordinator", "validator")}
     for agent in settings["agents"]:
         service = {**agent, "market": settings["market"]}
-        if role in {"all", agent["id"]}:
+        if agent["id"] in roles:
             service["key"] = required_environment(agent["keyEnv"])
             wallet = Account.from_key(service["key"]).address
             if wallet in used_wallets:
@@ -3362,6 +3506,38 @@ def runtime_config(settings: dict, role: str = "all") -> dict:
         config["agents"].append(service)
     config["allowedAgentOrigins"] = settings.get("allowedAgentOrigins", [a["endpoint"] for a in settings["agents"]])
     return config
+
+
+@lru_cache(maxsize=1)
+def protocol_fingerprint() -> str:
+    return object_hash(protocol_schema_document())
+
+
+def service_protocol(deployment: dict) -> dict:
+    return {"profile": "dasc-a2a-legacy-a-v2", "schemaHash": protocol_fingerprint(),
+            "domain": {"name": "DASC", "version": "1", "chainId": str(deployment["chainId"]),
+                       "verifyingContract": deployment["escrow"]}, "paymentToken": deployment["token"],
+            "policies": {skill: policy_id(skill) for skill in EXECUTORS}}
+
+
+
+def check_services(config: dict) -> list[dict]:
+    expected = service_protocol(config["deployment"])
+    endpoints = {role: config[role] for role in ("market", "validator")}
+    endpoints.update({a["id"]: a["endpoint"] for a in config["agents"]})
+    checked = []
+    with httpx.Client(trust_env=False, timeout=5, follow_redirects=False) as client:
+        for role, endpoint in endpoints.items():
+            response = client.get(endpoint + "/health")
+            response.raise_for_status()
+            health = response.json()
+            if health.get("ok") is not True or health.get("protocol") != expected:
+                raise ValueError("incompatible service protocol/domain/policy: " + role)
+            if role == "validator" and health.get("wallet") != config["deployment"]["validator"]:
+                raise ValueError("validator wallet differs from deployment")
+            checked.append({"role": role, "endpoint": endpoint, "profile": expected["profile"]})
+    return checked
+
 
 
 class ServiceCluster:
@@ -3392,7 +3568,7 @@ class ServiceCluster:
             # Validate the chain binding before starting any child process.
             Chain(self.config["deployment"]["rpc"], self.runtime, self.config["deployment"])
             (self.runtime / "logs").mkdir(parents=True, exist_ok=True)
-            for role in ("market", "validator", *(a["id"] for a in self.config["agents"]), "api"):
+            for role in self.config["managedRoles"]:
                 output = (self.runtime / "logs" / (role + ".log")).open("a", encoding="utf-8")
                 self.logs.append(output)
                 self.processes[role] = subprocess.Popen(
@@ -3401,13 +3577,15 @@ class ServiceCluster:
                     env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1"},
                     stdout=output, stderr=subprocess.STDOUT,
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-            endpoints = {key: self.config[key] for key in ("market", "validator", "api")}
+            endpoints = {key: self.config[key] for key in ("market", "validator")}
+            if "api" in self.processes:
+                endpoints["api"] = self.config["api"]
             endpoints.update({a["id"]: a["endpoint"] for a in self.config["agents"]})
             deadline = time.monotonic() + 45
             with httpx.Client(trust_env=False, timeout=2) as client:
                 for role, endpoint in endpoints.items():
                     while True:
-                        if self.processes[role].poll() is not None:
+                        if role in self.processes and self.processes[role].poll() is not None:
                             raise RuntimeError("service exited; inspect " + str(self.runtime / "logs" / (role + ".log")))
                         try:
                             if client.get(endpoint + "/health").is_success:
@@ -3427,6 +3605,7 @@ class ServiceCluster:
                     if time.monotonic() > deadline:
                         raise TimeoutError("service registration did not complete")
                     time.sleep(0.2)
+            check_services(self.config)
             return self
         except BaseException:
             self.close()

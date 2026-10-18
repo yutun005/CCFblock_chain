@@ -1,5 +1,7 @@
 # 仓库协作约定
 
+- A 与本地集成项目使用独立 Git worktree；原项目保持 A，集成项目使用 integration/local-20261018。当前只补 A 所属的接口与业务任务；其他成员内部冲突仅记录，不擅自修改。不能通过在原 A 工作区切换集成分支来覆盖用户正在使用的项目。
+
 - 仓库为 https://github.com/yutun005/CCFblock_chain.git，本成员唯一开发和推送分支为 `A`。
 - 每次提交前检查当前分支；只能提交、推送到 `A`。不要向 main 或其他成员分支写入。
 - 未获得用户后续明确指示，不创建 Pull Request，不合并到 main，不执行 force push。

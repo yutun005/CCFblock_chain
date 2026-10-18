@@ -146,7 +146,7 @@ def setup():
 
 def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
-    parser.add_argument("command", choices=["setup", "build", "schema", "configure", "approve", "start"], nargs="?", default="start")
+    parser.add_argument("command", choices=["setup", "build", "schema", "check", "configure", "approve", "start"], nargs="?", default="start")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
@@ -172,7 +172,7 @@ def main():
         document = {"plan": plan_schema_document(), "runtime": runtime_schema_document(),
                     "protocol": protocol_schema_document(), "travelInput": TravelInput.model_json_schema()}
         destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps({"exported": str(destination), "protocolVersion": 1, "status": "local_proposal"}))
+        print(json.dumps({"exported": str(destination), "protocolVersion": 2, "status": "integration_candidate"}))
         return
     from app import (
         Chain,
@@ -183,7 +183,12 @@ def main():
         units,
     )
     settings = settings_file(args.config, args.runtime)
-    if args.command == "configure":
+    if args.command == "check":
+        from app import check_services
+        config = runtime_config(settings, "api")
+        Chain(config["deployment"]["rpc"], settings["directory"], config["deployment"])
+        print(json.dumps({"compatible": True, "services": check_services(config)}, ensure_ascii=False))
+    elif args.command == "configure":
         deployment = configure_deployment(settings)
         print(json.dumps({"configured": True, "chainId": deployment["chainId"], "escrow": deployment["escrow"]}))
     elif args.command == "approve":
