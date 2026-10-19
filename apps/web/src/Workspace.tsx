@@ -7,6 +7,7 @@ import {
 } from "react";
 import { amount as money, price } from "./amount";
 import { PlanningGraph, PlanReview, TemplateLibrary } from "./TaskPlanning";
+import ServiceGraph, { evidenceLabels } from "./ServiceGraph";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -201,6 +202,8 @@ export default function Workspace({
   const [offers, setOffers] = useState<Row[]>([]),
     [chosen, setChosen] = useState<Row | null>(null);
   const [unavailable, setUnavailable] = useState<Row[]>([]);
+  const [frontier, setFrontier] = useState<Row | null>(null);
+  const [unknownHistory, setUnknownHistory] = useState<string[]>([]);
   const [version, setVersion] = useState<Row | null>(null),
     [compare, setCompare] = useState<Row | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Row>>({}),
@@ -315,6 +318,8 @@ export default function Workspace({
     setChosen(null);
     setOffers([]);
     setUnavailable([]);
+    setFrontier(null);
+    setUnknownHistory([]);
   };
   async function openVersion(id: string) {
     const value = await api(`${prefix}/versions/${id}`);
@@ -358,6 +363,8 @@ export default function Workspace({
       return;
     }
     setOffers(result.options);
+    setFrontier(result.frontier || null);
+    setUnknownHistory(result.excludedForNoHistory || []);
     setUnavailable(result.unavailable);
     setPage("compare");
     setChosen(null);
@@ -474,6 +481,7 @@ export default function Workspace({
       <nav className="workspace-tabs" aria-label="项目操作">
         {[
           ["editor", "目标与任务规划"],
+          ["services", "服务业务图"],
           ["templates", "模板库"],
           ["compare", "方案对比"],
           ["history", "历史版本与续单"],
@@ -513,6 +521,17 @@ export default function Workspace({
               ? "主 Agent 正在发现服务、拆解目标并校验任务依赖，通常需要几十秒…"
               : "正在处理…"}
         </p>
+      )}
+      {page === "services" && (
+        <ServiceGraph
+          api={api}
+          onChange={() => {
+            setOffers([]);
+            setChosen(null);
+            setFrontier(null);
+            void refresh().catch((err) => setError(String(err)));
+          }}
+        />
       )}
       {page === "templates" && (
         <TemplateLibrary
@@ -880,7 +899,7 @@ export default function Workspace({
                 </fieldset>
               )}
               <label>
-                优先查看哪类服务方案
+                方案展示顺序（均从帕累托前沿选取）
                 <select
                   value={
                     recipe.preference === "balanced"
@@ -889,13 +908,9 @@ export default function Workspace({
                   }
                   onChange={(e) => update({ preference: e.target.value })}
                 >
-                  <option value="lowest_price">
-                    费用优先（整份任务花钱最少）
-                  </option>
-                  <option value="fastest">速度优先</option>
-                  <option value="reliability">
-                    履约优先（参考历史完成与失效记录）
-                  </option>
+                  <option value="lowest_price">费用从低到高</option>
+                  <option value="fastest">预计耗时从短到长</option>
+                  <option value="reliability">估算成功率从高到低</option>
                 </select>
               </label>
               <label>
@@ -966,11 +981,28 @@ export default function Workspace({
       )}
       {page === "compare" && (
         <section>
-          <h2>同一任务，比较费用、速度和履约表现</h2>
+          <h2>同一任务的帕累托方案：费用、耗时、成功率</h2>
           <p>
-            所有方案都完成您选择的成果和必要的前置工作。在预算内，分别找总价最低、整体最快、历史履约评分更好的
-            Agent 组合；选到同一组时只显示一次。
+            所有方案完成同一份已确认的任务。只保留没有被其他组合全面超过的方案：没有别的组合能更便宜、更快、成功率更高，同时不牺牲其他指标。最多展示
+            10 种。
           </p>
+          {frontier && (
+            <p>
+              检查了 {frontier.candidateCombinations} 种商家组合，其中{" "}
+              {frontier.feasibleCount} 种符合预算；完整前沿有{" "}
+              {frontier.frontierCount} 种，当前展示 {offers.length} 种
+              {frontier.truncated
+                ? "代表方案，保留费用、速度、成功率三个极端并兼顾分布"
+                : ""}
+              。
+            </p>
+          )}
+          {!!unknownHistory.length && (
+            <p className="hint">
+              以下服务缺少近期履约记录，暂未参与三指标比较：
+              {unknownHistory.join("、")}
+            </p>
+          )}
           {!!offers.length && (
             <div className="workspace-panel">
               {offers[0].proposal.planning && (
@@ -999,7 +1031,7 @@ export default function Workspace({
             </div>
           )}
           {offers.length === 1 && (
-            <p role="status">当前只有一个不同的可执行方案，已合并相同结果。</p>
+            <p role="status">当前只有一个不被其他组合全面超过的方案。</p>
           )}
           {unavailable.map((item, index) => (
             <p role="status" key={index}>
@@ -1018,7 +1050,9 @@ export default function Workspace({
           )}
           {!!offers.length && (
             <p className="hint">
-              估价和耗时来自在线服务。整体耗时考虑前后依赖和并行工作，不含排队、重试、链上确认和人工确认。履约记录来自本工作区可核验的链上任务；没有记录不代表可靠，也不代表不可靠。
+              费用和耗时来自在线商家的签名估价；总耗时按任务依赖计算，不含排队、重试和人工确认。每项成功率取最近最多
+              50
+              次履约的成功比例，优先使用链上记录，否则采用明确标注的语料数据。整单成功率是各步骤成功率的乘积，依赖独立性假设，不是履约保证。
             </p>
           )}
           <div className="tier-grid">
@@ -1030,27 +1064,23 @@ export default function Workspace({
                   (chosen?.id === offer.proposal?.id ? "chosen" : "")
                 }
               >
-                <h3>
-                  {offers.length === 1
-                    ? "本次执行方案"
-                    : preferences[offer.preferences[0]]}
-                </h3>
-                <p>
-                  {offer.preferences
-                    .map((key: string) => preferences[key])
-                    .join("、")}
-                  得到此方案
-                </p>
+                <h3>方案 {offer.rank}</h3>
                 <p>{offer.proposal.selectionReason}</p>
                 <>
                   <strong className="price">
                     {price(offer.proposal.estimatedPrice)} USDC
                   </strong>
                   <p>整份任务预计 {offer.proposal.estimatedSeconds} 秒</p>
+                  <p>
+                    <b>
+                      估算整单成功率{" "}
+                      {offer.proposal.pareto.estimatedSuccessPercent}%
+                    </b>
+                  </p>
                   {offer.proposal.historySummary?.totalTasks > 0 && (
                     <p>
-                      所选服务历史合计：已结算{" "}
-                      {offer.proposal.historySummary.settled} 次，失效{" "}
+                      所选服务近期记录合计：成功{" "}
+                      {offer.proposal.historySummary.settled} 次，失败或失效{" "}
                       {offer.proposal.historySummary.expired} 次。
                       {offer.proposal.historySummary.coveredTasks}/
                       {offer.proposal.historySummary.totalTasks}{" "}
@@ -1065,9 +1095,10 @@ export default function Workspace({
                         {price(w.estimatedPrice)} USDC · {w.estimatedSeconds} 秒
                       </p>
                       <p className="hint">
-                        {w.history.settled + w.history.expired
-                          ? `历史已结算 ${w.history.settled} 次，失效 ${w.history.expired} 次`
-                          : "暂无历史履约记录"}
+                        {w.history.window
+                          ? `最近 ${w.history.window} 次，成功 ${w.history.settled} 次，成功率 ${((100 * w.history.settled) / w.history.window).toFixed(2)}%`
+                          : "暂无历史履约记录"}{" "}
+                        · {evidenceLabels[w.history.source]}
                       </p>
                     </div>
                   ))}

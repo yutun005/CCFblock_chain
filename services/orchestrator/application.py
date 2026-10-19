@@ -2258,7 +2258,7 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
         value = {"agentId": config["id"], "wallet": wallet, "endpoint": config["endpoint"],
                  "taskHash": object_hash(spec.model_dump(mode="json")),
                  "price": price_for(units(config["prices"][spec.skill]), spec),
-                 "seconds": int(config.get("estimatedSeconds", 10)), "validUntil": int(time.time()) + 300}
+                 "seconds": int(config.get("serviceSeconds", {}).get(spec.skill, config.get("estimatedSeconds", 10))), "validUntil": int(time.time()) + 300}
         return {"estimate": value, "signature": sign_challenge(value, config["key"])}
 
     @app.get("/health")
@@ -2954,6 +2954,8 @@ class Market:
                  if row.get("jobId") and row.get("plan")}
         known = {job_id: plan for job_id, plan in known.items()
                  if self.chain.job(job_id, block_identifier=head["number"])["planHash"] == plan.plan_hash}
+        if not known:
+            return {}
         assignments, outcomes = {}, {}
         for event_name in ("TaskAssigned", "TaskSettled", "TaskInvalidated"):
             for log in getattr(self.chain.escrow.events, event_name)().get_logs(
@@ -2968,6 +2970,7 @@ class Market:
                     assignments[key] = args["agentWallet"]
                 else:
                     outcomes[key] = {"kind": "settled" if event_name == "TaskSettled" else "expired",
+                                     "blockNumber": int(log["blockNumber"]), "logIndex": int(log["logIndex"]),
                                      "transactionHash": log["transactionHash"].to_0x_hex(),
                                      "blockHash": log["blockHash"].to_0x_hex()}
         if self.chain.w3.eth.get_block(head["number"])["hash"] != head["hash"]:
@@ -3093,6 +3096,9 @@ class Engine:
         origin = self.agent_origin(selected["endpoint"])
         q = selected["quote"]
         signer = recover("Quote", q, selected["signature"], self.chain.chain_id, self.chain.escrow.address)
+        frozen_graph = self.db.get("job_service_graph", job_id)
+        if frozen_graph and signer not in frozen_graph["providers"].get(spec.skill, []):
+            raise ValueError("selected merchant is outside the job's confirmed service graph")
         if (signer != selected["wallet"] or signer != q["agentWallet"] or signer in excluded
                 or (q["jobId"], q["taskId"], q["attempt"]) != (job_id, task_id, state["attempt"])
                 or q["requirementHash"] != state["config"]["requirementHash"]
@@ -3123,6 +3129,14 @@ class Engine:
             return registry_agents(response.json(), self.service_transport)
 
     async def request_quotes(self, request: dict, state: dict) -> dict:
+        frozen_graph = self.db.get("job_service_graph", request["jobId"])
+        allowed = None
+        if frozen_graph:
+            spec = Plan.model_validate(request["plan"]).topological()[request["taskId"]]
+            allowed = set(frozen_graph["providers"].get(spec.skill, []))
+            excluded = set(request.get("excludeWallets", []))
+            excluded.update(a["wallet"] for a in await self.agents() if a["wallet"] not in allowed)
+            request = {**request, "excludeWallets": sorted(excluded)}
         if self.service_transport == "a2a-v1":
             return await self.post(self.market_url + "/api/rfq", request)
         plan = Plan.model_validate(request["plan"])
@@ -3150,6 +3164,8 @@ class Engine:
             if type(item["bindingVersion"]) is not int or item["bindingVersion"] < 1:
                 raise ValueError("B registry is missing metadata.binding.version")
             try:
+                if allowed is not None and agent["wallet"] not in allowed:
+                    raise ValueError("merchant is outside the job's confirmed service graph")
                 if not agent["status"] == "ONLINE" or parsed.skill != spec.skill or spec.skill not in agent["skills"]:
                     raise ValueError("B quote skill or active status mismatch")
                 quote = b_signed("Quote", raw)
@@ -3269,6 +3285,12 @@ class Engine:
                 raise ValueError("request id reused with a different plan")
             await self.recover_commands(job_id)
             return job_id
+        from types import SimpleNamespace
+        from .catalog import graph, assert_plan
+        service_graph = await graph(SimpleNamespace(engine=self), scenario=plan.scenario)
+        await assert_plan(SimpleNamespace(engine=self), plan, service_graph)
+        self.db.put("job_service_graph", job_id, {"revision": service_graph["revision"],
+            "providers": {n["id"]: [p["wallet"] for p in n["providers"] if p["online"]] for n in service_graph["nodes"]}})
         record = {"jobId": job_id, "plan": plan.model_dump(mode="json"), "inputs": inputs,
                   "createdAt": time.time(), "status": "FUNDING",
                   "deadline": max(self.chain.now, int(time.time())) + plan.duration_seconds}
@@ -3703,7 +3725,7 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     app = FastAPI(title="AgentFlow Pay API", lifespan=lifespan, default_response_class=ProtocolJSONResponse)
     protect(app, config["token"])
     from services.orchestrator.workspace import install
-    install(app, engine, config, start)
+    workspace = install(app, engine, config, start)
 
     @app.get("/health")
     def health():
@@ -3773,11 +3795,13 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
         return runtime_schema_document()
 
     @app.post("/api/plans/preview")
-    def preview(data: dict):
+    async def preview(data: dict):
         try:
             request = JobRequest.model_validate(data)
             inputs = scenario_inputs(config, request.scenario_id)
             plan = prepare_plan(request, [x["sha256"] for x in inputs])
+            from .catalog import assert_plan
+            await assert_plan(workspace, plan)
         except (ValueError, OSError) as exc:
             raise HTTPException(400, input_error_message(exc)) from exc
         return {"plan": plan.model_dump(mode="json"), "planHash": plan.plan_hash,
@@ -3794,7 +3818,8 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
                 await asyncio.to_thread(check_services, config)
             except (ValueError, httpx.HTTPError) as exc:
                 raise HTTPException(503, "Service compatibility check failed: " + str(exc)) from exc
-            job_id = await engine.create(plan, inputs, request.requestId)
+            async with workspace.lock:
+                job_id = await engine.create(plan, inputs, request.requestId)
         except (ValueError, OSError) as exc:
             raise HTTPException(400, input_error_message(exc)) from exc
         start(job_id)
@@ -4141,8 +4166,9 @@ class ServiceCluster:
             if "api" in self.processes:
                 endpoints["api"] = self.config["api"]
             endpoints.update({a["id"]: a["endpoint"] for a in self.config["agents"]})
-            deadline = time.monotonic() + 45
-            with httpx.Client(trust_env=False, timeout=2) as client:
+            # Larger local marketplaces need time for each independent process to initialize its protocol checker.
+            deadline = time.monotonic() + max(45, min(180, 8 * len(endpoints)))
+            with httpx.Client(trust_env=False, timeout=5) as client:
                 for role, endpoint in endpoints.items():
                     while True:
                         if role in self.processes and self.processes[role].poll() is not None:

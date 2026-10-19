@@ -74,6 +74,36 @@ def available_service_ports():
             probe.close()
 
 
+def sync_demo_merchants():
+    """Add bundled competitors to an existing local demo without replacing its chain or history."""
+    current = json.loads(CONFIG.read_text(encoding="utf-8"))
+    desired = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))["runtime"]["agents"]
+    runtime = current["runtime"]
+    existing = {agent["id"]: agent for agent in runtime["agents"]}
+    missing = [agent for agent in desired if agent["id"] not in existing]
+    if not missing:
+        return
+    jobs = Database(Path(runtime["directory"]) / "platform.sqlite").values("jobs")
+    if any(job["status"] in {"FUNDING", "ACTIVE", "PREPARING", "INTERRUPTED"} for job in jobs):
+        raise RuntimeError("请先完成或恢复已有任务，再重启以添加服务市场商家；旧任务和链状态已保留。")
+    values = json.loads(ENV.read_text(encoding="utf-8"))
+    rpc = values[runtime["chain"]["rpcEnv"]]
+    w3 = local_web3(rpc)
+    for service in missing:
+        account = Account.create()
+        values[service["keyEnv"]] = Web3.to_hex(account.key)
+        w3.provider.make_request("anvil_setBalance", [account.address, hex(100 * 10**18)])
+        runtime["agents"].append(service)
+        if "managedRoles" in runtime:
+            runtime["managedRoles"].append(service["id"])
+        if "allowedAgentOrigins" in runtime:
+            runtime["allowedAgentOrigins"].append(service["endpoint"])
+    ENV.write_text(json.dumps(values, indent=2), encoding="utf-8")
+    CONFIG.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    load_environment()
+    print(f"Added {len(missing)} bundled demo merchants; existing deployment and projects preserved.", flush=True)
+
+
 def deploy():
     rpc = chain_up()
     runtime_root = (CACHE / "runtime").resolve()
@@ -170,6 +200,7 @@ def main():
         print("Local contract upgrade: preserving the old runtime under .cache/demo-backups and deploying the review-capable contract.", flush=True)
         deploy()
         settings=settings_file(CONFIG)
+    sync_demo_merchants()
     available_service_ports()
     settings=settings_file(CONFIG)
     try:

@@ -1,0 +1,6850 @@
+{
+  "version": 1,
+  "provenance": "DEMO_SYNTHETIC: 16 illustrative merchants, 32 service offers, 1600 generated recent observations. These are not real marketplace records.",
+  "services": [
+    {
+      "id": "data_cleaning",
+      "name": "清洗销售数据",
+      "description": "清洗销售数据；数据格式、去重与清洗记录可独立复算",
+      "keywords": [
+        "销售",
+        "数据",
+        "分析"
+      ],
+      "scenario": "cross_org_analysis",
+      "inputType": "raw_csv",
+      "outputType": "cleaned_dataset",
+      "requires": []
+    },
+    {
+      "id": "data_validation",
+      "name": "检查销售数据质量",
+      "description": "检查销售数据质量；原始数据异常记录可独立复算",
+      "keywords": [
+        "销售",
+        "数据",
+        "分析"
+      ],
+      "scenario": "cross_org_analysis",
+      "inputType": "raw_csv",
+      "outputType": "quality_report",
+      "requires": []
+    },
+    {
+      "id": "statistical_analysis",
+      "name": "汇总销售数据",
+      "description": "汇总销售数据；按指定维度复算汇总值",
+      "keywords": [
+        "销售",
+        "数据",
+        "分析"
+      ],
+      "scenario": "cross_org_analysis",
+      "inputType": "cleaned_and_quality",
+      "outputType": "statistics",
+      "requires": [
+        "cleaned_dataset",
+        "quality_report"
+      ]
+    },
+    {
+      "id": "report_generation",
+      "name": "生成销售报告或图表",
+      "description": "生成销售报告或图表；报告、图表与统计一致；报告还需用户接受",
+      "keywords": [
+        "销售",
+        "数据",
+        "分析"
+      ],
+      "scenario": "cross_org_analysis",
+      "inputType": "statistics",
+      "outputType": "report",
+      "requires": [
+        "statistics"
+      ]
+    },
+    {
+      "id": "attraction_search",
+      "name": "从资料快照筛选景点",
+      "description": "从资料快照筛选景点；景点满足目的地与兴趣筛选规则",
+      "keywords": [
+        "旅行",
+        "旅游",
+        "行程"
+      ],
+      "scenario": "travel_planning",
+      "inputType": "travel_request",
+      "outputType": "attractions",
+      "requires": []
+    },
+    {
+      "id": "hotel_search",
+      "name": "从资料快照比较酒店",
+      "description": "从资料快照比较酒店；住宿日期、人数、费用与资料一致",
+      "keywords": [
+        "旅行",
+        "旅游",
+        "行程"
+      ],
+      "scenario": "travel_planning",
+      "inputType": "travel_request",
+      "outputType": "hotels",
+      "requires": []
+    },
+    {
+      "id": "route_planning",
+      "name": "安排每日行程",
+      "description": "安排每日行程；独立核对行程时段、交通、天数和费用",
+      "keywords": [
+        "旅行",
+        "旅游",
+        "行程"
+      ],
+      "scenario": "travel_planning",
+      "inputType": "travel_candidates",
+      "outputType": "itinerary",
+      "requires": [
+        "attractions",
+        "hotels"
+      ]
+    },
+    {
+      "id": "travel_report",
+      "name": "生成可阅读的行程报告",
+      "description": "生成可阅读的行程报告；报告与行程一致且由用户接受",
+      "keywords": [
+        "旅行",
+        "旅游",
+        "行程"
+      ],
+      "scenario": "travel_planning",
+      "inputType": "itinerary",
+      "outputType": "travel_report",
+      "requires": [
+        "itinerary"
+      ]
+    }
+  ],
+  "merchants": [
+    {
+      "id": "clean-a",
+      "name": "资料处理商家 A",
+      "offers": [
+        {
+          "serviceId": "data_cleaning",
+          "price": "20",
+          "seconds": 12,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": false
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": false
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": false
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": false
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "attraction_search",
+          "price": "20",
+          "seconds": 12,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clean-b",
+      "name": "资料处理商家 B",
+      "offers": [
+        {
+          "serviceId": "data_cleaning",
+          "price": "22",
+          "seconds": 8,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": false
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": false
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": false
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": false
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": false
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": false
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "attraction_search",
+          "price": "22",
+          "seconds": 8,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clean-c",
+      "name": "资料处理商家 C",
+      "offers": [
+        {
+          "serviceId": "data_cleaning",
+          "price": "18",
+          "seconds": 18,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": false
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": false
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": false
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": false
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": false
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": false
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "attraction_search",
+          "price": "18",
+          "seconds": 18,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clean-d",
+      "name": "资料处理商家 D",
+      "offers": [
+        {
+          "serviceId": "data_cleaning",
+          "price": "26",
+          "seconds": 10,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": false
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "attraction_search",
+          "price": "26",
+          "seconds": 10,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quality-a",
+      "name": "数据核验商家 A",
+      "offers": [
+        {
+          "serviceId": "data_validation",
+          "price": "16",
+          "seconds": 8,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": false
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": false
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": false
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "hotel_search",
+          "price": "16",
+          "seconds": 8,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quality-b",
+      "name": "数据核验商家 B",
+      "offers": [
+        {
+          "serviceId": "data_validation",
+          "price": "20",
+          "seconds": 5,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": false
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": false
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": false
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "hotel_search",
+          "price": "20",
+          "seconds": 5,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quality-c",
+      "name": "数据核验商家 C",
+      "offers": [
+        {
+          "serviceId": "data_validation",
+          "price": "12",
+          "seconds": 14,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": false
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": false
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": false
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        },
+        {
+          "serviceId": "hotel_search",
+          "price": "12",
+          "seconds": 14,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": false
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": false
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": false
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": false
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": false
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quality-d",
+      "name": "数据核验商家 D",
+      "offers": [
+        {
+          "serviceId": "data_validation",
+          "price": "24",
+          "seconds": 7,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": false
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "hotel_search",
+          "price": "24",
+          "seconds": 7,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stats-a",
+      "name": "分析规划商家 A",
+      "offers": [
+        {
+          "serviceId": "statistical_analysis",
+          "price": "24",
+          "seconds": 12,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "route_planning",
+          "price": "24",
+          "seconds": 12,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stats-b",
+      "name": "分析规划商家 B",
+      "offers": [
+        {
+          "serviceId": "statistical_analysis",
+          "price": "26",
+          "seconds": 6,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "route_planning",
+          "price": "26",
+          "seconds": 6,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": false
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stats-c",
+      "name": "分析规划商家 C",
+      "offers": [
+        {
+          "serviceId": "statistical_analysis",
+          "price": "20",
+          "seconds": 20,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": false
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": false
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        },
+        {
+          "serviceId": "route_planning",
+          "price": "20",
+          "seconds": 20,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": false
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": false
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": false
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": false
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stats-d",
+      "name": "分析规划商家 D",
+      "offers": [
+        {
+          "serviceId": "statistical_analysis",
+          "price": "32",
+          "seconds": 9,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": false
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "route_planning",
+          "price": "32",
+          "seconds": 9,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "report-a",
+      "name": "报告交付商家 A",
+      "offers": [
+        {
+          "serviceId": "report_generation",
+          "price": "12",
+          "seconds": 10,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "travel_report",
+          "price": "12",
+          "seconds": 10,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": false
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "report-b",
+      "name": "报告交付商家 B",
+      "offers": [
+        {
+          "serviceId": "report_generation",
+          "price": "16",
+          "seconds": 5,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        },
+        {
+          "serviceId": "travel_report",
+          "price": "16",
+          "seconds": 5,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": false
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": false
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": false
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": false
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": false
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "report-c",
+      "name": "报告交付商家 C",
+      "offers": [
+        {
+          "serviceId": "report_generation",
+          "price": "9",
+          "seconds": 16,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": false
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": false
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": false
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": false
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": false
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": false
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": false
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": false
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": false
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": false
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        },
+        {
+          "serviceId": "travel_report",
+          "price": "9",
+          "seconds": 16,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": false
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": false
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": false
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": false
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": false
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": false
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": false
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": false
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": false
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": false
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": false
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": false
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": false
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": false
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "report-d",
+      "name": "报告交付商家 D",
+      "offers": [
+        {
+          "serviceId": "report_generation",
+          "price": "20",
+          "seconds": 8,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": false
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": true
+            }
+          ]
+        },
+        {
+          "serviceId": "travel_report",
+          "price": "20",
+          "seconds": 8,
+          "history": [
+            {
+              "at": 1792281600,
+              "success": true
+            },
+            {
+              "at": 1792282200,
+              "success": true
+            },
+            {
+              "at": 1792282800,
+              "success": true
+            },
+            {
+              "at": 1792283400,
+              "success": true
+            },
+            {
+              "at": 1792284000,
+              "success": true
+            },
+            {
+              "at": 1792284600,
+              "success": true
+            },
+            {
+              "at": 1792285200,
+              "success": true
+            },
+            {
+              "at": 1792285800,
+              "success": true
+            },
+            {
+              "at": 1792286400,
+              "success": true
+            },
+            {
+              "at": 1792287000,
+              "success": true
+            },
+            {
+              "at": 1792287600,
+              "success": true
+            },
+            {
+              "at": 1792288200,
+              "success": true
+            },
+            {
+              "at": 1792288800,
+              "success": true
+            },
+            {
+              "at": 1792289400,
+              "success": true
+            },
+            {
+              "at": 1792290000,
+              "success": true
+            },
+            {
+              "at": 1792290600,
+              "success": true
+            },
+            {
+              "at": 1792291200,
+              "success": true
+            },
+            {
+              "at": 1792291800,
+              "success": true
+            },
+            {
+              "at": 1792292400,
+              "success": true
+            },
+            {
+              "at": 1792293000,
+              "success": true
+            },
+            {
+              "at": 1792293600,
+              "success": true
+            },
+            {
+              "at": 1792294200,
+              "success": true
+            },
+            {
+              "at": 1792294800,
+              "success": true
+            },
+            {
+              "at": 1792295400,
+              "success": true
+            },
+            {
+              "at": 1792296000,
+              "success": true
+            },
+            {
+              "at": 1792296600,
+              "success": true
+            },
+            {
+              "at": 1792297200,
+              "success": true
+            },
+            {
+              "at": 1792297800,
+              "success": true
+            },
+            {
+              "at": 1792298400,
+              "success": true
+            },
+            {
+              "at": 1792299000,
+              "success": true
+            },
+            {
+              "at": 1792299600,
+              "success": true
+            },
+            {
+              "at": 1792300200,
+              "success": true
+            },
+            {
+              "at": 1792300800,
+              "success": true
+            },
+            {
+              "at": 1792301400,
+              "success": true
+            },
+            {
+              "at": 1792302000,
+              "success": true
+            },
+            {
+              "at": 1792302600,
+              "success": true
+            },
+            {
+              "at": 1792303200,
+              "success": true
+            },
+            {
+              "at": 1792303800,
+              "success": true
+            },
+            {
+              "at": 1792304400,
+              "success": true
+            },
+            {
+              "at": 1792305000,
+              "success": true
+            },
+            {
+              "at": 1792305600,
+              "success": true
+            },
+            {
+              "at": 1792306200,
+              "success": true
+            },
+            {
+              "at": 1792306800,
+              "success": true
+            },
+            {
+              "at": 1792307400,
+              "success": true
+            },
+            {
+              "at": 1792308000,
+              "success": true
+            },
+            {
+              "at": 1792308600,
+              "success": true
+            },
+            {
+              "at": 1792309200,
+              "success": true
+            },
+            {
+              "at": 1792309800,
+              "success": true
+            },
+            {
+              "at": 1792310400,
+              "success": true
+            },
+            {
+              "at": 1792311000,
+              "success": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

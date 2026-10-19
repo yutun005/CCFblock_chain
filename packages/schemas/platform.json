@@ -6153,6 +6153,238 @@
       ],
       "title": "TaskTemplate",
       "type": "object"
+    },
+    "serviceCorpus": {
+      "$defs": {
+        "Merchant": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "offers": {
+              "items": {
+                "$ref": "#/$defs/ServiceOffer"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Offers",
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "offers"
+          ],
+          "title": "Merchant",
+          "type": "object"
+        },
+        "Observation": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "minimum": 1,
+              "title": "At",
+              "type": "integer"
+            },
+            "success": {
+              "title": "Success",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "at",
+            "success"
+          ],
+          "title": "Observation",
+          "type": "object"
+        },
+        "RecentStats": {
+          "additionalProperties": false,
+          "properties": {
+            "successes": {
+              "maximum": 50,
+              "minimum": 0,
+              "title": "Successes",
+              "type": "integer"
+            },
+            "total": {
+              "maximum": 50,
+              "minimum": 0,
+              "title": "Total",
+              "type": "integer"
+            },
+            "asOf": {
+              "minimum": 1,
+              "title": "Asof",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "successes",
+            "total",
+            "asOf"
+          ],
+          "title": "RecentStats",
+          "type": "object"
+        },
+        "ServiceDefinition": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "description": {
+              "maxLength": 1500,
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "keywords": {
+              "items": {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 20,
+              "title": "Keywords",
+              "type": "array"
+            },
+            "scenario": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Scenario",
+              "type": "string"
+            },
+            "inputType": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Inputtype",
+              "type": "string"
+            },
+            "outputType": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Outputtype",
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "maxLength": 64,
+                "type": "string"
+              },
+              "maxItems": 16,
+              "title": "Requires",
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "description",
+            "scenario"
+          ],
+          "title": "ServiceDefinition",
+          "type": "object"
+        },
+        "ServiceOffer": {
+          "additionalProperties": false,
+          "properties": {
+            "serviceId": {
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$",
+              "title": "Serviceid",
+              "type": "string"
+            },
+            "price": {
+              "title": "Price",
+              "type": "string"
+            },
+            "seconds": {
+              "maximum": 3600,
+              "minimum": 1,
+              "title": "Seconds",
+              "type": "integer"
+            },
+            "history": {
+              "items": {
+                "$ref": "#/$defs/Observation"
+              },
+              "maxItems": 50,
+              "title": "History",
+              "type": "array"
+            },
+            "recent": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecentStats"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "serviceId",
+            "price",
+            "seconds"
+          ],
+          "title": "ServiceOffer",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "services": {
+          "items": {
+            "$ref": "#/$defs/ServiceDefinition"
+          },
+          "maxItems": 256,
+          "title": "Services",
+          "type": "array"
+        },
+        "merchants": {
+          "items": {
+            "$ref": "#/$defs/Merchant"
+          },
+          "maxItems": 256,
+          "title": "Merchants",
+          "type": "array"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "restoreDeleted": {
+          "default": false,
+          "title": "Restoredeleted",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "CorpusImport",
+      "type": "object"
     }
   }
 }

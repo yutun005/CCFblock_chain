@@ -9,9 +9,6 @@ import re
 import time
 import uuid
 from copy import deepcopy
-from fractions import Fraction
-from itertools import product
-from math import prod
 from typing import Literal
 
 import httpx
@@ -487,14 +484,13 @@ class Workspace:
                     }
         return nodes
 
-    async def offers(self, spec):
+    async def offers(self, spec, graph_value):
         from services.orchestrator.application import object_hash, recover_challenge, service_endpoint
 
-        agents = [
-            agent
-            for agent in await self.engine.agents()
-            if agent["status"] == "ONLINE" and spec.skill in agent["skills"]
-        ]
+        node = next((n for n in graph_value["nodes"] if n["id"] == spec.skill), None)
+        allowed = {p["id"] for p in node["providers"] if p["online"]} if node else set()
+        agents = [agent for agent in await self.engine.agents()
+                  if agent["agentId"] in allowed and agent["status"] == "ONLINE" and spec.skill in agent["skills"]]
 
         async def estimate(agent):
             try:
@@ -523,73 +519,29 @@ class Workspace:
 
     @staticmethod
     def choose_team(tasks, pools, budget, preference):
-        """Compare whole feasible teams, including parallel branches, using exact integer prices."""
-        if prod(len(pool) for pool in pools) > 100_000:
-            raise ValueError("候选组合过多，请缩小服务范围后重新比较")
-        cheapest = sum(min(offer["price"] for offer in pool) for pool in pools)
-        if cheapest > budget:
-            raise ValueError(
-                f"完成全部交付至少需要 {display_money(cheapest)} USDC，超过预算 {display_money(budget)} USDC"
-            )
-        best, best_rank = None, None
-        for team in product(*pools):
-            total = sum(offer["price"] for offer in team)
-            if total > budget:
-                continue
-            finish = {}
-            for spec, offer in zip(tasks, team):
-                finish[spec.key] = offer["seconds"] + max((finish[key] for key in spec.dependencies), default=0)
-            seconds = max(finish.values(), default=0)
-            # Same required work in every team. Smoothing avoids treating 1/1 as certain success.
-            # Unknown history uses a neutral prior, never a fabricated success record.
-            risk = sum((Fraction(offer["history"]["expired"] + 1,
-                                 offer["history"]["settled"] + offer["history"]["expired"] + 2)
-                        for offer in team), Fraction())
-            rank = {"lowest_price": (total, seconds, risk), "fastest": (seconds, total, risk),
-                    "reliability": (risk, total, seconds)}[preference]
-            rank += (tuple(offer["agentId"] for offer in team),)
-            if best_rank is None or rank < best_rank:
-                best, best_rank = (team, total, seconds), rank
-        return best
+        from .pareto import frontier
+        option = frontier(tasks, pools, budget, preference)["options"][0]
+        return option["team"], option["price"], option["seconds"]
 
     async def compare(self, data):
-        from services.orchestrator.application import object_hash
-
         recipe = Recipe.model_validate(data)
-        policies = list(dict.fromkeys([recipe.preference, "lowest_price", "fastest", "reliability"]))
-        cache, unique, failures = {}, {}, {}
-        for preference in policies:
-            try:
-                value = await self.proposal(
-                    {**recipe.model_dump(), "preference": preference}, cache=cache, persist=False
-                )
-            except ValueError as exc:
-                failures.setdefault(str(exc), []).append(preference)
-                continue
-            # Compare the actual work and providers, not policy names or proposal IDs.
-            signature = object_hash({
-                "deliverables": sorted(value["deliverables"]),
-                "work": [
-                    {key: row[key] for key in (
-                        "key", "estimatedProvider", "estimatedPrice", "estimatedSeconds"
-                    )}
-                    for row in value["work"]
-                ],
-                "reused": {key: node["source"] for key, node in value["nodes"].items() if node["source"]},
-            })
-            if signature in unique:
-                unique[signature]["preferences"].append(preference)
-            else:
-                self.engine.db.put("proposals", value["id"], value)
-                unique[signature] = {
-                    "preferences": [preference], "proposal": self.public_proposal(value)
-                }
-        return {
-            "options": list(unique.values()),
-            "unavailable": [{"reason": reason, "preferences": prefs} for reason, prefs in failures.items()],
-        }
+        cache = {}
+        try:
+            first = await self.proposal(recipe.model_dump(), cache=cache, persist=False)
+            result = cache["pareto"]
+            proposals = [first]
+            for index in range(1, len(result["options"])):
+                proposals.append(await self.proposal(recipe.model_dump(), cache=cache, persist=False, option_index=index))
+        except ValueError as exc:
+            return {"options": [], "unavailable": [{"reason": str(exc), "preferences": []}]}
+        options = []
+        for index, value in enumerate(proposals):
+            self.engine.db.put("proposals", value["id"], value)
+            options.append({"rank": index + 1, "preferences": [], "proposal": self.public_proposal(value)})
+        return {"options": options, "unavailable": [], "frontier": {key: value for key, value in result.items() if key != "options"},
+                "excludedForNoHistory": sorted(cache.get("unknown_history", set()))}
 
-    async def proposal(self, data, *, cache=None, persist=True):
+    async def proposal(self, data, *, cache=None, persist=True, option_index=0):
         from services.orchestrator.application import (
             SCENARIOS,
             ExecutionPolicy,
@@ -624,6 +576,9 @@ class Workspace:
             template = SCENARIOS[recipe.scenario]["plan"]([item["sha256"] for item in inputs])
         elif template.input_hashes != tuple(item["sha256"] for item in inputs):
             raise ValueError("规划所用材料已变化，请重新规划")
+        from .catalog import graph, assert_plan
+        if "service_graph" not in cache:
+            cache["service_graph"] = await graph(self, scenario=recipe.scenario)
         source = self.engine.db.get("versions", recipe.sourceVersion) if recipe.sourceVersion else None
         if recipe.sourceVersion and (
             not source
@@ -643,6 +598,9 @@ class Workspace:
         for spec in reversed(template.topological()):
             if spec.key in wanted:
                 wanted.update(spec.dependencies)
+        await assert_plan(self, template.model_copy(update={
+            "tasks": tuple(spec for spec in template.tasks if spec.key in wanted)
+        }), cache["service_graph"])
         required_by = {key: [] for key in wanted}
         for output in recipe.outputs:
             ancestors = {"report" if output == "charts" else output}
@@ -723,7 +681,7 @@ class Workspace:
             )
             estimate_key = ("offers", object_hash(spec.model_dump(mode="json")))
             if estimate_key not in cache:
-                cache[estimate_key] = await self.offers(spec)
+                cache[estimate_key] = await self.offers(spec, cache["service_graph"])
             available = deepcopy(cache[estimate_key])
             if not available:
                 raise ValueError(f"{spec.title} 当前没有可用服务，请稍后重试或调整交付内容")
@@ -736,16 +694,32 @@ class Workspace:
                     spec.skill,
                 )
             history = cache[history_key]
+            from .catalog import reliability
+            service_node = next(n for n in cache["service_graph"]["nodes"] if n["id"] == spec.skill)
+            provider_map = {p["id"]: p for p in service_node["providers"]}
+            known = []
             for offer in available:
-                counts = history.get(offer["wallet"], {"settled": 0, "expired": 0, "evidence": []})
-                offer["history"] = {key: counts[key] for key in ("settled", "expired")}
+                verified = history.get(offer["wallet"])
+                offer["history"] = (reliability({}, None, verified) if verified and verified.get("evidence")
+                                    else provider_map[offer["agentId"]]["history"])
+                if offer["history"]["window"]:
+                    known.append(offer)
+                else:
+                    cache.setdefault("unknown_history", set()).add(offer["agentId"] + ":" + spec.skill)
+            available = known
+            if not available:
+                raise ValueError("服务 " + spec.title + " 没有具备近期履约记录的在线商家，暂不能比较成功率")
             available.sort(key=lambda offer: offer["agentId"])
             tasks.append(spec)
             pools.append(available)
             row.update(candidates=available, requiresReview=needs_review(spec))
             work.append(row)
         budget = units(recipe.budget)
-        team, total, seconds = self.choose_team(tasks, pools, budget, recipe.preference)
+        from .pareto import frontier, public as public_metrics
+        if "pareto" not in cache:
+            cache["pareto"] = frontier(tasks, pools, budget, recipe.preference)
+        selected = cache["pareto"]["options"][option_index]
+        team, total, seconds = selected["team"], selected["price"], selected["seconds"]
         for index, (row, chosen) in enumerate(zip(work, team)):
             # Freeze each selected estimate as the spending cap, including during fallback.
             tasks[index] = tasks[index].model_copy(update={"budget_cap": display_units(chosen["price"])})
@@ -759,16 +733,11 @@ class Workspace:
         history_summary = {
             "settled": sum(offer["history"]["settled"] for offer in team),
             "expired": sum(offer["history"]["expired"] for offer in team),
-            "coveredTasks": sum(bool(sum(offer["history"].values())) for offer in team),
+            "coveredTasks": sum(bool(offer["history"]["window"]) for offer in team),
             "totalTasks": len(team),
         }
-        any_history = any(sum(offer["history"].values()) for pool in pools for offer in pool)
-        reason = {
-            "lowest_price": "在预算内，整份任务总费用最低；同价时选整体更快的组合。",
-            "fastest": "在预算内，整份任务预计完成最快；同速时选总费用更低的组合。",
-            "reliability": "优先选择历史履约评分更好的组合；评分相同时选费用更低的组合。"
-                if any_history else "候选服务都没有可核验的履约记录，无法比较可靠性，按费用和耗时选择。",
-        }[recipe.preference] if tasks else "全部沿用已结算成果，无需新增执行。"
+        history_summary["sources"] = sorted({offer["history"]["source"] for offer in team})
+        reason = "在当前预算与候选商家中，没有其他组合能在费用、耗时、成功率上都不差且至少一项更好。" if tasks else "全部沿用已结算成果，无需新增执行。"
         plan = None
         if tasks:
             plan = Plan(
@@ -802,6 +771,8 @@ class Workspace:
             "noCharge": not tasks,
             "overrides": overrides,
             "planning": planning,
+            "serviceGraphRevision": cache["service_graph"]["revision"],
+            "pareto": {**{key: value for key, value in cache["pareto"].items() if key != "options"}, **public_metrics(selected)},
         }
         result["confirmationHash"] = object_hash(
             {k: v for k, v in result.items() if k not in {"id", "createdAt", "expiresAt"}}
@@ -836,6 +807,11 @@ class Workspace:
                 return previous
             if not previous and time.time() >= proposal["expiresAt"]:
                 raise ValueError("方案估价已过期，请重新比较方案")
+            if not previous and proposal["plan"]:
+                from .catalog import assert_plan, corpus
+                if proposal.get("serviceGraphRevision") != corpus(self)["revision"]:
+                    raise ValueError("服务库已变化，请重新比较方案后再确认付款")
+                await assert_plan(self, Plan.model_validate(proposal["plan"]))
             recipe = proposal["recipe"]
             source = self.engine.db.get("versions", recipe.get("sourceVersion", ""))
             same_request = source and all(
@@ -1006,6 +982,9 @@ def install(app, engine, config, start):
     from .templates import install as install_templates
 
     install_templates(app, workspace)
+    from .catalog import install as install_catalog
+
+    install_catalog(app, workspace)
 
     @app.get("/api/workspace/planner")
     def planner_status():

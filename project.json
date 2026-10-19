@@ -33,6 +33,10 @@
         "prices": {
           "data_cleaning": "20",
           "attraction_search": "20"
+        },
+        "serviceSeconds": {
+          "data_cleaning": 12,
+          "attraction_search": 12
         }
       },
       {
@@ -43,6 +47,38 @@
         "prices": {
           "data_cleaning": "22",
           "attraction_search": "22"
+        },
+        "serviceSeconds": {
+          "data_cleaning": 8,
+          "attraction_search": 8
+        }
+      },
+      {
+        "id": "clean-c",
+        "keyEnv": "AGENTFLOW_CLEAN_C_KEY",
+        "endpoint": "http://127.0.0.1:8096",
+        "prices": {
+          "data_cleaning": "18",
+          "attraction_search": "18"
+        },
+        "estimatedSeconds": 18,
+        "serviceSeconds": {
+          "data_cleaning": 18,
+          "attraction_search": 18
+        }
+      },
+      {
+        "id": "clean-d",
+        "keyEnv": "AGENTFLOW_CLEAN_D_KEY",
+        "endpoint": "http://127.0.0.1:8097",
+        "prices": {
+          "data_cleaning": "26",
+          "attraction_search": "26"
+        },
+        "estimatedSeconds": 10,
+        "serviceSeconds": {
+          "data_cleaning": 10,
+          "attraction_search": 10
         }
       },
       {
@@ -53,6 +89,52 @@
         "prices": {
           "data_validation": "16",
           "hotel_search": "16"
+        },
+        "serviceSeconds": {
+          "data_validation": 8,
+          "hotel_search": 8
+        }
+      },
+      {
+        "id": "quality-b",
+        "keyEnv": "AGENTFLOW_QUALITY_B_KEY",
+        "endpoint": "http://127.0.0.1:8098",
+        "prices": {
+          "data_validation": "20",
+          "hotel_search": "20"
+        },
+        "estimatedSeconds": 5,
+        "serviceSeconds": {
+          "data_validation": 5,
+          "hotel_search": 5
+        }
+      },
+      {
+        "id": "quality-c",
+        "keyEnv": "AGENTFLOW_QUALITY_C_KEY",
+        "endpoint": "http://127.0.0.1:8099",
+        "prices": {
+          "data_validation": "12",
+          "hotel_search": "12"
+        },
+        "estimatedSeconds": 14,
+        "serviceSeconds": {
+          "data_validation": 14,
+          "hotel_search": 14
+        }
+      },
+      {
+        "id": "quality-d",
+        "keyEnv": "AGENTFLOW_QUALITY_D_KEY",
+        "endpoint": "http://127.0.0.1:8100",
+        "prices": {
+          "data_validation": "24",
+          "hotel_search": "24"
+        },
+        "estimatedSeconds": 7,
+        "serviceSeconds": {
+          "data_validation": 7,
+          "hotel_search": 7
         }
       },
       {
@@ -63,6 +145,10 @@
         "prices": {
           "statistical_analysis": "24",
           "route_planning": "24"
+        },
+        "serviceSeconds": {
+          "statistical_analysis": 12,
+          "route_planning": 12
         }
       },
       {
@@ -73,6 +159,38 @@
         "prices": {
           "statistical_analysis": "26",
           "route_planning": "26"
+        },
+        "serviceSeconds": {
+          "statistical_analysis": 6,
+          "route_planning": 6
+        }
+      },
+      {
+        "id": "stats-c",
+        "keyEnv": "AGENTFLOW_STATS_C_KEY",
+        "endpoint": "http://127.0.0.1:8101",
+        "prices": {
+          "statistical_analysis": "20",
+          "route_planning": "20"
+        },
+        "estimatedSeconds": 20,
+        "serviceSeconds": {
+          "statistical_analysis": 20,
+          "route_planning": 20
+        }
+      },
+      {
+        "id": "stats-d",
+        "keyEnv": "AGENTFLOW_STATS_D_KEY",
+        "endpoint": "http://127.0.0.1:8102",
+        "prices": {
+          "statistical_analysis": "32",
+          "route_planning": "32"
+        },
+        "estimatedSeconds": 9,
+        "serviceSeconds": {
+          "statistical_analysis": 9,
+          "route_planning": 9
         }
       },
       {
@@ -83,6 +201,52 @@
         "prices": {
           "report_generation": "12",
           "travel_report": "12"
+        },
+        "serviceSeconds": {
+          "report_generation": 10,
+          "travel_report": 10
+        }
+      },
+      {
+        "id": "report-b",
+        "keyEnv": "AGENTFLOW_REPORT_B_KEY",
+        "endpoint": "http://127.0.0.1:8103",
+        "prices": {
+          "report_generation": "16",
+          "travel_report": "16"
+        },
+        "estimatedSeconds": 5,
+        "serviceSeconds": {
+          "report_generation": 5,
+          "travel_report": 5
+        }
+      },
+      {
+        "id": "report-c",
+        "keyEnv": "AGENTFLOW_REPORT_C_KEY",
+        "endpoint": "http://127.0.0.1:8104",
+        "prices": {
+          "report_generation": "9",
+          "travel_report": "9"
+        },
+        "estimatedSeconds": 16,
+        "serviceSeconds": {
+          "report_generation": 16,
+          "travel_report": 16
+        }
+      },
+      {
+        "id": "report-d",
+        "keyEnv": "AGENTFLOW_REPORT_D_KEY",
+        "endpoint": "http://127.0.0.1:8105",
+        "prices": {
+          "report_generation": "20",
+          "travel_report": "20"
+        },
+        "estimatedSeconds": 8,
+        "serviceSeconds": {
+          "report_generation": 8,
+          "travel_report": 8
         }
       }
     ]

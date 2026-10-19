@@ -156,12 +156,13 @@ async def apply_template(workspace, template_id, data):
 
 def install(app, workspace):
     @app.get("/api/workspace/capabilities")
-    def capabilities():
-        from .application import SKILL_POLICIES
+    async def capabilities():
+        from .catalog import graph
 
-        return [{"key": key, "skill": skill, "title": title, "requires": requires, "acceptance": acceptance,
-                 "scenario": "travel_planning" if SKILL_POLICIES[skill] == "travel-v1" else "cross_org_analysis"}
-                for skill, (key, title, requires, acceptance) in CAPABILITIES.items()]
+        value = await graph(workspace)
+        return [{"key": node["key"], "skill": node["id"], "title": node["name"], "requires": node["requires"],
+                 "acceptance": node["acceptance"], "scenario": node["scenario"], "available": node["executable"]}
+                for node in value["nodes"] if node["adapterReady"]]
 
     @app.get("/api/workspace/templates")
     def templates(q: str = "", scenario: str | None = None):
