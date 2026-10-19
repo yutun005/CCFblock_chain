@@ -2,7 +2,7 @@ import time
 import unittest
 import json
 from pathlib import Path
-from services.agents.business import AdversarialAgent, build_demo_agents
+from experiments.scripts.common import AdversarialAgent, build_demo_agents
 from services.marketplace.market import AgentRegistry, QuoteMarket
 from services.marketplace.models import Quote, Result, TaskRequest
 

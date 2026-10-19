@@ -1513,3 +1513,54 @@ dialog > p {
     scroll-behavior: auto !important;
   }
 }
+/* Project proposals and report approval share the existing workspace typography. */
+.project-workspace { max-width: 1440px; margin: 0 auto; }
+.workspace-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid #dce3ed; padding-bottom: 14px; }
+.workspace-tabs button { min-height: 44px; padding: 10px 16px; }
+.workspace-tabs button[aria-current="page"] { color: #fff; background: #244cb1; border-color: #244cb1; }
+.workspace-columns { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 20px; }
+.workspace-panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; margin: 16px 0; min-width: 0; }
+.workspace-panel h2, .workspace-panel h3 { margin-top: 0; }
+.project-workspace label { display: grid; gap: 7px; margin: 16px 0; font-weight: 600; color: #dce6ef; }
+.project-workspace input:not([type="checkbox"]), .project-workspace select, .project-workspace textarea { width: 100%; min-width: 0; min-height: 44px; border: 1px solid #637b90; border-radius: 7px; padding: 10px; background: #0f1b28; color: #f1f5f9; font: inherit; }
+.project-workspace textarea { min-height: 96px; resize: vertical; }
+.project-workspace fieldset { margin: 20px 0; padding: 12px 16px; border: 1px solid #dce3ed; border-radius: 8px; }
+.project-workspace legend { padding: 0 6px; font-weight: 600; }
+.project-workspace .check-row { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 3px 0; font-weight: 400; cursor: pointer; flex-wrap: wrap; }
+.check-row input { width: 18px; height: 18px; accent-color: #244cb1; }
+.project-workspace small { display: block; color: #b1c3d4; font-weight: 400; }
+.project-workspace p { line-height: 1.65; overflow-wrap: anywhere; }
+.project-workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; background: #0b1420; padding: 14px; border-radius: 7px; font-size: 13px; }
+.project-workspace details { margin: 14px 0; }
+.project-workspace summary { padding: 12px 0; cursor: pointer; font-weight: 600; }
+.project-workspace button { min-height: 44px; cursor: pointer; }
+.project-workspace button:disabled { cursor: not-allowed; opacity: .55; }
+.project-workspace :focus-visible { outline: 3px solid #2f62d5; outline-offset: 3px; }
+.workspace-notice { padding: 14px 18px; border: 1px solid #b6d7ca; background: #eef9f3; border-radius: 8px; color: #195a3f; }
+.tier-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,300px),1fr)); gap: 18px; }
+.tier-grid .chosen { outline: 3px solid #244cb1; outline-offset: -2px; }
+.tier-grid .price { font-size: 24px; color: var(--accent); }
+.tier-grid ul { padding-left: 20px; line-height: 1.8; font-size: 14px; overflow-wrap: anywhere; }
+.workspace-actions, .version-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
+.version-row { padding: 14px 0; border-bottom: 1px solid #e3e8ee; }
+.version-row > span { flex: 1; min-width: 210px; }
+.confirmation > button { margin-right: 12px; }
+.report-body { padding: 16px; border: 1px solid var(--line); background: #0f1b28; margin: 20px 0; }
+.report-body p { margin: 3px 0; white-space: pre-wrap; }
+.report-body h3 { margin-top: 28px; }
+.report-chart { width: 100%; max-height: 650px; object-fit: contain; background: #fafbfc; border-radius: 8px; }
+.draft-preview iframe { width: 100%; height: 600px; border: 1px solid #a9b7c9; }
+.review-controls { border-top: 1px solid #dce3ed; margin-top: 24px; padding-top: 18px; }
+.project-workspace .danger { color: #ffb1b1; border-color: #b76565; }
+@media(max-width: 1000px) { .tier-grid { grid-template-columns: 1fr; } }
+@media(max-width: 760px) { .workspace-columns { grid-template-columns: 1fr; } .workspace-panel { padding: 16px; } .workspace-tabs button { flex: 1 1 42%; } }
+.report-table { max-width: 100%; overflow-x: auto; margin: 1rem 0; }
+.report-table table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.report-table th, .report-table td { padding: .6rem; border-bottom: 1px solid var(--line); text-align: left; }
+
+.planning-graph { height: 420px; width: 100%; border: 1px solid #42586b; border-radius: 12px; margin: 16px 0; }
+.planning-result { margin-top: 20px; }
+.task-editor { margin: 12px 0; padding: 16px; border: 1px solid #3d5368; border-radius: 10px; }
+.template-library { margin: 20px 0; }
+.template-library button { margin: 4px 8px 4px 0; }
+.template-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }

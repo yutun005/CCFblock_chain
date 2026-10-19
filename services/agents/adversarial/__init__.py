@@ -1,1 +1,1 @@
-from services.agents.business import AdversarialAgent
+from experiments.scripts.common import AdversarialAgent

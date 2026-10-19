@@ -20,6 +20,7 @@ __pycache__/
 .env*
 !.env.example
 /runtime.json
+/planner.local.json
 /deployments/
 /infra/besu/generated/
 /infra/besu/data/

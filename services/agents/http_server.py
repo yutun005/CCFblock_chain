@@ -23,7 +23,7 @@ def serve(agent: BaseAgent, host: str = "127.0.0.1", port: int | None = None):
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
                 if path == "/registration/challenge":
-                    from app import object_hash, sign_challenge
+                    from services.orchestrator.application import object_hash, sign_challenge
                     card = agent.card.as_dict()
                     card["metadata"] = {k:v for k,v in card["metadata"].items() if k != "binding"}
                     import time
@@ -52,5 +52,6 @@ def serve(agent: BaseAgent, host: str = "127.0.0.1", port: int | None = None):
 if __name__ == "__main__":
     from .business import BusinessAgent
     import argparse
+    import os
     p = argparse.ArgumentParser(); p.add_argument("--id", default="cleaner-a"); p.add_argument("--skill", default="data_cleaning"); p.add_argument("--port", type=int, default=8001); a = p.parse_args()
-    serve(BusinessAgent(a.id, a.id, [a.skill], port=a.port), port=a.port)
+    serve(BusinessAgent(a.id, a.id, [a.skill], port=a.port, private_key=int(os.environ["AGENTFLOW_AGENT_KEY"], 16)), port=a.port)

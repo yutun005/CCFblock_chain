@@ -2,7 +2,7 @@ from __future__ import annotations
 import csv, json, time, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from services.agents.business import build_demo_agents
+from experiments.scripts.common import build_demo_agents
 from services.marketplace.market import AgentRegistry, QuoteMarket
 from services.marketplace.models import TaskRequest
 

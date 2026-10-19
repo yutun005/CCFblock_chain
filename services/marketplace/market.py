@@ -26,7 +26,7 @@ class AgentRegistry:
         if not hasattr(agent, "card"):
             import httpx, secrets
             from urllib.parse import urlparse
-            from app import object_hash, recover_challenge
+            from services.orchestrator.application import object_hash, recover_challenge
             if urlparse(card.url).hostname not in {"localhost", "127.0.0.1", "::1"}:
                 raise ValueError("B experimental remote registry accepts loopback origins only")
             public = card.as_dict()

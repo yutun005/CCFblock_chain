@@ -423,7 +423,7 @@ def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
     parser.add_argument("command", choices=["setup", "build", "test-contract", "test-security", "test-e2e", "test-browser-live", "run-data",
                         "run-travel", "collect-results", "reset-demo", "package", "schema", "configure",
-                        "approve", "start", "archive-evidence", "check", "chain-up", "deploy", "dev", "stop-chain", "save-chain", "test-integration"], nargs="?", default="start")
+                        "approve", "start", "archive-evidence", "check", "chain-up", "deploy", "dev", "stop-chain", "save-chain", "test-integration"], nargs="?", default="dev")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
@@ -472,6 +472,7 @@ def main():
         run([PYTHON, ROOT / "scripts/collect_unified_results.py"])
         return
     if args.command == "reset-demo":
+        from app import settings_file
         reset_demo(settings_file(args.config, args.runtime)["directory"])
         return
     if args.command == "package":
@@ -491,6 +492,12 @@ def main():
         destination.parent.mkdir(parents=True, exist_ok=True)
         document = {"plan": plan_schema_document(), "runtime": runtime_schema_document(),
                     "protocol": protocol_schema_document(), "travelInput": TravelInput.model_json_schema()}
+        from services.orchestrator.planning import GoalDraft
+        from services.orchestrator.templates import TaskTemplate
+        from services.orchestrator.catalog import CorpusImport
+        from services.orchestrator.workspace import Recipe
+        document["workspace"] = {"recipe": Recipe.model_json_schema(), "goalDraft": GoalDraft.model_json_schema(),
+                                 "template": TaskTemplate.model_json_schema(), "serviceCorpus": CorpusImport.model_json_schema()}
         destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"exported": str(destination), "protocolVersion": 1, "status": "local_proposal"}))
         return

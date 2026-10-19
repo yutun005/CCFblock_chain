@@ -3,7 +3,7 @@ import json, time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-from services.marketplace.crypto import private_key_from_seed, address_from_private_key, keccak256
+from services.marketplace.crypto import address_from_private_key, keccak256
 from services.marketplace.models import AgentCard, Quote, Result, TaskRequest, bytes32
 
 
@@ -16,8 +16,10 @@ class AgentStats:
 
 class BaseAgent(ABC):
     """A2A-compatible service agent used both in-process and over HTTP."""
-    def __init__(self, agent_id: str, name: str, skills: list[str], *, port: int = 0, seed: str | None = None, price: int = 10, url: str | None = None, private_key=None, domain=None, clock=None):
-        self.agent_id, self.private_key = agent_id, private_key or private_key_from_seed(seed or agent_id)
+    def __init__(self, agent_id: str, name: str, skills: list[str], *, port: int = 0, price: int = 10, url: str | None = None, private_key=None, domain=None, clock=None):
+        if private_key is None:
+            raise ValueError("service signing key must be explicitly configured")
+        self.agent_id, self.private_key = agent_id, private_key
         self.domain = domain or {"name":"AgentFlow Pay", "version":"1", "chain_id":31337,
                                  "verifying_contract":"0x0000000000000000000000000000000000000001"}
         self.clock = clock or (lambda: int(time.time()))

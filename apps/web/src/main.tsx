@@ -41,6 +41,8 @@ import {
 } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import "./style.css";
+import Workspace from "./Workspace";
+import { amount, price, tokenUnits } from "./amount";
 
 type AnyRecord = Record<string, any>;
 type Task = {
@@ -89,17 +91,13 @@ const states: Record<string, string> = {
   CANCELED: "已取消",
   RECOVERING: "等待旧轮次失效",
   REASSIGNING: "重新委派",
+  AWAITING_REVIEW: "等待用户确认",
+  REWORKING: "正在修改报告",
+  ACCEPTED: "报告已经接受",
 };
 const chainStates = ["等待依赖", "已委派", "已结算", "已取消"];
 const short = (value?: string) =>
   value ? value.slice(0, 8) + "…" + value.slice(-6) : "—";
-function amount(value: string | number | undefined) {
-  if (value === undefined) return "—";
-  const n = BigInt(value),
-    whole = n / 1000000n,
-    fraction = (n % 1000000n).toString().padStart(6, "0").replace(/0+$/, "");
-  return whole.toString() + (fraction ? "." + fraction : "");
-}
 function trapDialogTab(event: React.KeyboardEvent<HTMLDialogElement>) {
   if (event.key !== "Tab") return;
   const elements = Array.from(
@@ -168,7 +166,7 @@ function App() {
     [preview, setPreview] = useState<AnyRecord | null>(null),
     [previewError, setPreviewError] = useState("");
   const [busy, setBusy] = useState(""),
-    [tab, setTab] = useState("overview"),
+    [tab, setTab] = useState("workspace"),
     [selected, setSelected] = useState(0);
   const [createOpen, setCreateOpen] = useState(false),
     [budget, setBudget] = useState("100"),
@@ -468,6 +466,7 @@ function App() {
       })),
     );
   const nav = [
+    ["workspace", "项目与成果", Layers3],
     ["overview", "协作任务", GitBranch],
     ["market", "服务市场", Network],
     ["funds", "资金账本", Wallet],
@@ -590,13 +589,14 @@ function App() {
           </div>
         </header>
         <main id="main">
+          {tab === "workspace" ? <Workspace api={api} token={token} currentJob={jobId} onJob={selectJob} /> : <>
           <div className="page-heading">
             <div>
               <div className="eyebrow">AUTONOMOUS COLLABORATION</div>
               <h1>{nav.find((n) => n[0] === tab)?.[1]}</h1>
               <p>从服务发现到成果交付，追踪每个节点和每笔报酬。</p>
             </div>
-            <button className="primary" onClick={() => setCreateOpen(true)}>
+            <button className="primary" onClick={() => setTab("workspace")}>
               <Plus size={18} />
               创建协作任务
             </button>
@@ -1022,7 +1022,7 @@ function App() {
                     </table>
                   </div>
                   <p className="hint">
-                    金额按配置的六位小数代币显示；Gas 使用对应链的原生币单独支付。
+                    金额四舍五入显示两位小数；实际结算保留完整精度。Gas 使用对应链的原生币单独支付。
                   </p>
                 </section>
               )}
@@ -1094,6 +1094,7 @@ function App() {
               )}
             </>
           )}
+          </>}
           <footer>
             <span>AgentFlow Pay · DASC v1</span>
             <span>独立履约 · 依赖约束 · 可核验结算</span>
@@ -1147,7 +1148,7 @@ function App() {
             <div key={task.key}>
               <span>{String(index + 1).padStart(2, "0")}</span>
               <strong>{task.title}</strong>
-              <small>上限 {Number(task.budget_cap)} 代币</small>
+              <small>上限 {price(task.budget_cap)} 代币</small>
             </div>
           ))}
         </div>
@@ -1176,7 +1177,7 @@ function App() {
           </div>
         </div>
         <p className="hint">
-          节点预算合计 {preview ? preview.plan.tasks.reduce((sum: number, t: AnyRecord) => sum + Number(t.budget_cap), 0) : "—"} 代币。
+          节点预算合计 {preview ? amount(preview.plan.tasks.reduce((sum: bigint, t: AnyRecord) => sum + tokenUnits(t.budget_cap), 0n)) : "—"} 代币。
           此预算支付 Agent 规划服务；行程费用单独计算。成功节点按成交价结算，未使用部分终态后可退。
         </p>
         <div className="modal-actions">
@@ -1237,4 +1238,3 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </React.StrictMode>,
 );
-

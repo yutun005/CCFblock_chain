@@ -29,7 +29,10 @@
             "default": "lowest_price",
             "enum": [
               "lowest_price",
-              "risk_aware"
+              "risk_aware",
+              "fastest",
+              "balanced",
+              "reliability"
             ],
             "title": "Selection",
             "type": "string"
@@ -38,6 +41,13 @@
             "default": "30.000000",
             "title": "Risk Penalty",
             "type": "string"
+          },
+          "preferred_agents": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Preferred Agents",
+            "type": "object"
           }
         },
         "title": "ExecutionPolicy",
@@ -98,6 +108,19 @@
           "output_type": {
             "title": "Output Type",
             "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Options"
           }
         },
         "required": [
@@ -210,7 +233,10 @@
             "default": "lowest_price",
             "enum": [
               "lowest_price",
-              "risk_aware"
+              "risk_aware",
+              "fastest",
+              "balanced",
+              "reliability"
             ],
             "title": "Selection",
             "type": "string"
@@ -219,6 +245,13 @@
             "default": "30.000000",
             "title": "Risk Penalty",
             "type": "string"
+          },
+          "preferred_agents": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Preferred Agents",
+            "type": "object"
           }
         },
         "title": "ExecutionPolicy",
@@ -406,6 +439,19 @@
           "output_type": {
             "title": "Output Type",
             "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Options"
           }
         },
         "required": [
@@ -473,6 +519,11 @@
             "items": {},
             "title": "Createargs",
             "type": "array"
+          },
+          "createOperation": {
+            "default": "createBoundJob",
+            "title": "Createoperation",
+            "type": "string"
           },
           "fundedAt": {
             "anyOf": [
@@ -584,7 +635,10 @@
               "SETTLED",
               "RECOVERING",
               "REASSIGNING",
-              "CANCELED"
+              "CANCELED",
+              "AWAITING_REVIEW",
+              "REWORKING",
+              "ACCEPTED"
             ],
             "title": "Status",
             "type": "string"
@@ -1262,6 +1316,9 @@
               "RECOVERING",
               "REASSIGNING",
               "CANCELED",
+              "AWAITING_REVIEW",
+              "REWORKING",
+              "ACCEPTED",
               "assignTask_PENDING",
               "settleTask_PENDING",
               "JOB_FUNDED",
@@ -1455,6 +1512,63 @@
               "properties": {
                 "kind": {
                   "const": "CANCELED"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/TaskCheckpoint"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "AWAITING_REVIEW"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/TaskCheckpoint"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "REWORKING"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/TaskCheckpoint"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "ACCEPTED"
                 }
               },
               "required": [
@@ -2030,28 +2144,28 @@
       ],
       "businessSchemas": {
         "data_cleaning": {
-          "policyId": "0x6682268b4e32aa3da9fb7ff4b5a5abd47ad2e61b44f75bb5d4fad36e69d522d7"
+          "policyId": "0x2b2fbdffa4d640747c583d965bb23102248ca59bd5775cace613bc9bdd7bd306"
         },
         "data_validation": {
-          "policyId": "0x3a6e787509050cfbdde1f21532e636d6cce13fe02823c9d50dccaf280bf894fb"
+          "policyId": "0xb5bb7a015fb7ed5de650977190fb4ef98d27eb7b88ff1e061a7b0231bf7f6b1e"
         },
         "statistical_analysis": {
-          "policyId": "0x9267d6734468dcc3293270664b9c0fcdd2eb84a4b5f99e27b5c45df7a57ec6d6"
+          "policyId": "0xabc8e0cb47437953561c779ab5ffed13d188bcecdb5355d1c5fba11348138765"
         },
         "report_generation": {
-          "policyId": "0x1075c812ca3bb9427a7b74f055fd1a3fc35f5b8dcd3bba703af1264d5e352790"
+          "policyId": "0x4c545843eceea8fb87ffcc8344093959ba904a946e4e633800400ef5e8627366"
         },
         "attraction_search": {
-          "policyId": "0x847317dca933668a097a1e64d9bb51d971e4cd8b34e91fb082574276efac368f"
+          "policyId": "0xf4628fd065e0144d8f8b1ccea9450724cce00f30b18b345e80d148ae9d0b2214"
         },
         "hotel_search": {
-          "policyId": "0xc7049fc1670f5f85925e8eb40a4c7ced59dab9dcac81add25ec0fbaf7623547f"
+          "policyId": "0xfeb978fad95db1c1d7528c8a7bca8b3f9deaa6725441b204c492430a5d05045c"
         },
         "route_planning": {
-          "policyId": "0xa1bc40a4f9753e23df4874bfa377aabf8ab5bcd1543e743cbea3cea4c85a99f2"
+          "policyId": "0xe8c72fc3f63a930a4f5b711bd43f470d0400143b3999f4a98c9c384977480318"
         },
         "travel_report": {
-          "policyId": "0x77dcb484481adf49143e72eb3021aa49c956af06d6bc699f5543724a133cc04d"
+          "policyId": "0x302c1c82e416049314f33bed0de87d4dcf907d567aa211627024fe678ace0d9c"
         }
       }
     },
@@ -2376,7 +2490,10 @@
                 "default": "lowest_price",
                 "enum": [
                   "lowest_price",
-                  "risk_aware"
+                  "risk_aware",
+                  "fastest",
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -2385,6 +2502,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -2512,6 +2636,19 @@
               "output_type": {
                 "title": "Output Type",
                 "type": "string"
+              },
+              "options": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Options"
               }
             },
             "required": [
@@ -2664,6 +2801,19 @@
             ],
             "default": null,
             "title": "Sections"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revision"
           }
         },
         "required": [
@@ -2927,7 +3077,10 @@
                 "default": "lowest_price",
                 "enum": [
                   "lowest_price",
-                  "risk_aware"
+                  "risk_aware",
+                  "fastest",
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -2936,6 +3089,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -3063,6 +3223,19 @@
               "output_type": {
                 "title": "Output Type",
                 "type": "string"
+              },
+              "options": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Options"
               }
             },
             "required": [
@@ -3255,6 +3428,20 @@
                 ],
                 "default": null,
                 "title": "Scoredenominator"
+              },
+              "estimatedSeconds": {
+                "anyOf": [
+                  {
+                    "maximum": 3600,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Estimatedseconds"
               }
             },
             "required": [
@@ -3377,7 +3564,10 @@
           "selectionRule": {
             "enum": [
               "lowest_price",
-              "risk_aware"
+              "risk_aware",
+              "fastest",
+              "balanced",
+              "reliability"
             ],
             "title": "Selectionrule",
             "type": "string"
@@ -3434,7 +3624,10 @@
                 "default": "lowest_price",
                 "enum": [
                   "lowest_price",
-                  "risk_aware"
+                  "risk_aware",
+                  "fastest",
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -3443,6 +3636,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -3570,6 +3770,19 @@
               "output_type": {
                 "title": "Output Type",
                 "type": "string"
+              },
+              "options": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Options"
               }
             },
             "required": [
@@ -3796,7 +4009,10 @@
                 "default": "lowest_price",
                 "enum": [
                   "lowest_price",
-                  "risk_aware"
+                  "risk_aware",
+                  "fastest",
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -3805,6 +4021,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -3932,6 +4155,19 @@
               "output_type": {
                 "title": "Output Type",
                 "type": "string"
+              },
+              "options": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Options"
               }
             },
             "required": [
@@ -4024,6 +4260,19 @@
             "maxItems": 15,
             "title": "Upstreamrefs",
             "type": "array"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revision"
           }
         },
         "required": [
@@ -4472,7 +4721,10 @@
                 "default": "lowest_price",
                 "enum": [
                   "lowest_price",
-                  "risk_aware"
+                  "risk_aware",
+                  "fastest",
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -4481,6 +4733,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -4703,6 +4962,19 @@
               "output_type": {
                 "title": "Output Type",
                 "type": "string"
+              },
+              "options": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Options"
               }
             },
             "required": [
@@ -4781,6 +5053,28 @@
           },
           "delivery": {
             "$ref": "#/$defs/ServiceDelivery"
+          },
+          "reused": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 15,
+            "title": "Reused",
+            "type": "array"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revision"
           }
         },
         "required": [
@@ -5405,5 +5699,692 @@
     ],
     "title": "TravelInput",
     "type": "object"
+  },
+  "workspace": {
+    "recipe": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Projectid"
+        },
+        "sourceVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourceversion"
+        },
+        "title": {
+          "default": "我的项目",
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "scenario": {
+          "default": "cross_org_analysis",
+          "enum": [
+            "cross_org_analysis",
+            "travel_planning"
+          ],
+          "title": "Scenario",
+          "type": "string"
+        },
+        "materialIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Materialids",
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "tier": {
+          "default": "standard",
+          "enum": [
+            "basic",
+            "standard",
+            "detailed"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "preference": {
+          "default": "lowest_price",
+          "enum": [
+            "lowest_price",
+            "fastest",
+            "reliability"
+          ],
+          "title": "Preference",
+          "type": "string"
+        },
+        "budget": {
+          "default": "100",
+          "title": "Budget",
+          "type": "string"
+        },
+        "groupBy": {
+          "default": "organization_quarter",
+          "enum": [
+            "organization_quarter",
+            "organization",
+            "category",
+            "month"
+          ],
+          "title": "Groupby",
+          "type": "string"
+        },
+        "travelRequest": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Travelrequest"
+        },
+        "requirement": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Requirement",
+          "type": "string"
+        },
+        "planningMode": {
+          "default": "manual",
+          "enum": [
+            "manual",
+            "llm",
+            "template"
+          ],
+          "title": "Planningmode",
+          "type": "string"
+        },
+        "planningId": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Planningid"
+        },
+        "forceRedo": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Forceredo",
+          "type": "array"
+        },
+        "reviewSeconds": {
+          "default": 1800,
+          "maximum": 3300,
+          "minimum": 60,
+          "title": "Reviewseconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "materialIds",
+        "outputs"
+      ],
+      "title": "Recipe",
+      "type": "object"
+    },
+    "goalDraft": {
+      "$defs": {
+        "PlannedTask": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "pattern": "^[a-z][a-z0-9_]{0,47}$",
+              "title": "Key",
+              "type": "string"
+            },
+            "skill": {
+              "title": "Skill",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "dependencies": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 15,
+              "title": "Dependencies",
+              "type": "array"
+            },
+            "reason": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "skill",
+            "title",
+            "reason"
+          ],
+          "title": "PlannedTask",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ready",
+            "needs_input",
+            "unsupported"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Questions",
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/PlannedTask"
+          },
+          "maxItems": 16,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "groupBy": {
+          "anyOf": [
+            {
+              "enum": [
+                "organization_quarter",
+                "organization",
+                "category",
+                "month"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Groupby"
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "enum": [
+                "standard",
+                "detailed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tier"
+        },
+        "travelRequest": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Travelrequest"
+        },
+        "serviceBudget": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Servicebudget"
+        }
+      },
+      "required": [
+        "status",
+        "summary"
+      ],
+      "title": "GoalDraft",
+      "type": "object"
+    },
+    "template": {
+      "$defs": {
+        "PlannedTask": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "pattern": "^[a-z][a-z0-9_]{0,47}$",
+              "title": "Key",
+              "type": "string"
+            },
+            "skill": {
+              "title": "Skill",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "dependencies": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 15,
+              "title": "Dependencies",
+              "type": "array"
+            },
+            "reason": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "skill",
+            "title",
+            "reason"
+          ],
+          "title": "PlannedTask",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "scenario": {
+          "enum": [
+            "cross_org_analysis",
+            "travel_planning"
+          ],
+          "title": "Scenario",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Tags",
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/PlannedTask"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "groupBy": {
+          "default": "organization_quarter",
+          "enum": [
+            "organization_quarter",
+            "organization",
+            "category",
+            "month"
+          ],
+          "title": "Groupby",
+          "type": "string"
+        },
+        "tier": {
+          "default": "standard",
+          "enum": [
+            "standard",
+            "detailed"
+          ],
+          "title": "Tier",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "scenario",
+        "outputs",
+        "tasks"
+      ],
+      "title": "TaskTemplate",
+      "type": "object"
+    },
+    "serviceCorpus": {
+      "$defs": {
+        "Merchant": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "offers": {
+              "items": {
+                "$ref": "#/$defs/ServiceOffer"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Offers",
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "offers"
+          ],
+          "title": "Merchant",
+          "type": "object"
+        },
+        "Observation": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "minimum": 1,
+              "title": "At",
+              "type": "integer"
+            },
+            "success": {
+              "title": "Success",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "at",
+            "success"
+          ],
+          "title": "Observation",
+          "type": "object"
+        },
+        "RecentStats": {
+          "additionalProperties": false,
+          "properties": {
+            "successes": {
+              "maximum": 50,
+              "minimum": 0,
+              "title": "Successes",
+              "type": "integer"
+            },
+            "total": {
+              "maximum": 50,
+              "minimum": 0,
+              "title": "Total",
+              "type": "integer"
+            },
+            "asOf": {
+              "minimum": 1,
+              "title": "Asof",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "successes",
+            "total",
+            "asOf"
+          ],
+          "title": "RecentStats",
+          "type": "object"
+        },
+        "ServiceDefinition": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "description": {
+              "maxLength": 1500,
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "keywords": {
+              "items": {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 20,
+              "title": "Keywords",
+              "type": "array"
+            },
+            "scenario": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Scenario",
+              "type": "string"
+            },
+            "inputType": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Inputtype",
+              "type": "string"
+            },
+            "outputType": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Outputtype",
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "maxLength": 64,
+                "type": "string"
+              },
+              "maxItems": 16,
+              "title": "Requires",
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "description",
+            "scenario"
+          ],
+          "title": "ServiceDefinition",
+          "type": "object"
+        },
+        "ServiceOffer": {
+          "additionalProperties": false,
+          "properties": {
+            "serviceId": {
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$",
+              "title": "Serviceid",
+              "type": "string"
+            },
+            "price": {
+              "title": "Price",
+              "type": "string"
+            },
+            "seconds": {
+              "maximum": 3600,
+              "minimum": 1,
+              "title": "Seconds",
+              "type": "integer"
+            },
+            "history": {
+              "items": {
+                "$ref": "#/$defs/Observation"
+              },
+              "maxItems": 50,
+              "title": "History",
+              "type": "array"
+            },
+            "recent": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecentStats"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "serviceId",
+            "price",
+            "seconds"
+          ],
+          "title": "ServiceOffer",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "services": {
+          "items": {
+            "$ref": "#/$defs/ServiceDefinition"
+          },
+          "maxItems": 256,
+          "title": "Services",
+          "type": "array"
+        },
+        "merchants": {
+          "items": {
+            "$ref": "#/$defs/Merchant"
+          },
+          "maxItems": 256,
+          "title": "Merchants",
+          "type": "array"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "restoreDeleted": {
+          "default": false,
+          "title": "Restoredeleted",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "CorpusImport",
+      "type": "object"
+    }
   }
 }

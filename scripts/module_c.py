@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 import time
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,8 +16,43 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from eth_account import Account  # noqa: E402
 from web3 import Web3  # noqa: E402
 
-from experiments.scripts.common import DEPLOYMENTS, ROOT, keys, metadata, write_json  # noqa: E402
-from services.chain_adapter.client import ChainAdapter, load_artifact  # noqa: E402
+from services.chain_adapter.client import ROOT, ChainAdapter, load_artifact, serializable  # noqa: E402
+
+DEPLOYMENTS = ROOT / "deployments"
+
+
+def write_json(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(serializable(data), indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def keys(create=False):
+    target = DEPLOYMENTS / "local-keys.json"
+    if not target.exists():
+        if not create:
+            raise FileNotFoundError("deploy the local contracts first")
+        write_json(target, {role: Web3.to_hex(Account.create().key)
+                           for role in ("owner", "coordinator", "verifier", "agent", "backup", "stranger")})
+        try:
+            target.chmod(0o600)
+        except OSError:
+            pass
+    return json.loads(target.read_text(encoding="utf-8"))
+
+
+def metadata():
+    try:
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                                         stderr=subprocess.DEVNULL, text=True).strip()
+    except (OSError, subprocess.CalledProcessError):
+        commit = "UNCOMMITTED"
+    sources = [p for folder in ("contracts/src", "services/chain_adapter")
+               for p in sorted((ROOT / folder).rglob("*")) if p.is_file() and p.suffix in {".py", ".sol"}]
+    entries = [p.relative_to(ROOT).as_posix() + ":" + hashlib.sha256(p.read_bytes()).hexdigest() for p in sources]
+    return {"timestamp": datetime.now(timezone.utc).isoformat(), "commit_sha": commit,
+            "source_hash": hashlib.sha256("\n".join(entries).encode()).hexdigest(),
+            "seed": 20261013, "environment": "local-development-only"}
 
 
 def tool(name):
@@ -93,7 +130,7 @@ def deploy(rpc, chain_id):
         "receipts": [token_receipt, escrow_receipt, grant, mint, approve],
     }
     write_json(DEPLOYMENTS / "local-addresses.json", record)
-    write_json(ROOT / "experiments" / "raw" / "deployment" / f"{run_id}.json", record)
+    write_json(DEPLOYMENTS / "history" / f"{run_id}.json", record)
     export_abi()
     print(json.dumps({k: record[k] for k in ("chain_id", "token_address", "escrow_address")}, indent=2))
 

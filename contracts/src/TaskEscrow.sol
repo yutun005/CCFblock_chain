@@ -277,6 +277,37 @@ contract TaskEscrow is EIP712, AccessControl, ReentrancyGuard {
         emit StopRequested(jobId);
     }
 
+    // Approval binds the exact signed delivery and assignment round, never a mutable URI.
+    mapping(bytes32 => uint16) public reviewMasks;
+    mapping(bytes32 => mapping(uint8 => bytes32)) public approvedResults;
+    mapping(bytes32 => mapping(uint8 => uint32)) public approvedAttempts;
+    event ResultApproved(bytes32 indexed jobId, uint8 indexed taskId, uint32 attempt, bytes32 resultHash);
+
+    function createReviewedJob(
+        bytes32 jobId, address coordinator, uint256 deposit, uint64 deadline,
+        bytes32 planHash, address validator, TaskConfig[] calldata configs, uint16 reviewMask
+    ) external {
+        if (planHash == bytes32(0) || !hasRole(VERIFIER_ROLE, validator)
+            || uint256(reviewMask) >= (uint256(1) << configs.length)) revert InvalidConfiguration();
+        createJob(jobId, coordinator, deposit, deadline, configs);
+        planHashes[jobId] = planHash;
+        jobValidators[jobId] = validator;
+        reviewMasks[jobId] = reviewMask;
+        emit PlanBound(jobId, planHash, validator);
+    }
+
+    function approveResult(bytes32 jobId, uint8 taskId, uint32 attempt, bytes32 resultHash) external {
+        Job storage j = _active(jobId);
+        if (msg.sender != j.owner) revert Unauthorized();
+        Task storage t = _task(j, jobId, taskId);
+        if (t.state != TaskState.ASSIGNED || t.attempt != attempt || resultHash == bytes32(0)
+            || (reviewMasks[jobId] & uint16(uint256(1) << taskId)) == 0) revert InvalidState();
+        if (block.timestamp >= t.deadline || block.timestamp >= j.deadline) revert Expired();
+        approvedResults[jobId][taskId] = resultHash;
+        approvedAttempts[jobId][taskId] = attempt;
+        emit ResultApproved(jobId, taskId, attempt, resultHash);
+    }
+
     function totalLiability() external view returns (uint256) {
         return totalAvailable + totalPending;
     }
@@ -339,6 +370,9 @@ contract TaskEscrow is EIP712, AccessControl, ReentrancyGuard {
         if (jobValidators[r.jobId] != address(0) && jobValidators[r.jobId] != verifier) revert Unauthorized();
         if (usedAttestationNonces[verifier][a.attestationNonce]) revert NonceUsed();
         if (a.verdict && (j.settledMask & t.depsMask) != t.depsMask) revert DependenciesUnsettled();
+        if (a.verdict && (reviewMasks[r.jobId] & uint16(uint256(1) << r.taskId)) != 0
+            && (approvedResults[r.jobId][r.taskId] != r.resultHash
+                || approvedAttempts[r.jobId][r.taskId] != r.attempt)) revert InvalidState();
         usedAttestationNonces[verifier][a.attestationNonce] = true;
         if (!a.verdict) {
             emit ValidationFailed(r.jobId, r.taskId, r.attempt, r.resultHash);

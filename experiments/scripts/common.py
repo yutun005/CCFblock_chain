@@ -90,3 +90,38 @@ def configs(window=120):
         )
         for deps in (0, 0, 3, 4)
     ]
+
+
+# Explicitly isolated experiment agents; production services still require configured signing keys.
+from services.agents.business import BusinessAgent
+
+
+class AdversarialAgent(BusinessAgent):
+    """Controlled fault agent. It is only for local attack experiments."""
+    def __init__(self, *args, fault: str = "invalid_json", **kwargs):
+        kwargs.setdefault("private_key", int.from_bytes(Account.create().key, "big"))
+        super().__init__(*args, **kwargs); self.fault = fault
+    def quote(self, task, **kwargs):
+        q = super().quote(task, **kwargs)
+        if self.fault == "tamper_price": q.price += 1  # signature no longer matches
+        if self.fault == "impersonate": q.agent_wallet = "0x00000000000000000000000000000000000000aa"
+        return q
+    def execute(self, task):
+        if self.fault == "invalid_json": raise ValueError("malformed artifact")
+        if self.fault == "timeout": raise TimeoutError("controlled timeout")
+        if self.fault == "wrong_result": return {"skill": task.skill, "rows": [{"unexpected": True}]}
+        return super().execute(task)
+
+
+def build_demo_agents() -> list[BusinessAgent]:
+    specs = [
+        ("cleaner-a", "Data Cleaner A", ["data_cleaning"], 11),
+        ("cleaner-b", "Data Cleaner B", ["data_cleaning"], 13),
+        ("validator-a", "Data Validator", ["data_validation"], 8),
+        ("analyst-a", "Statistical Analyst", ["statistical_analysis"], 15),
+        ("reporter-a", "Report Generator", ["report_generation"], 9),
+        ("travel-a", "Travel Planner", ["travel_itinerary"], 12),
+        ("analyst-b", "Statistical Analyst B", ["statistical_analysis"], 17),
+        ("validator-b", "Data Validator B", ["data_validation"], 10),
+    ]
+    return [BusinessAgent(i, n, s, price=p, private_key=int.from_bytes(Account.create().key, "big")) for i, n, s, p in specs]

@@ -1,7 +1,7 @@
 """Deterministic local demo: register eight agents, run an RFQ, and execute it."""
 from __future__ import annotations
 import json
-from services.agents.business import build_demo_agents
+from experiments.scripts.common import build_demo_agents
 from .market import AgentRegistry, QuoteMarket
 from .models import TaskRequest
 

@@ -4,80 +4,99 @@
 
 ## 首次安装与启动
 
-支持 Windows / Linux x64。准备 Python 3.13、Node.js 22、Git 和 pnpm 11.25.0：
+支持 Windows / Linux x64。本轮本地验证使用 Python 3.12、Node.js 24、Git 和 pnpm 11.25.0：
 
 ```shell
 npm install -g pnpm@11.25.0
-git clone https://github.com/yutun005/CCFblock_chain.git
+git clone --branch main --single-branch https://github.com/yutun005/CCFblock_chain.git
 cd CCFblock_chain
 python manage.py setup
 python manage.py dev
 ```
 
-Linux 如无 `python` 命令，使用 `python3`。克隆后请切换到包含本 README 的整合分支。`setup` 安装锁定的 Python/前端依赖、Foundry 和 Solidity 依赖，并编译合约与前端。首次安装需访问 PyPI、npm、GitHub 和 Solidity 编译器下载源；依赖放在本项目的 `.cache`、`node_modules`、`contracts/lib` 中。
+Linux 如无 `python` 命令，使用 `python3`。上述命令直接取得 main 分支的整合版本。`setup` 安装锁定的 Python/前端依赖、Foundry 和 Solidity 依赖，并编译合约与前端。首次安装需访问 PyPI、npm、GitHub 和 Solidity 编译器下载源；依赖放在本项目的 `.cache`、`node_modules`、`contracts/lib` 中。
 
-打开 **http://127.0.0.1:8080**，访问令牌见 `.cache/local-access.txt`。Windows 已安装依赖后也可双击 `start-demo.cmd`。启动器首次生成隔离测试账户、部署合约并启动市场、验证器、6 个 Agent 和 Web/API；无需复制开发者的密钥或本地链数据库。
+打开启动器打印的 **Open http://127.0.0.1:端口**，访问令牌见 `.cache/local-access.txt`。初次启动会避开被系统保留或占用的端口。Windows 已安装依赖后也可双击 `start-demo.cmd`。启动器首次生成隔离本地账户、部署合约并启动市场、验证器、16 个 Agent 和 Web/API；无需复制开发者的密钥或本地链数据库。
 
 网页可预览计划与预算、创建任务、观察 DAG/SSE 状态、下载成果、领取报酬和退款。Ctrl+C 停止服务；`python scripts/local_demo.py stop-chain` 停止本项目的 Anvil。
 
-## 构建与验证
+已安装依赖时，在 PyCharm 打开项目根目录，把解释器设为本项目 `.cache/venv/Scripts/python.exe`（Linux 为 `.cache/venv/bin/python`），运行 `manage.py`，参数填写 `dev`，工作目录选择项目根目录即可。运行窗口保持打开，浏览器按打印地址访问。费用使用本地测试代币。
 
-```shell
-python manage.py build
-python manage.py test-integration
-python manage.py test-contract
-python manage.py run-data
-python manage.py run-travel
+## 自定义项目与成果确认
+
+进入“项目与成果”，按下面操作：
+
+1. **提出大目标**：在“目标与任务规划”选择材料，写明想完成什么，填写服务费预算。服务业务图先由商家语料构建，页面再按目标和场景查找已有模板。合适就点“采用并核对 / 微调”；没有合适的，点“没有合适模板，让主 Agent 拆解”，主 Agent 先检索业务图，再调用配置好的模型生成子任务和依赖；每个子任务必须映射到图中可执行的服务。
+2. **核对子任务**：查看任务图，按预期增删步骤、修改名称、依赖和交付，点击“检查通过，确认这些子任务”。依赖错误或缺少能力会阻止确认；系统不会擅自补收费任务。确认后可以展开“把这份任务拆解保存为模板”，输入名称并保存，也可直接继续比较方案。这里还没有创建付费任务。
+3. **管理模板**：打开“模板库”，搜索、查看、新建模板。自己的模板可编辑、删除或另存为新模板。原有销售分析、旅行规划两套内置模板保留，修改时另存副本。模板只保存任务结构、交付和统计分组，不保存材料、出行日期、预算、执行者或付款。关键词相近仅作为推荐依据，适配与否由用户检查；采用模板不调用模型。模板修改或删除不会影响已确认的任务。修改本次目标、材料或参数后，重新采用模板或规划并确认。
+4. **方案对比**：沿用已确认的任务图，计算预算内商家组合的费用、预计总耗时和估算成功率，保留帕累托前沿：不存在另一组合在三个指标上都不差、且至少一项更好。同指标组合合并；最多显示 10 种。前沿超过 10 种时保留三个指标的最优端点，再选择分布较开的代表，并显示完整前沿数量。排序选项只改变展示顺序。选中一份方案，核对各步骤商家与费用后确认托管。
+5. **成果预览与修改**：报告生成并通过机器检查后等待用户决定。接受操作绑定当前报告的确切结果哈希；合约只允许所有者批准，并在收到批准后结算该报告。免费返工最多两次，由原执行者处理，支持结论澄清、章节压缩、费用解释、每日时间顺序及图表可读性调整。每稿、反馈和决定都保留。拒绝或确认超时会取消报告，前置工作已结算的报酬保留，未使用余额可在页面领取退款。超时不会自动接受。
+6. **历史版本与续单**：打开历史版本查看和下载带版本号的文件，或基于该版修改材料、统计要求、报告文件形式及指定重做节点。确认前显示每项复用/重做的原因和新增费用。同输入增加网页报告与来源对照表只重做报告；改变统计分组重做统计和报告；换材料重做受影响节点。完全相同的要求返回原成果，不创建新收费任务。无需新计算但交付选项改变时，保存零费用版本。
+
+交付中的材料和节点配置已冻结，追加材料、指标、天数或另一语言的完整报告需要续单重新确认。系统不会把未支持的分析或翻译要求当作已实现能力；当前返工采用上述确定性修改方式。确认后优先采用所选 Agent；其报价无效、不可用或失败时，按冻结偏好在各节点费用上限内重新选择，实际委派与签名成交价保留在任务记录中。申报耗时属于估计，不是完成时间保证。
+
+每项服务取最近最多 50 次履约的成功比例。优先使用本工作区与链上已确认任务匹配的记录；没有链上记录时使用商家语料，分别标明“演示数据”或“人工录入”。未知成功率不伪装成已知概率，此商家暂不参与三指标比较并显示缺口。整单成功率取各步骤比例的乘积，这是独立性假设下的估算，不是履约保证；实际样本次数和来源一并显示。总费用按签名估价相加，总耗时按 DAG 最长依赖路径计算，假设可并行执行，不包含排队、重试、链上和人工确认时间。精确比较最多 100000 种候选组合，超出时明确报错，不把部分搜索结果冒充完整前沿。
+
+## 服务业务图与商家管理
+
+打开“服务业务图”，点击服务节点即可查看所有关联商家、费用、预计耗时和近期成功率。初始 `data/service-corpus.json` 包含 16 个演示商家、8 类服务、32 个商家服务关联和 1600 次模拟履约记录；这些数据用于初始化竞争市场，不是真实商业履约证明。初次启动会启动相应的 16 个独立服务；旧本地环境重启时补齐商家账户，保留原链与项目历史，有未完成任务时提示先处理。
+
+点击“新增商家”填写标识、名称及提供的服务；每项服务分别填写费用、耗时、近期统计次数和成功次数。点击现有商家的“修改商家和服务”可增删服务关联。点击“新增服务定义”填写名称、检索词、场景和输入输出契约，再关联商家；导入商家数据时遇到未有的服务标识也会自动建立待完善节点。商家资料标识与在线注册的 Agent ID 对应，只有通过原有钱包与接口注册校验的在线商家才能接单。填写资料不会伪造接口或签名。
+
+可通过“批量导入 / 导出语料”下载 JSON 格式示例、编辑后追加导入。只更新列出的对象；未列出的对象保留。资料在运行数据库持久化，重启后继续保留。输入输出相容的服务间建立前置成果边，主 Agent 检索会带上必要前置服务；不允许把图外技能分配出去。新业务可入图，实际执行仍须接入对应的执行器和独立验收契约，页面明确标记待接入状态。
+
+服务、商家和两者关联均可删除。服务删除后节点与相关边移除；商家删除后移除其全部服务关联，服务没有剩余商家时不再显示节点。删除状态不会被注册心跳复活，恢复需要显式勾选。已经执行的任务与成果不删除；未付款方案遇到服务库变更会要求重新比较，防止按照过期商家或服务发起托管。更新与删除检查 `revision`，冲突时刷新后重试。
+
+
+新增接口统一位于 `/api/workspace/`：`planner`（配置状态）、`planning`（提出并校验任务图）、`planning/{id}`（规划记录）、`planning/{id}/review`（用户校验并冻结新副本）、`capabilities`（来自业务图）、`service-graph`（检索与图）、`service-corpus`（读取/追加更新）、`service-graph/{service|merchant}/{id}/delete`、`templates`（检索/创建）、`templates/{id}`（查看）及其 `apply`/`update`/`delete` 操作、`materials`、`parse`（手动模式关键词解析）、`comparisons`（共享估价后去重）、`proposals`（单方案）、`confirm`、`projects`、`versions/{id}`、`reviews/{jobId}`、`drafts/{resultHash}`；对 `reviews/{reviewId}` 提交 `accept`、`revise` 或 `reject`。确认方案需提供原预览的 `confirmationHash`；报告决定需提供最新 `resultHash` 和唯一 `decisionId`。全部沿用工作区认证令牌，仅面向当前单管理员工作区。模板更新和删除须提供当前 `revision`，过期操作返回 409；未确认的任务图无法生成报价。
+
+## 接入规划模型
+
+启动方式保持不变。确定模型后，在项目根目录创建 `planner.local.json`，填入提供商的完整 Chat Completions 地址、模型名和密钥；该文件已从 Git 排除。界面刷新后读取新配置，无需重新部署合约。例如：
+
+```json
+{
+  "endpoint": "https://你的提供商/v1/chat/completions",
+  "model": "你的模型名",
+  "apiKey": "你的密钥",
+  "responseFormat": "json_object",
+  "tokenParameter": "max_tokens",
+  "maxTokens": 4096,
+  "timeoutSeconds": 40
+}
 ```
 
-Windows 深入测试使用 `.cache\venv\Scripts\python.exe`，Linux 使用 `.cache/venv/bin/python`。例如：
+本地兼容服务可用 `http://127.0.0.1:端口/v1/chat/completions`，不需要鉴权时省略密钥。也可通过 `AGENTFLOW_PLANNER_URL`、`AGENTFLOW_PLANNER_MODEL`、`AGENTFLOW_PLANNER_API_KEY` 提供配置。模型若只支持 `max_completion_tokens`，修改 `tokenParameter`；不支持 JSON 模式时将 `responseFormat` 设为 `text`，模型仍须返回符合 Schema 的 JSON。
 
-```shell
-.cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1
-.cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning --transport b-http-v1
-```
+接口格式参照 [Chat Completions 官方接口](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)。目前未绑定默认提供商，未配置时会明确显示自主规划不可用，不会自动冒充模型或悄悄切换模板。请求只发送目标、材料名称与结构摘要、出行要求及能力目录，不发送销售明细、文件正文或钱包密钥。外部模型调用费用由所配置的提供商另行计费，不计入 Agent 服务费托管。
 
-有 Docker Desktop / Docker Compose 的环境可直接从源码构建并运行完整容器验证：
+主 Agent 先按目标检索业务图及前置服务，再由模型提出 DAG，系统检查输出 Schema、在线技能、验证策略、依赖类型、环、缺失输入、交付覆盖和多余工作；非法输出最多要求修正一次，仍不合法则拒绝。校验通过的图先交给用户检查和微调；用户明确确认后冻结独立副本，报价时沿用这张图，仅对已结算成果进行复用和移除无需重做的节点；不会再从四节点模板重建。预算上限由用户给定，具体节点费用以服务估价和签名报价为准。模型不能执行工具、选取私钥、签署交易或批准付款；原 DASC 验证及人工确认仍负责结算条件。
 
-```shell
-docker compose run --build --rm verify
-```
+可执行范围仍限于注册技能和客观验证规则。当前没有天气查询、酒店预订、已有酒店中间结果导入、步行距离规划或销售预测能力；涉及这些要求应澄清或拒绝，不能用文字报告假装完成。规划层的自然语言理解需要在接入实际模型后验收；模拟接口仅能验证协议、拒绝非法规划和执行闭环，不能作为真实模型推理效果的证据。
 
-此前完整功能验收为 55 项 Python、84 项合约、9 项应用专项、连续 10 轮 E2E 通过；安全矩阵为 29 PASS 和 1 项授权验证者信任限制。原始结果属于该次已记录源码，见[测试报告](docs/测试报告.md)与[摘要](docs/verification/README.md)。后续修改需重新运行测试；CI 会把新日志保存为 Actions artifact。
+本轮使用新增 `createReviewedJob` / `approveResult` 合约接口。本地启动器遇到旧合约会把原运行目录保存在 `.cache/demo-backups`，再部署支持人工确认的合约。Anvil 状态按秒保存在本机缓存，服务重启保留项目和待确认记录。团队使用外部链时必须部署新版合约并更新环境配置；本轮没有代替其他成员部署外部链。
 
-## 工程结构
+## 构建与工程结构
+
+安装依赖后，`python manage.py build` 重新编译合约和前端；`python manage.py schema` 将接口定义导出到忽略目录。首次运行 `manage.py` 默认启动本地服务。在团队已有链上部署时，按 `.env.example` 设置环境变量，再用 `configure` 和 `start` 启动。
 
 ```text
-apps/web/                 React / TypeScript / Vite 控制台
-services/orchestrator/     A：DAG、调度、恢复和 API
-services/marketplace/      B：市场、签名报价和选择算法
-services/agents/           B：业务 Agent 与受控攻击模拟
-services/chain_adapter/    C：ABI、签名、交易日志和 RPC
-contracts/{src,test,...}/  C：权威合约、单元/fuzz/invariant 测试
-validators/               独立业务验证与策略
-scenarios/                两种场景
-packages/                 Schema 与跨语言签名向量
-data/                     可直接演示的小型输入数据
-tests/                    单元、跨模块、浏览器与端到端测试
-experiments/              实验脚本和必要固定向量
-infra/                    可选 Besu 私有链
-scripts/                  依赖安装、运行、汇总和打包
-docs/                     统一设计、需求、API、使用说明和测试报告
-provenance/               四分支来源清单和原验收版本指纹
+apps/web/                 React / TypeScript 控制台
+services/orchestrator/    DAG、调度、恢复、项目版本、人工确认和 API
+services/marketplace/     服务注册、签名报价和选择
+services/agents/          两个场景的业务执行者
+services/chain_adapter/   交易、签名和持久化交易日志
+contracts/src/            托管合约与本地开发代币
+packages/schemas/         团队接口和数据模型
+scripts/                  依赖安装和本地服务启动
+data/                     两个场景的示例输入
 ```
 
-`app.py` 保留原模块导入兼容性；实现统一位于 `services/orchestrator/application.py`。合约依赖按 `toolchain-lock.json` 的固定提交和 SHA-256 自动获取，许可证随依赖保留，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。
+`app.py` 保留导入兼容性，实现位于 `services/orchestrator/application.py`。业务实现使用相对工程路径或环境配置，不依赖开发者的设备路径。私钥、本地访问令牌、链状态及生成物保存在 Git 忽略目录。
 
-## 文档与发布
+依赖按锁文件恢复，许可证说明见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。main 整合 A 的业务功能与 unified 的链持久化、部署及已有验证工具；本地临时脚本、密钥和运行缓存不提交。`docs/verification` 与原报告保留来源版本的历史证据，不代表本次合并重新完成了所有历史实验。
 
-- [部署与使用](docs/部署与使用说明.md)、[设计报告](docs/设计报告.md)、[需求追踪](docs/requirements-traceability.md)
-- [API](docs/api.md)、[Agent 协议](docs/agent-protocol.md)、[合约接口](docs/contract-interface.md)
-- [测试报告](docs/测试报告.md)、[安全边界](docs/security-assumptions.md)、[已知限制](docs/known-limitations.md)
-- [GitHub 主仓库、Release 与竞赛提交的分工](docs/github-distribution.md)
-
-安装环境、编译输出、运行密钥和完整实验日志不提交到 Git。四分支原件、历史材料和完整验收证据作为独立发布材料保留；主仓库保留来源清单、统一文档、必要测试和紧凑验收摘要。`python manage.py package` 生成无依赖缓存、无重复文档的源码包；可选完整证据打包见发布说明。
-
-当前为本地测试链、单管理员工作区，使用标准测试代币。规划采用配置 DAG/确定性模板，旅游使用资料快照；授权验证者可能批准坏结果（SEC-30）。不宣称实现主网支付、实时预订、自动生成 Agent 或双验证者仲裁。完整 managed `b-http-v1` 已贯通业务和支付流程，默认仍为 `a2a-v1`。
+当前为本地测试链、单管理员工作区，使用标准测试代币。规划先检索模板，由用户复用或调用配置模型拆解，再人工确认任务图；旅游使用资料快照；授权验证者可能批准坏结果（SEC-30）。不宣称实现主网支付、实时预订、自动生成 Agent 或双验证者仲裁。完整 managed `b-http-v1` 已贯通业务和支付流程，默认仍为 `a2a-v1`。
 
 ## Anvil 状态持久化
 

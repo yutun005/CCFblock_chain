@@ -95,6 +95,82 @@
   },
   {
     "type": "function",
+    "name": "approveResult",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "taskId",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "attempt",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "resultHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "approvedAttempts",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "approvedResults",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "assignTask",
     "inputs": [
       {
@@ -311,6 +387,86 @@
             "internalType": "uint32"
           }
         ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createReviewedJob",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "coordinator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "deposit",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "planHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "validator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "configs",
+        "type": "tuple[]",
+        "internalType": "struct TaskEscrow.TaskConfig[]",
+        "components": [
+          {
+            "name": "requirementHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "validationPolicyId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "budgetCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "depsMask",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "executionWindow",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "maxAttempts",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      },
+      {
+        "name": "reviewMask",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -1003,6 +1159,25 @@
   },
   {
     "type": "function",
+    "name": "reviewMasks",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "revokeRole",
     "inputs": [
       {
@@ -1493,6 +1668,37 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ResultApproved",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "taskId",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "uint8"
+      },
+      {
+        "name": "attempt",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "resultHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false

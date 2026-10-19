@@ -7,23 +7,52 @@ import time
 import signal
 import shutil
 import uuid
+import socket
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from eth_account import Account
 from web3 import Web3
-from app import Chain, ServiceCluster, configure_deployment, local_web3, settings_file
+from web3.exceptions import BadFunctionCallOutput, ContractLogicError
+from services.orchestrator.application import Database, ServiceCluster, artifact, configure_deployment, local_web3, settings_file
 from scripts.module_c import deploy as deploy_chain
-from scripts.anvil_state import AnvilManager
+from scripts.anvil_state import AnvilManager, atomic_json, validate_state
 
 CACHE = ROOT / ".cache"
 ENV = CACHE / "local-environment.json"
 CONFIG = CACHE / "local-project.json"
+CHAIN_PORT = CACHE / "local-chain-port.json"
+
+
+def chain_manager():
+    CACHE.mkdir(exist_ok=True)
+    legacy = ROOT / "deployments/local-anvil-process.json"
+    record = json.loads(legacy.read_text(encoding="utf-8")) if legacy.exists() else None
+    saved = json.loads(CHAIN_PORT.read_text(encoding="utf-8")) if CHAIN_PORT.exists() else record
+    port = int(saved["port"]) if saved else 8545
+    if not saved and not (CACHE / "anvil").exists():
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                probe.bind(("127.0.0.1", 0))
+                port = probe.getsockname()[1]
+    manager = AnvilManager(ROOT, port=port)
+    if record and int(record["port"]) == port and not manager.record.exists():
+        manager.record = legacy
+    old_state = CACHE / "local-chain-state.json"
+    if old_state.exists() and not any(p.exists() for p in (manager.state, manager.previous, manager.autosave)):
+        atomic_json(manager.state, validate_state(json.loads(old_state.read_text(encoding="utf-8"))))
+    atomic_json(CHAIN_PORT, {"port": port})
+    return manager
 
 
 def chain_up():
-    return AnvilManager(ROOT).ensure_running()
+    manager = chain_manager()
+    manager.ensure_running()
+    return manager.w3.provider.endpoint_uri
 
 
 def validate_saved_deployment(settings):
@@ -51,8 +80,61 @@ def load_environment():
     os.environ.update(json.loads(ENV.read_text(encoding="utf-8")))
 
 
+def available_service_ports():
+    document = json.loads(CONFIG.read_text(encoding="utf-8"))
+    runtime = document["runtime"]
+    busy_jobs = Database(Path(runtime["directory"]) / "platform.sqlite").values("jobs")
+    reservations = []
+    try:
+        for record, field in [(runtime, key) for key in ("api", "market", "validator")] + [(agent, "endpoint") for agent in runtime["agents"]]:
+            parsed = urlparse(record[field])
+            probe = socket.socket()
+            reservations.append(probe)
+            try:
+                probe.bind(("127.0.0.1", parsed.port))
+            except OSError as exc:
+                if busy_jobs:
+                    raise RuntimeError(f"Saved service port {parsed.port} is unavailable; stop the other application and retry. Existing project history has been preserved.") from exc
+                probe.bind(("127.0.0.1", 0))
+                record[field] = f"http://127.0.0.1:{probe.getsockname()[1]}"
+        CONFIG.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+    finally:
+        for probe in reservations:
+            probe.close()
+
+
+def sync_demo_merchants():
+    """Add bundled competitors to an existing local demo without replacing its chain or history."""
+    current = json.loads(CONFIG.read_text(encoding="utf-8"))
+    desired = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))["runtime"]["agents"]
+    runtime = current["runtime"]
+    existing = {agent["id"]: agent for agent in runtime["agents"]}
+    missing = [agent for agent in desired if agent["id"] not in existing]
+    if not missing:
+        return
+    jobs = Database(Path(runtime["directory"]) / "platform.sqlite").values("jobs")
+    if any(job["status"] in {"FUNDING", "ACTIVE", "PREPARING", "INTERRUPTED"} for job in jobs):
+        raise RuntimeError("请先完成或恢复已有任务，再重启以添加服务市场商家；旧任务和链状态已保留。")
+    values = json.loads(ENV.read_text(encoding="utf-8"))
+    rpc = values[runtime["chain"]["rpcEnv"]]
+    w3 = local_web3(rpc)
+    for service in missing:
+        account = Account.create()
+        values[service["keyEnv"]] = Web3.to_hex(account.key)
+        w3.provider.make_request("anvil_setBalance", [account.address, hex(100 * 10**18)])
+        runtime["agents"].append(service)
+        if "managedRoles" in runtime:
+            runtime["managedRoles"].append(service["id"])
+        if "allowedAgentOrigins" in runtime:
+            runtime["allowedAgentOrigins"].append(service["endpoint"])
+    ENV.write_text(json.dumps(values, indent=2), encoding="utf-8")
+    CONFIG.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    load_environment()
+    print(f"Added {len(missing)} bundled demo merchants; existing deployment and projects preserved.", flush=True)
+
+
 def deploy():
-    chain_up()
+    rpc = chain_up()
     runtime_root = (CACHE / "runtime").resolve()
     if (runtime_root / "deployment.json").exists():
         backup = (CACHE / "demo-backups" / ("deployment-" + uuid.uuid4().hex)).resolve()
@@ -63,21 +145,21 @@ def deploy():
         for previous in (ENV, CONFIG, CACHE / "local-access.txt"):
             if previous.exists():
                 shutil.copy2(previous,backup / previous.name)
-    deploy_chain("http://127.0.0.1:8545", 31337)
+    deploy_chain(rpc, 31337)
     addresses = json.loads((ROOT / "deployments/local-addresses.json").read_text(encoding="utf-8"))
     keys = json.loads((ROOT / "deployments/local-keys.json").read_text(encoding="utf-8"))
     config = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))
     runtime = config["runtime"]
     runtime.update(directory=str(CACHE / "runtime"), inputDirectory=str(ROOT / "data"),
                    scenarioInputDirectories={"travel_planning":str(ROOT / "data/travel")})
-    values = {runtime["chain"]["rpcEnv"]:"http://127.0.0.1:8545",
+    values = {runtime["chain"]["rpcEnv"]:rpc,
               runtime["chain"]["chainIdEnv"]:"31337",
               runtime["chain"]["tokenEnv"]:addresses["token_address"],
               runtime["chain"]["escrowEnv"]:addresses["escrow_address"],
               runtime["apiTokenEnv"]:os.urandom(32).hex()}
     for name, field in (("owner","owner"),("coordinator","coordinator"),("validator","verifier")):
         values[runtime["signers"][name]] = keys[field]
-    w3 = local_web3("http://127.0.0.1:8545")
+    w3 = local_web3(rpc)
     for service in runtime["agents"]:
         account = Account.create()
         values[service["keyEnv"]] = Web3.to_hex(account.key)
@@ -88,12 +170,12 @@ def deploy():
     (CACHE / "local-access.txt").write_text(values[runtime["apiTokenEnv"]]+"\n",encoding="utf-8")
     load_environment()
     configure_deployment(settings_file(CONFIG))
-    AnvilManager(ROOT).checkpoint()
+    chain_manager().checkpoint()
     print("Local contracts deployed. Local access token: .cache/local-access.txt",flush=True)
 
 
 def stop_chain():
-    AnvilManager(ROOT).stop()
+    chain_manager().stop()
 
 
 def main():
@@ -101,19 +183,31 @@ def main():
     parser.add_argument("command",choices=["chain-up","deploy","dev","stop-chain","save-chain"])
     args=parser.parse_args()
     if args.command=="save-chain":
-        AnvilManager(ROOT).checkpoint();return
+        chain_manager().checkpoint();return
     if args.command=="stop-chain":
         stop_chain();return
     if args.command=="chain-up":
         chain_up(); return
     if args.command=="deploy":
         deploy(); return
-    chain_up()
+    rpc = chain_up()
     if not ENV.is_file() or not CONFIG.is_file():
         deploy()
     load_environment()
     settings=settings_file(CONFIG)
+    env = json.loads(ENV.read_text(encoding="utf-8"))
+    env[settings["chain"]["rpcEnv"]] = rpc
+    ENV.write_text(json.dumps(env, indent=2), encoding="utf-8")
+    load_environment()
     validate_saved_deployment(settings)
+    try:
+        contract = local_web3(rpc).eth.contract(address=env[settings["chain"]["escrowEnv"]], abi=artifact("TaskEscrow")["abi"])
+        contract.functions.reviewMasks(bytes(32)).call()
+    except (ValueError, BadFunctionCallOutput, ContractLogicError) as exc:
+        raise RuntimeError("Existing contracts do not support reviewed tasks. Run python manage.py deploy to create a new backed-up demo; existing data has been preserved.") from exc
+    sync_demo_merchants()
+    available_service_ports()
+    settings=settings_file(CONFIG)
     try:
         with ServiceCluster(settings) as cluster:
             print("Open "+cluster.config["api"]+" ; token is in .cache/local-access.txt",flush=True)
@@ -125,7 +219,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        AnvilManager(ROOT).checkpoint()
+        chain_manager().checkpoint()
 
 
 if __name__=="__main__":

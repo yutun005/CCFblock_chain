@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 
 test("live workspace creates a settled job and shows its chain evidence", async ({ page, request }) => {
+  test.setTimeout(240_000);
   const api = process.env.AGENTFLOW_LIVE_API_URL;
   const token = process.env.AGENTFLOW_LIVE_API_TOKEN;
   const output = process.env.AGENTFLOW_LIVE_RESULT_PATH;
@@ -13,8 +14,9 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   await page.goto(api!);
   await page.getByLabel("访问令牌").fill(token!);
   await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "协作任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: "协作任务", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /创建协作任务/ }).click();
+  await page.getByRole("button", { name: /查看计划并开始/ }).click();
   await page.getByRole("combobox", { name: "业务场景" }).selectOption(scenario);
   await expect(page.getByRole("heading", { name: "确认任务计划" })).toBeVisible();
   await expect(page.getByText(/\d+ 份输入文件/)).toBeVisible();
@@ -29,6 +31,16 @@ test("live workspace creates a settled job and shows its chain evidence", async 
 
   const headers = { Authorization: `Bearer ${token}` };
   await expect.poll(async () => {
+    const pending = await request.get(`${api}/api/workspace/reviews/${jobId}`, { headers });
+    expect(pending.ok()).toBeTruthy();
+    for (const review of await pending.json()) {
+      if (review.status === "AWAITING_REVIEW") {
+        const accepted = await request.post(`${api}/api/workspace/reviews/${review.id}`, { headers, data: {
+          action: "accept", resultHash: review.drafts.at(-1).resultHash, decisionId: `browser-accept-${review.id}`,
+        }});
+        expect(accepted.ok()).toBeTruthy();
+      }
+    }
     const status = await request.get(`${api}/api/jobs/${jobId}`, { headers });
     expect(status.ok()).toBeTruthy();
     return (await status.json()).status;

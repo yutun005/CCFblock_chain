@@ -1,5 +1,4 @@
 """B API compatibility backed by the same audited crypto libraries and C typed data."""
-import hashlib
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_keys import keys
@@ -18,12 +17,6 @@ def keccak256(data):
 
 def normalize_address(value):
     return to_checksum_address(value).lower()
-
-
-def private_key_from_seed(seed):
-    # Deterministic DEMO identities only; production services require an explicit key.
-    order = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-    return int.from_bytes(hashlib.sha256(seed.encode()).digest(), "big") % (order-1) + 1
 
 
 def address_from_private_key(private_key):

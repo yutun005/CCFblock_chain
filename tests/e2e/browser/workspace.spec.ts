@@ -129,12 +129,13 @@ test("admin can connect, preview a plan, and start a collaboration job", async (
   await page.goto("/");
   await page.getByLabel("访问令牌").fill(token);
   await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "协作任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: "协作任务", exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: /创建协作任务/ }).click();
+  await page.getByRole("button", { name: /查看计划并开始/ }).click();
   await expect(page.getByRole("heading", { name: "确认任务计划" })).toBeVisible();
   await expect(page.getByText("2 份输入文件")).toBeVisible();
-  await expect(page.getByText(/节点预算合计 90 代币/)).toBeVisible();
+  await expect(page.getByText(/节点预算合计 90\.00 代币/)).toBeVisible();
 
   await page.getByRole("button", { name: "托管预算并开始" }).click();
   await expect(page.getByRole("heading", { name: "跨组织数据分析" })).toBeVisible();

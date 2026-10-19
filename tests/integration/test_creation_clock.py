@@ -1,7 +1,7 @@
 """Idle Anvil must not create an already expired Job or poison the task viewer."""
 import asyncio
 from pathlib import Path
-from unittest.mock import PropertyMock,patch,MagicMock
+from unittest.mock import PropertyMock,patch,MagicMock,AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -37,7 +37,12 @@ def engine(tmp_path):
     config=app.runtime_config(settings,'api')
     instance=app.Engine(config['deployment'],settings['directory'],config['market'],config['validator'],
                         config['token'],config['signers'],config['allowedAgentOrigins'])
-    try:yield instance,config,settings,manager
+    registered = [{"agentId": a["id"], "wallet": keyset[3].address,
+                   "status": "ONLINE", "skills": list(a["prices"])} for a in settings["agents"]]
+    try:
+        # This fixture exercises funding, not discovery; supply the registry boundary explicitly.
+        with patch.object(instance, "agents", new=AsyncMock(return_value=registered)):
+            yield instance,config,settings,manager
     finally:manager.stop()
 
 

@@ -91,6 +91,10 @@ def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, 
                    scenario: str = "cross_org_analysis") -> tuple[Path, dict]:
     project = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))
     runtime = copy.deepcopy(project["runtime"])
+    # Keep the established six-merchant fixture and its timeout/reassignment price ordering.
+    # Production project.json remains the full 16-merchant marketplace.
+    by_id = {a["id"]: a for a in runtime["agents"]}
+    runtime["agents"] = [by_id[k] for k in ("clean-a", "clean-b", "quality-a", "stats-a", "stats-b", "report-a")]
     runtime["serviceTransport"] = os.environ.get("AGENTFLOW_E2E_TRANSPORT", runtime.get("serviceTransport", "a2a-v1"))
     runtime_root = root / "runtime"
     runtime["directory"] = str(runtime_root)
@@ -98,7 +102,7 @@ def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, 
     runtime["scenarioInputDirectories"] = ({"travel_planning": str(ROOT / "tests" / "fixtures" / "travel")}
                                           if scenario == "travel_planning" else {})
     runtime["bind"] = "127.0.0.1"
-    ports = [free_port() for _ in range(9)]
+    ports = [free_port() for _ in range(3 + len(runtime["agents"]))]
     runtime["api"] = f"http://127.0.0.1:{ports[0]}"
     runtime["market"] = f"http://127.0.0.1:{ports[1]}"
     runtime["validator"] = f"http://127.0.0.1:{ports[2]}"
@@ -131,10 +135,16 @@ def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, 
     settings = settings_file(path)
     settings["directory"] = runtime_root
     if delay:
+        # Only test child processes receive this hook; business modules contain no fault-injection path.
+        hook = root / "fault-hook"
+        hook.mkdir(parents=True, exist_ok=True)
+        (hook / "sitecustomize.py").write_text("import asyncio\nimport app\n_original = app.ServiceExecutor.handle\nasync def _delayed(self, request):\n    if request.get('operation') == 'execute' and self.config['id'] == 'clean-a' and self.chain.chain_id == 31337:\n        await asyncio.sleep(15)\n    return await _original(self, request)\napp.ServiceExecutor.handle = _delayed\n", encoding="utf-8")
+        os.environ["PYTHONPATH"] = os.pathsep.join([str(hook), str(ROOT)])
         os.environ["AGENTFLOW_E2E_FAULTS_ENABLED"] = "1"
         os.environ["AGENTFLOW_E2E_DELAY_AGENT_ID"] = "clean-a"
         os.environ["AGENTFLOW_E2E_DELAY_SECONDS"] = "15"
     else:
+        os.environ.pop("PYTHONPATH", None)
         for name in ("AGENTFLOW_E2E_FAULTS_ENABLED", "AGENTFLOW_E2E_DELAY_AGENT_ID", "AGENTFLOW_E2E_DELAY_SECONDS"):
             os.environ.pop(name, None)
     return path, settings
@@ -197,6 +207,13 @@ def wait_job(client: httpx.Client, api: str, job_id: str, *, recovery: bool = Fa
         response = client.get(f"{api}/api/jobs/{job_id}", headers=request_headers())
         response.raise_for_status()
         job = response.json()
+        reviews = client.get(f"{api}/api/workspace/reviews/{job_id}", headers=request_headers())
+        reviews.raise_for_status()
+        for review in reviews.json():
+            if review["status"] == "AWAITING_REVIEW":
+                approved = client.post(f"{api}/api/workspace/reviews/{review['id']}", headers=request_headers(), json={
+                    "action": "accept", "resultHash": review["drafts"][-1]["resultHash"], "decisionId": str(uuid.uuid4())})
+                approved.raise_for_status()
         tasks = job["tasks"]
         if recovery and not advanced and w3 and failed_agent:
             first = tasks[0]

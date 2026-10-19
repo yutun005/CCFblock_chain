@@ -3,7 +3,7 @@ from __future__ import annotations
 import json, time, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from services.agents.business import AdversarialAgent, build_demo_agents
+from experiments.scripts.common import AdversarialAgent, build_demo_agents
 from services.marketplace.market import AgentRegistry, QuoteMarket
 from services.marketplace.models import TaskRequest
 
