@@ -1537,7 +1537,7 @@ dialog > p {
 .project-workspace button:disabled { cursor: not-allowed; opacity: .55; }
 .project-workspace :focus-visible { outline: 3px solid #2f62d5; outline-offset: 3px; }
 .workspace-notice { padding: 14px 18px; border: 1px solid #b6d7ca; background: #eef9f3; border-radius: 8px; color: #195a3f; }
-.tier-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; }
+.tier-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,300px),1fr)); gap: 18px; }
 .tier-grid .chosen { outline: 3px solid #244cb1; outline-offset: -2px; }
 .tier-grid .price { font-size: 24px; color: var(--accent); }
 .tier-grid ul { padding-left: 20px; line-height: 1.8; font-size: 14px; overflow-wrap: anywhere; }

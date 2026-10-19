@@ -3,10 +3,10 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
 const prefix = "/api/workspace";
-const tiers: Record<string, string> = {
-  basic: "基础档",
-  standard: "标准档",
-  detailed: "详细档",
+const preferences: Record<string, string> = {
+  lowest_price: "低价优先",
+  fastest: "速度优先",
+  balanced: "综合选择",
 };
 const labels: Record<string, string> = {
   clean: "清洗数据",
@@ -197,6 +197,7 @@ export default function Workspace({
     [projects, setProjects] = useState<Row[]>([]);
   const [offers, setOffers] = useState<Row[]>([]),
     [chosen, setChosen] = useState<Row | null>(null);
+  const [unavailable, setUnavailable] = useState<Row[]>([]);
   const [version, setVersion] = useState<Row | null>(null),
     [compare, setCompare] = useState<Row | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Row>>({}),
@@ -275,9 +276,14 @@ export default function Workspace({
     };
   }, [api, selectedVersion, currentJob]);
   const update = (patch: Row) => {
-    setRecipe((old) => ({ ...old, ...patch }));
+    setRecipe((old) => {
+      const next = { ...old, ...patch };
+      if (!next.outputs.includes("report")) next.tier = "standard";
+      return next;
+    });
     setChosen(null);
     setOffers([]);
+    setUnavailable([]);
   };
   async function openVersion(id: string) {
     const value = await api(`${prefix}/versions/${id}`);
@@ -299,35 +305,9 @@ export default function Workspace({
     );
   }
   async function buildComparison() {
-    const result = await Promise.all(
-      Object.keys(tiers).map(async (tier) => {
-        const outputs =
-          tier === "basic"
-            ? recipe.outputs.filter(
-                (key: string) => !["report", "charts"].includes(key),
-              )
-            : recipe.outputs;
-        const selected = outputs.length
-          ? outputs
-          : [travel ? "route" : "statistics"];
-        const candidate = { ...recipe, tier, outputs: selected };
-        try {
-          return {
-            tier,
-            proposal: await api(prefix + "/proposals", candidate),
-            removed: recipe.outputs.filter(
-              (key: string) => !selected.includes(key),
-            ),
-          };
-        } catch (err) {
-          return {
-            tier,
-            failure: err instanceof Error ? err.message : String(err),
-          };
-        }
-      }),
-    );
-    setOffers(result);
+    const result = await api(prefix + "/comparisons", recipe);
+    setOffers(result.options);
+    setUnavailable(result.unavailable);
     setPage("compare");
     setChosen(null);
   }
@@ -562,8 +542,8 @@ export default function Workspace({
                   onChange={(e) => update({ requirement: e.target.value })}
                   placeholder={
                     travel
-                      ? "景点、酒店、路线和详细报告，预算100"
-                      : "统计结果、图表和标准报告，预算100"
+                      ? "景点、酒店、路线和报告，预算100"
+                      : "统计结果、图表和报告，预算100"
                   }
                 />
               </label>
@@ -614,8 +594,22 @@ export default function Workspace({
                 ))}
               </fieldset>
               <p className="hint">
-                必要的前置工作将在确认页列出。未选择的报告或图表不会自动收费。
+                勾选的是要交付的成果。生成这些成果必需的前置工作会自动安排并逐项列出，不会擅自增加报告、图表或其他交付。
               </p>
+              {recipe.outputs.includes("report") && (
+                <label>
+                  报告文件形式
+                  <select
+                    value={recipe.tier === "detailed" ? "detailed" : "standard"}
+                    onChange={(e) => update({ tier: e.target.value })}
+                  >
+                    <option value="standard">文本报告与引用资料</option>
+                    <option value="detailed">
+                      文本报告、离线网页与来源对照表（增加报告费用）
+                    </option>
+                  </select>
+                </label>
+              )}
               {!travel && (
                 <label>
                   统计分组
@@ -682,7 +676,7 @@ export default function Workspace({
                 </fieldset>
               )}
               <label>
-                服务选择偏好
+                优先查看哪类服务方案
                 <select
                   value={recipe.preference}
                   onChange={(e) => update({ preference: e.target.value })}
@@ -758,67 +752,102 @@ export default function Workspace({
       )}
       {page === "compare" && (
         <section>
-          <h2>比较本次交付方案</h2>
+          <h2>同一交付，比较执行服务</h2>
           <p>
-            估价来自当前在线服务，耗时为服务申报值。实际执行者与成交费用以任务中的签名报价为准。人工确认所需时间另计。
+            所有方案都完成您选择的成果和必要的前置工作，只比较服务、费用和执行时间。相同方案只显示一次。
           </p>
-          {!offers.length && <p>请先在“任务方案编辑”中选择材料和交付内容。</p>}
+          {!!offers.length && (
+            <div className="workspace-panel">
+              <p>
+                本次交付：
+                {offers[0].proposal.recipe.outputs
+                  .map((key: string) => labels[key])
+                  .join("、")}
+              </p>
+              <p>交付文件：{offers[0].proposal.deliverables.join("、")}</p>
+              {[...offers[0].proposal.work, ...offers[0].proposal.reused]
+                .filter((w: Row) => w.requiredBy?.length)
+                .map((w: Row) => (
+                  <p key={w.key}>
+                    必做前置：{w.title}，用于生成
+                    {w.requiredBy.map((key: string) => labels[key]).join("、")}
+                    。
+                  </p>
+                ))}
+            </div>
+          )}
+          {offers.length === 1 && (
+            <p role="status">当前只有一个不同的可执行方案，已合并相同结果。</p>
+          )}
+          {unavailable.map((item, index) => (
+            <p role="status" key={index}>
+              {item.preferences
+                .map((key: string) => preferences[key])
+                .join("、")}
+              ：{item.reason}
+            </p>
+          ))}
+          {!offers.length && (
+            <p>
+              {unavailable.length
+                ? "当前没有满足预算与交付要求的方案，请返回编辑调整。交付内容未被自动修改。"
+                : "请先在“任务方案编辑”中选择材料和交付内容。"}
+            </p>
+          )}
+          {!!offers.length && (
+            <p className="hint">
+              估价来自在线服务。预计耗时按前后依赖和可并行工作计算，不含排队、重试、链上确认和人工确认时间；实际成交以签名报价为准。
+            </p>
+          )}
           <div className="tier-grid">
             {offers.map((offer) => (
               <article
-                key={offer.tier}
+                key={offer.proposal.id}
                 className={
                   "workspace-panel " +
                   (chosen?.id === offer.proposal?.id ? "chosen" : "")
                 }
               >
-                <h3>{tiers[offer.tier]}</h3>
-                {offer.failure ? (
-                  <p role="status">{offer.failure}</p>
-                ) : (
-                  <>
-                    <strong className="price">
-                      {offer.proposal.estimatedPrice} USDC
-                    </strong>
-                    <p>预计服务执行 {offer.proposal.estimatedSeconds} 秒</p>
-                    <p>
-                      {offer.proposal.recipe.outputs
-                        .map((key: string) => labels[key])
-                        .join("、")}
-                    </p>
-                    {!!offer.removed?.length && (
+                <h3>
+                  {offers.length === 1
+                    ? "本次执行方案"
+                    : preferences[offer.preferences[0]]}
+                </h3>
+                <p>
+                  {offer.preferences
+                    .map((key: string) => preferences[key])
+                    .join("、")}
+                  得到此方案
+                </p>
+                <>
+                  <strong className="price">
+                    {offer.proposal.estimatedPrice} USDC
+                  </strong>
+                  <p>预计服务执行 {offer.proposal.estimatedSeconds} 秒</p>
+                  {offer.proposal.work.map((w: Row) => (
+                    <div key={w.key}>
                       <p>
-                        本档移除：
-                        {offer.removed
-                          .map((key: string) => labels[key])
-                          .join("、")}
+                        {w.title}：{w.estimatedProvider}
+                        <br />
+                        {w.estimatedPrice} USDC · {w.estimatedSeconds} 秒
                       </p>
-                    )}
-                    {offer.tier === "detailed" &&
-                      offer.proposal.recipe.outputs.includes("report") && (
-                        <p>比标准档增加：离线网页报告、数据与来源对照表。</p>
-                      )}
-                    <ul>
-                      {offer.proposal.deliverables.map((name: string) => (
-                        <li key={name}>{name}</li>
-                      ))}
-                    </ul>
-                    <p>
-                      服务：
-                      {offer.proposal.work
-                        .map((w: Row) => `${w.title}（${w.estimatedProvider}）`)
-                        .join("、") || "全部复用"}
-                    </p>
-                    <button
-                      disabled={!!busy}
-                      onClick={() => setChosen(offer.proposal)}
-                    >
-                      {chosen?.id === offer.proposal.id
-                        ? "已选择"
-                        : "选择此方案"}
-                    </button>
-                  </>
-                )}
+                      <p className="hint">
+                        {w.history.settled + w.history.expired
+                          ? `历史已结算 ${w.history.settled} 次，失效 ${w.history.expired} 次`
+                          : "暂无历史履约记录"}
+                      </p>
+                    </div>
+                  ))}
+                  {!offer.proposal.work.length && (
+                    <p>全部沿用已结算成果，无需新增执行。</p>
+                  )}
+                  <button
+                    disabled={!!busy}
+                    onClick={() => setChosen(offer.proposal)}
+                  >
+                    {chosen?.id === offer.proposal.id ? "已选择" : "选择此方案"}
+                  </button>
+                </>
               </article>
             ))}
           </div>
@@ -830,14 +859,14 @@ export default function Workspace({
                 {chosen.recipe.outputs
                   .map((key: string) => labels[key])
                   .join("、")}{" "}
-                · {tiers[chosen.recipe.tier]}
+                · {preferences[chosen.recipe.preference]}
               </p>
               {chosen.recipe.requirement && (
                 <p>原文字需求：{chosen.recipe.requirement}</p>
               )}
               {!!chosen.overrides?.length && (
                 <p className="workspace-notice">
-                  本方案已调整文字解析得到的选项。执行以此处展示的最终交付、档位、服务偏好和预算为准。
+                  执行以您最终选择的交付、报告文件形式、服务偏好和预算为准。
                 </p>
               )}
               <p>材料：{chosen.materials.map((m: Row) => m.name).join("、")}</p>
@@ -855,6 +884,8 @@ export default function Workspace({
                       <br />
                       <small>
                         {w.reason}
+                        {!!w.requiredBy?.length &&
+                          ` · 必做前置：用于${w.requiredBy.map((key: string) => labels[key]).join("、")}`}
                         {w.requiresReview ? " · 需人工确认" : ""}
                       </small>
                     </p>
@@ -903,7 +934,10 @@ export default function Workspace({
               {project.versions.map((v: Row) => (
                 <div className="version-row" key={v.id}>
                   <span>
-                    <b>版本 {v.number}</b> · {tiers[v.recipe.tier]}
+                    <b>版本 {v.number}</b> ·{" "}
+                    {v.recipe.outputs
+                      .map((key: string) => labels[key])
+                      .join("、")}
                     <small>
                       {new Date(v.createdAt * 1000).toLocaleString()} · 估价{" "}
                       {v.estimatedPrice} USDC
@@ -1059,7 +1093,10 @@ export default function Workspace({
                       </p>
                       <p>
                         要求：{v.recipe.requirement || "按已选选项执行"} · 分组{" "}
-                        {groupLabels[v.recipe.groupBy]} · {tiers[v.recipe.tier]}
+                        {groupLabels[v.recipe.groupBy]} ·{" "}
+                        {v.recipe.tier === "detailed"
+                          ? "含网页报告与来源对照表"
+                          : "所选交付"}
                       </p>
                       <p>交付：{v.deliverables.join("、")}</p>
                       {v.reviews.map((r: Row) => (

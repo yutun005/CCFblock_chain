@@ -88,12 +88,8 @@ def parse_requirement(text, scenario):
             if word in clause:
                 outputs.append(key)
                 recognized = True
-        for word, key in (
-            ("基础", "basic"),
-            ("标准", "standard"),
-            ("详细", "detailed"),
-            ("网页", "detailed"),
-        ):
+        # Only an explicit file-format request adds the extra report files.
+        for word, key in (("文本", "standard"), ("网页", "detailed")):
             if word in clause:
                 patches["tier"] = key
                 recognized = True
@@ -118,6 +114,7 @@ def parse_requirement(text, scenario):
                 "标准",
                 "详细",
                 "网页",
+                "文本",
                 "低价",
                 "最快",
                 "速度",
@@ -499,7 +496,44 @@ class Workspace:
 
         return [value for value in await asyncio.gather(*(estimate(agent) for agent in agents)) if value]
 
-    async def proposal(self, data):
+    async def compare(self, data):
+        from services.orchestrator.application import object_hash
+
+        recipe = Recipe.model_validate(data)
+        policies = list(dict.fromkeys([recipe.preference, "lowest_price", "fastest", "balanced"]))
+        cache, unique, failures = {}, {}, {}
+        for preference in policies:
+            try:
+                value = await self.proposal(
+                    {**recipe.model_dump(), "preference": preference}, cache=cache, persist=False
+                )
+            except ValueError as exc:
+                failures.setdefault(str(exc), []).append(preference)
+                continue
+            # Compare the actual work and providers, not policy names or proposal IDs.
+            signature = object_hash({
+                "deliverables": sorted(value["deliverables"]),
+                "work": [
+                    {key: row[key] for key in (
+                        "key", "estimatedProvider", "estimatedPrice", "estimatedSeconds"
+                    )}
+                    for row in value["work"]
+                ],
+                "reused": {key: node["source"] for key, node in value["nodes"].items() if node["source"]},
+            })
+            if signature in unique:
+                unique[signature]["preferences"].append(preference)
+            else:
+                self.engine.db.put("proposals", value["id"], value)
+                unique[signature] = {
+                    "preferences": [preference], "proposal": self.public_proposal(value)
+                }
+        return {
+            "options": list(unique.values()),
+            "unavailable": [{"reason": reason, "preferences": prefs} for reason, prefs in failures.items()],
+        }
+
+    async def proposal(self, data, *, cache=None, persist=True):
         from services.orchestrator.application import (
             SCENARIOS,
             ExecutionPolicy,
@@ -511,6 +545,7 @@ class Workspace:
         )
 
         recipe = Recipe.model_validate(data)
+        cache = {} if cache is None else cache
         files = output_files(recipe)
         parsed = parse_requirement(recipe.requirement, recipe.scenario)
         if parsed["unresolved"]:
@@ -542,13 +577,24 @@ class Workspace:
         for spec in reversed(template.topological()):
             if spec.key in wanted:
                 wanted.update(spec.dependencies)
+        required_by = {key: [] for key in wanted}
+        for output in recipe.outputs:
+            ancestors = {"report" if output == "charts" else output}
+            for spec in reversed(template.topological()):
+                if spec.key in ancestors:
+                    ancestors.update(spec.dependencies)
+            for key in ancestors:
+                if key not in recipe.outputs and not (key == "report" and output == "charts"):
+                    required_by[key].append(output)
         if set(recipe.forceRedo) - wanted:
             raise ValueError("只能重做本次方案包含的工作，请先添加对应交付")
         nodes, work, reused, tasks = {}, [], [], []
-        prices = {}
+        prices, finish_times = {}, {}
         for spec in template.topological():
             if spec.key not in wanted:
                 continue
+            if spec.key == "report" and "report" not in recipe.outputs and "charts" in recipe.outputs:
+                spec = spec.model_copy(update={"title": "图表生成"})
             options = Terms(
                 tier=recipe.tier if spec.key == "report" else "basic",
                 outputs=[key for key in ("report", "charts") if key in recipe.outputs]
@@ -593,9 +639,13 @@ class Workspace:
                 "title": spec.title,
                 "reason": reason,
             }
-            row = {"key": spec.key, "title": spec.title, "reason": reason}
+            row = {
+                "key": spec.key, "title": spec.title, "reason": reason,
+                "requiredBy": required_by[spec.key],
+            }
             if reuse:
                 reused.append(row)
+                finish_times[spec.key] = 0
                 continue
             options["reused"] = [nodes[key]["source"] for key in spec.dependencies if nodes[key]["source"]]
             spec = spec.model_copy(
@@ -605,18 +655,25 @@ class Workspace:
                     "sla_seconds": recipe.reviewSeconds + 120 if needs_review(spec) else 60,
                 }
             )
-            available = await self.offers(spec)
+            estimate_key = ("offers", object_hash(spec.model_dump(mode="json")))
+            if estimate_key not in cache:
+                cache[estimate_key] = await self.offers(spec)
+            available = deepcopy(cache[estimate_key])
             if not available:
                 raise ValueError(f"{spec.title} 当前没有可用服务，请稍后重试或调整交付内容")
             policy = ExecutionPolicy(selection=recipe.preference)
-            history = await asyncio.to_thread(
-                Market(
-                    self.engine.chain, self.engine.db, self.engine.token, list(self.engine.allowed_origins)
-                ).outcomes,
-                spec.skill,
-            )
+            history_key = ("history", spec.skill)
+            if history_key not in cache:
+                cache[history_key] = await asyncio.to_thread(
+                    Market(
+                        self.engine.chain, self.engine.db, self.engine.token, list(self.engine.allowed_origins)
+                    ).outcomes,
+                    spec.skill,
+                )
+            history = cache[history_key]
             for offer in available:
                 counts = history.get(offer["wallet"], {"settled": 0, "expired": 0, "evidence": []})
+                offer["history"] = {key: counts[key] for key in ("settled", "expired")}
                 offer["score"] = str(
                     Market.selection_score(offer["price"], {**counts, "seconds": offer["seconds"]}, policy)
                 )
@@ -630,10 +687,14 @@ class Workspace:
                 estimatedPrice=display_units(chosen["price"]),
                 estimatedSeconds=chosen["seconds"],
                 estimatedProvider=chosen["agentId"],
+                history=chosen["history"],
                 candidates=available,
                 requiresReview=needs_review(spec),
             )
             work.append(row)
+            finish_times[spec.key] = chosen["seconds"] + max(
+                (finish_times[key] for key in spec.dependencies), default=0
+            )
         total = sum(prices.values())
         budget = units(recipe.budget)
         if total > budget:
@@ -664,7 +725,7 @@ class Workspace:
             "nodes": nodes,
             "estimatedPrice": display_units(total),
             "budget": recipe.budget,
-            "estimatedSeconds": sum(row["estimatedSeconds"] for row in work),
+            "estimatedSeconds": max(finish_times.values(), default=0),
             "createdAt": time.time(),
             "expiresAt": time.time() + 300,
             "noCharge": not tasks,
@@ -673,8 +734,10 @@ class Workspace:
         result["confirmationHash"] = object_hash(
             {k: v for k, v in result.items() if k not in {"id", "createdAt", "expiresAt"}}
         )
-        self.engine.db.put("proposals", result["id"], result)
-        return self.public_proposal(result)
+        if persist:
+            self.engine.db.put("proposals", result["id"], result)
+            return self.public_proposal(result)
+        return result
 
     @staticmethod
     def public_proposal(value):
@@ -896,6 +959,10 @@ def install(app, engine, config, start):
     @app.post("/api/workspace/proposals")
     async def proposal(data: dict):
         return await workspace.proposal(data)
+
+    @app.post("/api/workspace/comparisons")
+    async def compare(data: dict):
+        return await workspace.compare(data)
 
     @app.post("/api/workspace/confirm")
     async def confirm(data: dict):
