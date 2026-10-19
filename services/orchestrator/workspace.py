@@ -35,6 +35,8 @@ class Recipe(BaseModel):
     groupBy: Literal["organization_quarter", "organization", "category", "month"] = "organization_quarter"
     travelRequest: dict | None = None
     requirement: str = Field(default="", max_length=4000)
+    planningMode: Literal["manual", "llm", "template"] = "manual"
+    planningId: str | None = Field(default=None, max_length=64)
     forceRedo: list[str] = Field(default_factory=list, max_length=4)
     reviewSeconds: int = Field(default=1800, ge=60, le=3300, strict=True)
 
@@ -381,6 +383,15 @@ class Workspace:
     def __init__(self, engine, config, start):
         self.engine, self.config, self.start = engine, config, start
         self.lock = asyncio.Lock()
+        self.planning_lock = asyncio.Lock()
+
+    async def plan_goal(self, data):
+        from .planning import plan_goal
+
+        if self.planning_lock.locked():
+            raise ValueError("主 Agent 正在规划，请等本次完成后再提交")
+        async with self.planning_lock:
+            return await plan_goal(self, data)
 
     def material(self, scenario, name, content):
         from services.orchestrator.application import COLUMNS, TravelInput, canonical, object_hash, packet
@@ -592,7 +603,14 @@ class Workspace:
         recipe = Recipe.model_validate(data)
         cache = {} if cache is None else cache
         files = output_files(recipe)
-        parsed = parse_requirement(recipe.requirement, recipe.scenario)
+        planning = None
+        if recipe.planningMode in {"llm", "template"}:
+            from .planning import saved_plan
+
+            if not recipe.planningId:
+                raise ValueError("请先选择模板或让主 Agent 拆解目标，并确认子任务")
+            template, planning = saved_plan(self, recipe)
+        parsed = {"unresolved": [], "patch": {}} if planning else parse_requirement(recipe.requirement, recipe.scenario)
         if parsed["unresolved"]:
             raise ValueError("这些文字要求尚未明确支持，请修改后确认：" + "；".join(parsed["unresolved"]))
         # Edits to parsed suggestions are visible in the confirmation.
@@ -602,7 +620,10 @@ class Workspace:
             if (not set(value) <= set(current)) if field == "outputs" else (current != value):
                 overrides.append({"field": field, "suggested": value, "selected": current})
         inputs, materials = self.inputs(recipe)
-        template = SCENARIOS[recipe.scenario]["plan"]([item["sha256"] for item in inputs])
+        if not planning:
+            template = SCENARIOS[recipe.scenario]["plan"]([item["sha256"] for item in inputs])
+        elif template.input_hashes != tuple(item["sha256"] for item in inputs):
+            raise ValueError("规划所用材料已变化，请重新规划")
         source = self.engine.db.get("versions", recipe.sourceVersion) if recipe.sourceVersion else None
         if recipe.sourceVersion and (
             not source
@@ -687,6 +708,7 @@ class Workspace:
             row = {
                 "key": spec.key, "title": spec.title, "reason": reason,
                 "requiredBy": required_by[spec.key],
+                "dependencies": list(spec.dependencies),
             }
             if reuse:
                 reused.append(row)
@@ -751,12 +773,12 @@ class Workspace:
         if tasks:
             plan = Plan(
                 scenario=recipe.scenario,
-                goal=recipe.title + "：" + ",".join(recipe.outputs) + " / " + recipe.tier,
+                goal=recipe.requirement if planning else recipe.title + "：" + ",".join(recipe.outputs) + " / " + recipe.tier,
                 deposit=recipe.budget,
                 tasks=tuple(tasks),
                 input_hashes=tuple(p["sha256"] for p in inputs),
                 duration_seconds=recipe.reviewSeconds + 600,
-                planning_mode="workspace_v1",
+                planning_mode=planning["mode"] if planning else "workspace_v1",
                 execution=ExecutionPolicy(selection=recipe.preference,
                     preferred_agents={spec.key: offer["wallet"] for spec, offer in zip(tasks, team)}),
             )
@@ -779,6 +801,7 @@ class Workspace:
             "expiresAt": min([time.time() + 300, *(offer["validUntil"] for offer in team)]),
             "noCharge": not tasks,
             "overrides": overrides,
+            "planning": planning,
         }
         result["confirmationHash"] = object_hash(
             {k: v for k, v in result.items() if k not in {"id", "createdAt", "expiresAt"}}
@@ -980,6 +1003,32 @@ class Workspace:
 
 def install(app, engine, config, start):
     workspace = Workspace(engine, config, start)
+    from .templates import install as install_templates
+
+    install_templates(app, workspace)
+
+    @app.get("/api/workspace/planner")
+    def planner_status():
+        from .planning import status
+
+        return status()
+
+    @app.post("/api/workspace/planning")
+    async def planning(data: dict):
+        return await workspace.plan_goal(data)
+
+    @app.post("/api/workspace/planning/{planning_id}/review")
+    async def review_planning(planning_id: str, data: dict):
+        from .planning import review_draft
+
+        return await review_draft(workspace, planning_id, data)
+
+    @app.get("/api/workspace/planning/{planning_id}")
+    def planning_record(planning_id: str):
+        record = engine.db.get("planning_runs", planning_id)
+        if not record:
+            raise HTTPException(404, "规划记录不存在")
+        return record
 
     @app.exception_handler(ValueError)
     async def invalid_request(_request, exc):

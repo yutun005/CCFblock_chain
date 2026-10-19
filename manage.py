@@ -182,6 +182,11 @@ def main():
         destination.parent.mkdir(parents=True, exist_ok=True)
         document = {"plan": plan_schema_document(), "runtime": runtime_schema_document(),
                     "protocol": protocol_schema_document(), "travelInput": TravelInput.model_json_schema()}
+        from services.orchestrator.planning import GoalDraft
+        from services.orchestrator.templates import TaskTemplate
+        from services.orchestrator.workspace import Recipe
+        document["workspace"] = {"recipe": Recipe.model_json_schema(), "goalDraft": GoalDraft.model_json_schema(),
+                                 "template": TaskTemplate.model_json_schema()}
         destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"exported": str(destination), "protocolVersion": 1, "status": "local_proposal"}))
         return

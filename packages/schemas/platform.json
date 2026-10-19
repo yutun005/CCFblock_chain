@@ -5699,5 +5699,460 @@
     ],
     "title": "TravelInput",
     "type": "object"
+  },
+  "workspace": {
+    "recipe": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Projectid"
+        },
+        "sourceVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourceversion"
+        },
+        "title": {
+          "default": "我的项目",
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "scenario": {
+          "default": "cross_org_analysis",
+          "enum": [
+            "cross_org_analysis",
+            "travel_planning"
+          ],
+          "title": "Scenario",
+          "type": "string"
+        },
+        "materialIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Materialids",
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "tier": {
+          "default": "standard",
+          "enum": [
+            "basic",
+            "standard",
+            "detailed"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "preference": {
+          "default": "lowest_price",
+          "enum": [
+            "lowest_price",
+            "fastest",
+            "reliability"
+          ],
+          "title": "Preference",
+          "type": "string"
+        },
+        "budget": {
+          "default": "100",
+          "title": "Budget",
+          "type": "string"
+        },
+        "groupBy": {
+          "default": "organization_quarter",
+          "enum": [
+            "organization_quarter",
+            "organization",
+            "category",
+            "month"
+          ],
+          "title": "Groupby",
+          "type": "string"
+        },
+        "travelRequest": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Travelrequest"
+        },
+        "requirement": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Requirement",
+          "type": "string"
+        },
+        "planningMode": {
+          "default": "manual",
+          "enum": [
+            "manual",
+            "llm",
+            "template"
+          ],
+          "title": "Planningmode",
+          "type": "string"
+        },
+        "planningId": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Planningid"
+        },
+        "forceRedo": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Forceredo",
+          "type": "array"
+        },
+        "reviewSeconds": {
+          "default": 1800,
+          "maximum": 3300,
+          "minimum": 60,
+          "title": "Reviewseconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "materialIds",
+        "outputs"
+      ],
+      "title": "Recipe",
+      "type": "object"
+    },
+    "goalDraft": {
+      "$defs": {
+        "PlannedTask": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "pattern": "^[a-z][a-z0-9_]{0,47}$",
+              "title": "Key",
+              "type": "string"
+            },
+            "skill": {
+              "title": "Skill",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "dependencies": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 15,
+              "title": "Dependencies",
+              "type": "array"
+            },
+            "reason": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "skill",
+            "title",
+            "reason"
+          ],
+          "title": "PlannedTask",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ready",
+            "needs_input",
+            "unsupported"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Questions",
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/PlannedTask"
+          },
+          "maxItems": 16,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "groupBy": {
+          "anyOf": [
+            {
+              "enum": [
+                "organization_quarter",
+                "organization",
+                "category",
+                "month"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Groupby"
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "enum": [
+                "standard",
+                "detailed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tier"
+        },
+        "travelRequest": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Travelrequest"
+        },
+        "serviceBudget": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Servicebudget"
+        }
+      },
+      "required": [
+        "status",
+        "summary"
+      ],
+      "title": "GoalDraft",
+      "type": "object"
+    },
+    "template": {
+      "$defs": {
+        "PlannedTask": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "pattern": "^[a-z][a-z0-9_]{0,47}$",
+              "title": "Key",
+              "type": "string"
+            },
+            "skill": {
+              "title": "Skill",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "dependencies": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 15,
+              "title": "Dependencies",
+              "type": "array"
+            },
+            "reason": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "skill",
+            "title",
+            "reason"
+          ],
+          "title": "PlannedTask",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "scenario": {
+          "enum": [
+            "cross_org_analysis",
+            "travel_planning"
+          ],
+          "title": "Scenario",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Tags",
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/PlannedTask"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "groupBy": {
+          "default": "organization_quarter",
+          "enum": [
+            "organization_quarter",
+            "organization",
+            "category",
+            "month"
+          ],
+          "title": "Groupby",
+          "type": "string"
+        },
+        "tier": {
+          "default": "standard",
+          "enum": [
+            "standard",
+            "detailed"
+          ],
+          "title": "Tier",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "scenario",
+        "outputs",
+        "tasks"
+      ],
+      "title": "TaskTemplate",
+      "type": "object"
+    }
   }
 }

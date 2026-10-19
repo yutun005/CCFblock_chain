@@ -3711,13 +3711,17 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
 
     @app.get("/api/config")
     def public_config():
+        from .planning import status
+
+        planner = status()
         return {"mode": "SELF_HOSTED", "chainId": engine.chain.chain_id,
                 "escrow": engine.chain.escrow.address, "token": engine.chain.token.address,
-                "owner": config["deployment"]["owner"], "planningMode": "deterministic_template",
+                "owner": config["deployment"]["owner"], "planningMode": "template_first",
+                "planner": planner,
                 "tokenSymbol": config["tokenSymbol"],
                 "scenarios": [{"id": key, "title": value["title"], "description": value["description"]}
                               for key, value in SCENARIOS.items()],
-                "supportedPlanningModes": ["deterministic_template", "configured_dag"]}
+                "supportedPlanningModes": ["deterministic_template", "configured_dag", "llm_dag", "template_dag"]}
 
     @app.get("/api/inputs")
     def inputs_manifest(scenario: str = "cross_org_analysis"):
@@ -4119,6 +4123,14 @@ class ServiceCluster:
                                 else {a["keyEnv"] for a in self.settings["agents"] if a["id"] == role})
                 for variable in signing_vars - allowed_keys:
                     child_env.pop(variable, None)
+                if role != "api":
+                    from .planning import configuration
+
+                    try:
+                        planner, _, _ = configuration()
+                        child_env.pop(planner.apiKeyEnv, None)
+                    except ValueError:
+                        pass  # Invalid optional planner settings must not block manual execution.
                 self.processes[role] = subprocess.Popen(
                     [sys.executable, str(ROOT / "app.py"), "--config", str(self.settings["configPath"]),
                      "--runtime", str(self.runtime), "--role", role], cwd=ROOT,

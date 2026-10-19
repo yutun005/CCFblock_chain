@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { amount as money, price } from "./amount";
+import { PlanningGraph, PlanReview, TemplateLibrary } from "./TaskPlanning";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -51,12 +58,14 @@ const initial = {
   title: "销售数据分析",
   scenario: "cross_org_analysis",
   materialIds: [] as string[],
-  outputs: ["clean", "validate", "statistics", "charts", "report"],
+  outputs: [] as string[],
   tier: "standard",
   preference: "lowest_price",
   budget: "100",
   groupBy: "organization_quarter",
   requirement: "",
+  planningMode: "llm",
+  planningId: null,
   forceRedo: [] as string[],
   reviewSeconds: 1800,
 };
@@ -206,6 +215,12 @@ export default function Workspace({
     [revisionAction, setRevisionAction] = useState("shorten"),
     [feedback, setFeedback] = useState("");
   const [unresolved, setUnresolved] = useState<string[]>([]);
+  const [planner, setPlanner] = useState<Row | null>(null);
+  const [goalPlan, setGoalPlan] = useState<Row | null>(null);
+  const [capabilities, setCapabilities] = useState<Row[]>([]);
+  const [planDirty, setPlanDirty] = useState(false);
+  const recipeRevision = useRef(0);
+  const renderedRecipeRevision = recipeRevision.current;
   const travel = recipe.scenario === "travel_planning";
   const availableOutputs = travel
     ? ["attractions", "hotels", "route", "report"]
@@ -223,12 +238,16 @@ export default function Workspace({
     }
   }, []);
   const refresh = useCallback(async () => {
-    const [ms, ps] = await Promise.all([
+    const [ms, ps, planningStatus, cs] = await Promise.all([
       api(prefix + "/materials"),
       api(prefix + "/projects"),
+      api(prefix + "/planner"),
+      api(prefix + "/capabilities"),
     ]);
     setMaterials(ms);
     setProjects(ps);
+    setPlanner(planningStatus);
+    setCapabilities(cs);
   }, [api]);
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
@@ -270,8 +289,26 @@ export default function Workspace({
     };
   }, [api, selectedVersion, currentJob]);
   const update = (patch: Row) => {
+    recipeRevision.current++;
+    const invalidates =
+      [
+        "scenario",
+        "materialIds",
+        "outputs",
+        "tier",
+        "groupBy",
+        "travelRequest",
+        "requirement",
+        "budget",
+        "planningMode",
+      ].some((key) => key in patch) && !("planningId" in patch);
+    if (invalidates) {
+      setGoalPlan(null);
+      setPlanDirty(false);
+    }
     setRecipe((old) => {
       const next = { ...old, ...patch };
+      if (invalidates) next.planningId = null;
       if (!next.outputs.includes("report")) next.tier = "standard";
       return next;
     });
@@ -289,21 +326,102 @@ export default function Workspace({
   function follow(value: Row) {
     update({
       ...value.recipe,
+      planningMode: value.recipe.planningMode || "manual",
+      planningId: value.recipe.planningId || null,
       projectId: value.projectId,
       sourceVersion: value.id,
       forceRedo: [],
     });
     setPage("editor");
+    const revision = recipeRevision.current;
+    if (value.recipe.planningId)
+      void api(`${prefix}/planning/${value.recipe.planningId}`)
+        .then((result) => {
+          if (recipeRevision.current === revision) setGoalPlan(result);
+        })
+        .catch((err) => setError(String(err)));
+    else setGoalPlan(null);
     setNotice(
       `基于版本 ${value.number} 创建续单。原版保留，确认前会列出复用成果和新增费用。`,
     );
   }
   async function buildComparison() {
+    if (
+      recipe.planningMode !== "manual" &&
+      (!goalPlan?.reviewedAt || planDirty)
+    )
+      throw new Error("请先检查并确认子任务，再比较执行方案。");
+    const revision = recipeRevision.current;
     const result = await api(prefix + "/comparisons", recipe);
+    if (recipeRevision.current !== revision) {
+      setNotice("比较期间目标或选项发生变化，请按当前设置重新比较。");
+      return;
+    }
     setOffers(result.options);
     setUnavailable(result.unavailable);
     setPage("compare");
     setChosen(null);
+  }
+  async function planGoal() {
+    const revision = recipeRevision.current;
+    setGoalPlan(null);
+    setOffers([]);
+    setChosen(null);
+    setRecipe((old) => ({ ...old, planningId: null }));
+    const result = await api(prefix + "/planning", {
+      ...recipe,
+      planningId: null,
+    });
+    if (recipeRevision.current !== revision) {
+      setNotice("规划期间目标或选项发生变化，已保留您的修改，请重新规划。");
+      return;
+    }
+    setGoalPlan(result);
+    setPlanDirty(false);
+    if (result.status === "ready") {
+      setRecipe(result.recipe);
+      setUnresolved([]);
+      setNotice(
+        "主 Agent 已提出任务图。请检查、微调并确认子任务；确认后可以保存为模板或比较执行方案。",
+      );
+    } else {
+      setNotice(
+        "这份目标暂不能直接执行，请按下面的问题补充或调整目标后重新规划。",
+      );
+    }
+  }
+  function acceptReviewed(result: Row) {
+    if (renderedRecipeRevision !== recipeRevision.current) {
+      setNotice(
+        "确认期间目标或参数发生变化，已保留您的修改，请重新载入模板或规划。",
+      );
+      return;
+    }
+    update(result.recipe);
+    setGoalPlan(result);
+    setPlanDirty(false);
+    setNotice("已确认子任务，可以保存为模板，或继续比较执行方案。");
+  }
+  async function useTemplate(item: Row) {
+    if (recipe.scenario !== item.scenario)
+      throw new Error(
+        "请先在目标页切换到模板对应的场景，并选择材料，再采用模板。",
+      );
+    if (!recipe.requirement.trim() || !recipe.materialIds.length)
+      throw new Error("请先在目标页填写本次大目标并选择材料。");
+    const revision = recipeRevision.current;
+    const result = await api(`${prefix}/templates/${item.id}/apply`, recipe);
+    if (recipeRevision.current !== revision) {
+      setNotice("采用模板期间目标发生变化，请按当前目标重新选择模板。");
+      return;
+    }
+    update(result.recipe);
+    setGoalPlan(result);
+    setPlanDirty(false);
+    setPage("editor");
+    setNotice(
+      "已载入模板，没有调用模型。请核对或微调子任务，确认符合本次目标后再继续。",
+    );
   }
   async function submit() {
     if (!chosen) return;
@@ -355,7 +473,8 @@ export default function Workspace({
     <section className="project-workspace" aria-label="项目与成果工作区">
       <nav className="workspace-tabs" aria-label="项目操作">
         {[
-          ["editor", "任务方案编辑"],
+          ["editor", "目标与任务规划"],
+          ["templates", "模板库"],
           ["compare", "方案对比"],
           ["history", "历史版本与续单"],
           ["review", "成果预览与修改"],
@@ -390,8 +509,19 @@ export default function Workspace({
         <p role="status">
           {busy === "compare"
             ? "正在向在线服务估价并检查复用成果…"
-            : "正在处理…"}
+            : busy === "plan"
+              ? "主 Agent 正在发现服务、拆解目标并校验任务依赖，通常需要几十秒…"
+              : "正在处理…"}
         </p>
+      )}
+      {page === "templates" && (
+        <TemplateLibrary
+          api={api}
+          run={run}
+          busy={!!busy}
+          capabilities={capabilities}
+          onUse={useTemplate}
+        />
       )}
       {page === "editor" && (
         <form
@@ -402,14 +532,35 @@ export default function Workspace({
         >
           <div className="workspace-columns">
             <section className="workspace-panel">
-              <h2>1. 材料与需求</h2>
+              <h2>1. 材料与目标</h2>
+              <label>
+                规划方式
+                <select
+                  value={recipe.planningMode === "manual" ? "manual" : "llm"}
+                  onChange={(e) =>
+                    update({
+                      planningMode: e.target.value,
+                      outputs: e.target.value === "manual" ? ["report"] : [],
+                    })
+                  }
+                >
+                  <option value="llm">先查模板，再由主 Agent 拆解新目标</option>
+                  <option value="manual">旧版手动选择成果</option>
+                </select>
+              </label>
+              {recipe.planningMode !== "manual" && (
+                <p className="hint" role="status">
+                  {planner?.message || "正在读取规划模型配置…"}
+                </p>
+              )}
               {recipe.sourceVersion && (
                 <p className="workspace-notice">
                   当前为续单。
                   <button
                     type="button"
                     onClick={() => {
-                      setRecipe(initial);
+                      update(initial);
+                      setGoalPlan(null);
                       setNotice("已切换为新项目。");
                     }}
                   >
@@ -437,9 +588,7 @@ export default function Workspace({
                       materialIds: [],
                       travelRequest: null,
                       outputs:
-                        e.target.value === "travel_planning"
-                          ? ["attractions", "hotels", "route", "report"]
-                          : initial.outputs,
+                        recipe.planningMode !== "manual" ? [] : ["report"],
                       requirement: "",
                     })
                   }
@@ -529,44 +678,103 @@ export default function Workspace({
                   </details>
                 ))}
               <label>
-                文字需求（可选）
+                {recipe.planningMode !== "manual"
+                  ? "想完成什么？"
+                  : "文字需求（可选，按关键词解析）"}
                 <textarea
                   value={recipe.requirement}
                   maxLength={4000}
                   onChange={(e) => update({ requirement: e.target.value })}
                   placeholder={
                     travel
-                      ? "景点、酒店、路线和报告，预算100"
-                      : "统计结果、图表和报告，预算100"
+                      ? "按这份资料给我安排三天旅游，最后给我一份完整行程，服务费不超过100 USDC。"
+                      : "帮我看懂这批销售数据，按月份汇总并给一份文字分析，不需要图表。"
                   }
                 />
               </label>
-              <button
-                type="button"
-                disabled={!!busy || !recipe.requirement.trim()}
-                onClick={() =>
-                  void run("parse", async () => {
-                    const result = await api(prefix + "/parse", {
-                      text: recipe.requirement,
-                      scenario: recipe.scenario,
-                    });
-                    update(result.patch);
-                    setUnresolved(result.unresolved);
-                    setNotice(
-                      "已把识别结果填入可见选项。您可以修改，确认时以最终选项为准。",
-                    );
-                  })
-                }
-              >
-                解析并填入选项
-              </button>
+              {recipe.planningMode !== "manual" && (
+                <TemplateLibrary
+                  key={recipe.scenario}
+                  api={api}
+                  run={run}
+                  busy={!!busy}
+                  capabilities={capabilities}
+                  onUse={useTemplate}
+                  compact
+                  query={recipe.requirement}
+                  scenario={recipe.scenario}
+                />
+              )}
+              {recipe.planningMode !== "manual" ? (
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={
+                    !!busy ||
+                    !recipe.requirement.trim() ||
+                    !recipe.materialIds.length ||
+                    !planner?.configured
+                  }
+                  onClick={() => void run("plan", planGoal)}
+                >
+                  没有合适模板，让主 Agent 拆解
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!!busy || !recipe.requirement.trim()}
+                  onClick={() =>
+                    void run("parse", async () => {
+                      const result = await api(prefix + "/parse", {
+                        text: recipe.requirement,
+                        scenario: recipe.scenario,
+                      });
+                      update(result.patch);
+                      setUnresolved(result.unresolved);
+                      setNotice(
+                        "已把识别结果填入可见选项。您可以修改，确认时以最终选项为准。",
+                      );
+                    })
+                  }
+                >
+                  解析并填入选项
+                </button>
+              )}
+              {goalPlan?.status === "ready" && goalPlan.draft && (
+                <PlanReview
+                  key={goalPlan.id}
+                  plan={goalPlan}
+                  recipe={recipe}
+                  capabilities={capabilities}
+                  api={api}
+                  run={run}
+                  busy={!!busy}
+                  onReviewed={acceptReviewed}
+                  onDirty={() => {
+                    setPlanDirty(true);
+                    setChosen(null);
+                    setOffers([]);
+                  }}
+                />
+              )}
+              {goalPlan && goalPlan.status !== "ready" && (
+                <section className="planning-result">
+                  <h3>需要补充或暂不支持的内容</h3>
+                  <p>{goalPlan.summary}</p>
+                  {(goalPlan.questions || []).map((q: string, i: number) => (
+                    <p role="alert" key={i}>
+                      {q}
+                    </p>
+                  ))}
+                </section>
+              )}
               {!!unresolved.length && (
                 <p role="alert">这些要求需调整：{unresolved.join("；")}</p>
               )}
             </section>
             <section className="workspace-panel">
               <h2>2. 交付与预算</h2>
-              <fieldset>
+              <fieldset disabled={recipe.planningMode !== "manual"}>
                 <legend>本次希望拿到的成果</legend>
                 {availableOutputs.map((key) => (
                   <label className="check-row" key={key}>
@@ -588,7 +796,9 @@ export default function Workspace({
                 ))}
               </fieldset>
               <p className="hint">
-                勾选的是要交付的成果。生成这些成果必需的前置工作会自动安排并逐项列出，不会擅自增加报告、图表或其他交付。
+                {recipe.planningMode !== "manual"
+                  ? "在左侧任务图中核对和修改交付，再点击确认子任务。修改这里的材料或参数后，需要重新载入模板或规划并确认。"
+                  : "勾选要交付的成果，必要前置工作按业务规则补齐。此模式使用预设规则，不调用规划模型。"}
               </p>
               {recipe.outputs.includes("report") && (
                 <label>
@@ -741,7 +951,11 @@ export default function Workspace({
                 className="primary"
                 type="submit"
                 disabled={
-                  !!busy || !recipe.materialIds.length || !recipe.outputs.length
+                  !!busy ||
+                  !recipe.materialIds.length ||
+                  !recipe.outputs.length ||
+                  (recipe.planningMode !== "manual" &&
+                    (!recipe.planningId || !goalPlan?.reviewedAt || planDirty))
                 }
               >
                 比较方案与新增费用
@@ -759,6 +973,13 @@ export default function Workspace({
           </p>
           {!!offers.length && (
             <div className="workspace-panel">
+              {offers[0].proposal.planning && (
+                <>
+                  <h3>您已确认的任务图</h3>
+                  <p>{offers[0].proposal.planning.summary}</p>
+                  <PlanningGraph tasks={offers[0].proposal.planning.tasks} />
+                </>
+              )}
               <p>
                 本次交付：
                 {offers[0].proposal.recipe.outputs

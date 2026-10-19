@@ -1557,3 +1557,10 @@ dialog > p {
 .report-table { max-width: 100%; overflow-x: auto; margin: 1rem 0; }
 .report-table table { width: 100%; border-collapse: collapse; font-size: .875rem; }
 .report-table th, .report-table td { padding: .6rem; border-bottom: 1px solid var(--line); text-align: left; }
+
+.planning-graph { height: 420px; width: 100%; border: 1px solid #42586b; border-radius: 12px; margin: 16px 0; }
+.planning-result { margin-top: 20px; }
+.task-editor { margin: 12px 0; padding: 16px; border: 1px solid #3d5368; border-radius: 10px; }
+.template-library { margin: 20px 0; }
+.template-library button { margin: 4px 8px 4px 0; }
+.template-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
