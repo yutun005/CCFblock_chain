@@ -47,13 +47,13 @@ jobs:
       - name: Verify persistent Anvil and application restart
         run: .cache/venv/bin/python tests/e2e/run_anvil_persistence.py
       - name: Run REST, A2A, ABI and recovery scenarios
-        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --repeat 10
+        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --repeat 10 --dynamic-dispatch
       - name: Run travel planning REST, A2A, ABI and recovery scenarios
-        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning --browser --repeat 1
+        run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning --browser --repeat 1 --dynamic-dispatch
       - name: Run original B HTTP compatibility end to end
         run: |
-          .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1
-          .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1 --scenario travel_planning
+          .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1 --dynamic-dispatch
+          .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1 --scenario travel_planning --dynamic-dispatch
       - name: Collect reproducible evidence summaries
         run: .cache/venv/bin/python manage.py collect-results
       - name: Archive raw evidence with checksums

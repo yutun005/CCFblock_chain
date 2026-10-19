@@ -42,6 +42,15 @@
             "title": "Risk Penalty",
             "type": "string"
           },
+          "dispatch": {
+            "default": "preferred",
+            "enum": [
+              "preferred",
+              "on_ready"
+            ],
+            "title": "Dispatch",
+            "type": "string"
+          },
           "preferred_agents": {
             "additionalProperties": {
               "type": "string"
@@ -244,6 +253,15 @@
           "risk_penalty": {
             "default": "30.000000",
             "title": "Risk Penalty",
+            "type": "string"
+          },
+          "dispatch": {
+            "default": "preferred",
+            "enum": [
+              "preferred",
+              "on_ready"
+            ],
+            "title": "Dispatch",
             "type": "string"
           },
           "preferred_agents": {
@@ -638,7 +656,9 @@
               "CANCELED",
               "AWAITING_REVIEW",
               "REWORKING",
-              "ACCEPTED"
+              "ACCEPTED",
+              "WAITING_AGENT",
+              "WAITING_DEPENDENCIES"
             ],
             "title": "Status",
             "type": "string"
@@ -1319,6 +1339,8 @@
               "AWAITING_REVIEW",
               "REWORKING",
               "ACCEPTED",
+              "WAITING_AGENT",
+              "WAITING_DEPENDENCIES",
               "assignTask_PENDING",
               "settleTask_PENDING",
               "JOB_FUNDED",
@@ -1569,6 +1591,44 @@
               "properties": {
                 "kind": {
                   "const": "ACCEPTED"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/TaskCheckpoint"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "WAITING_AGENT"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/TaskCheckpoint"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "WAITING_DEPENDENCIES"
                 }
               },
               "required": [
@@ -2503,6 +2563,15 @@
                 "title": "Risk Penalty",
                 "type": "string"
               },
+              "dispatch": {
+                "default": "preferred",
+                "enum": [
+                  "preferred",
+                  "on_ready"
+                ],
+                "title": "Dispatch",
+                "type": "string"
+              },
               "preferred_agents": {
                 "additionalProperties": {
                   "type": "string"
@@ -3090,6 +3159,15 @@
                 "title": "Risk Penalty",
                 "type": "string"
               },
+              "dispatch": {
+                "default": "preferred",
+                "enum": [
+                  "preferred",
+                  "on_ready"
+                ],
+                "title": "Dispatch",
+                "type": "string"
+              },
               "preferred_agents": {
                 "additionalProperties": {
                   "type": "string"
@@ -3637,6 +3715,15 @@
                 "title": "Risk Penalty",
                 "type": "string"
               },
+              "dispatch": {
+                "default": "preferred",
+                "enum": [
+                  "preferred",
+                  "on_ready"
+                ],
+                "title": "Dispatch",
+                "type": "string"
+              },
               "preferred_agents": {
                 "additionalProperties": {
                   "type": "string"
@@ -4020,6 +4107,15 @@
               "risk_penalty": {
                 "default": "30.000000",
                 "title": "Risk Penalty",
+                "type": "string"
+              },
+              "dispatch": {
+                "default": "preferred",
+                "enum": [
+                  "preferred",
+                  "on_ready"
+                ],
+                "title": "Dispatch",
                 "type": "string"
               },
               "preferred_agents": {
@@ -4732,6 +4828,15 @@
               "risk_penalty": {
                 "default": "30.000000",
                 "title": "Risk Penalty",
+                "type": "string"
+              },
+              "dispatch": {
+                "default": "preferred",
+                "enum": [
+                  "preferred",
+                  "on_ready"
+                ],
+                "title": "Dispatch",
                 "type": "string"
               },
               "preferred_agents": {

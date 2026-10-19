@@ -31,6 +31,12 @@ POLL_INTERVAL = 0.1
 JOB_TIMEOUT = 180
 
 
+class ScenarioRunFailure(RuntimeError):
+    def __init__(self, evidence):
+        super().__init__(evidence["failure"])
+        self.evidence = evidence
+
+
 def accounts(count: int = 9) -> list:
     Account.enable_unaudited_hdwallet_features()
     return [Account.from_mnemonic(MNEMONIC, account_path=f"m/44'/60'/0'/0/{index}")
@@ -88,19 +94,24 @@ def deploy(w3: Web3, owner, verifier, evidence: dict) -> tuple[str, str]:
 
 
 def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, *, delay: bool,
-                   scenario: str = "cross_org_analysis", delay_seconds: float = 15) -> tuple[Path, dict]:
+                   scenario: str = "cross_org_analysis", delay_seconds: float = 15,
+                   multi_skill: bool = False) -> tuple[Path, dict]:
     project = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))
     runtime = copy.deepcopy(project["runtime"])
     # Keep the established six-merchant fixture and its timeout/reassignment price ordering.
     # Production project.json remains the full 16-merchant marketplace.
     by_id = {a["id"]: a for a in runtime["agents"]}
     runtime["agents"] = [by_id[k] for k in ("clean-a", "clean-b", "quality-a", "stats-a", "stats-b", "report-a")]
+    if multi_skill:
+        # A controlled merchant can do both A and C, cheaper than C's preview merchant.
+        runtime["agents"][0]["prices"].update(statistical_analysis="23", route_planning="23")
+        runtime["agents"][0]["serviceSeconds"].update(statistical_analysis=10, route_planning=10)
     runtime["serviceTransport"] = os.environ.get("AGENTFLOW_E2E_TRANSPORT", runtime.get("serviceTransport", "a2a-v1"))
     runtime_root = root / "runtime"
     runtime["directory"] = str(runtime_root)
     runtime["inputDirectory"] = str(ROOT / "tests" / "fixtures" / "sales")
-    runtime["scenarioInputDirectories"] = ({"travel_planning": str(ROOT / "tests" / "fixtures" / "travel")}
-                                          if scenario == "travel_planning" else {})
+    # The workspace material picker lists both built-in scenarios.
+    runtime["scenarioInputDirectories"] = {"travel_planning": str(ROOT / "tests" / "fixtures" / "travel")}
     runtime["bind"] = "127.0.0.1"
     ports = [free_port() for _ in range(3 + len(runtime["agents"]))]
     runtime["api"] = f"http://127.0.0.1:{ports[0]}"
@@ -301,7 +312,46 @@ def validate_settlement(client: httpx.Client, api: str, job: dict, *, recovery: 
             "invalidatedEvents": invalidated}
 
 
-def run(scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
+def run_dynamic_job(client, api, scenario, run_id):
+    """Template -> review -> reference quote -> ready-time dispatch -> signed settlement."""
+    def call(path, data=None):
+        response = (client.get(api + path, headers=request_headers()) if data is None
+                    else client.post(api + path, headers=request_headers(), json=data))
+        response.raise_for_status()
+        return response.json()
+
+    materials = [m for m in call("/api/workspace/materials") if m["scenario"] == scenario]
+    recipe = {"scenario": scenario, "materialIds": [m["id"] for m in materials[:1]], "outputs": ["report"],
+              "budget": "100", "requirement": "根据材料完成分析和报告", "preference": "lowest_price",
+              "planningMode": "template", "reviewSeconds": 60, "title": "dynamic-" + run_id}
+    draft = call("/api/workspace/templates/builtin-" + scenario + "/apply", recipe)
+    reviewed = call("/api/workspace/planning/" + draft["id"] + "/review",
+                    {"recipe": draft["recipe"], "draft": draft["draft"]})
+    comparison = call("/api/workspace/comparisons", reviewed["recipe"])
+    assert comparison["options"], comparison
+    proposal = comparison["options"][0]["proposal"]
+    assert proposal["plan"]["execution"]["dispatch"] == "on_ready"
+    assert not proposal["plan"]["execution"].get("preferred_agents")
+    created = call("/api/workspace/confirm", {"proposalId": proposal["id"], "confirmationHash": proposal["confirmationHash"]})
+    job = wait_job(client, api, created["jobId"])
+    proof = validate_settlement(client, api, job, recovery=False, scenario=scenario)
+    tasks = job["tasks"]
+    assert tasks[0]["checkpoint"]["selected"]["agentId"] == "clean-a"
+    assert tasks[2]["checkpoint"]["selected"]["agentId"] == "clean-a"
+    assert tasks[2]["checkpoint"]["startedAt"] >= tasks[0]["checkpoint"]["settledAt"]
+    for task in tasks:
+        cp = task["checkpoint"]
+        assert int(cp["selected"]["quote"]["price"]) <= int(task["onchain"]["config"]["budgetCap"])
+        for dependency in task["dependencies"]:
+            previous = next(t for t in tasks if t["key"] == dependency)
+            assert cp["startedAt"] >= previous["checkpoint"]["settledAt"]
+    return {"label": "dynamic-dispatch", "job_id": job["jobId"], "status": job["status"],
+            "tasks": tasks, "referenceProviders": {w["key"]: w["estimatedProvider"] for w in proposal["work"]},
+            "quoteRecords": proof["quoteRecords"], "settledEvents": proof["settledEvents"],
+            "claimResponse": proof["claims"]}
+
+
+def run(scenario: str = "cross_org_analysis", *, browser: bool = False, dynamic_dispatch: bool = False) -> dict:
     if scenario not in {"cross_org_analysis", "travel_planning"}:
         raise ValueError("unsupported E2E scenario")
     started = time.monotonic()
@@ -346,7 +396,7 @@ def run(scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
         for scenario_label, inject_delay, sla in (("normal", False, 30), ("recovery", True, 10)):
             settings_root = CACHE / "e2e" / run_id / scenario_label
             settings_path, settings = build_settings(settings_root, rpc, token, escrow, keyset, delay=inject_delay,
-                                                      scenario=scenario)
+                                                      scenario=scenario, multi_skill=dynamic_dispatch and not inject_delay)
             chain = configure(settings, rpc, token, escrow, keyset[0])
             if inject_delay:
                 failed_agent_wallet = Account.from_key(keyset[3].key).address
@@ -371,6 +421,8 @@ def run(scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
                                     "refundEvents": browser_proof["refundEvents"],
                                     "invalidatedEvents": browser_proof["invalidatedEvents"],
                                     "claimResponse": browser_proof["claims"]})
+                if dynamic_dispatch and scenario_label == "normal":
+                    results.append(run_dynamic_job(client, settings["api"], scenario, run_id))
                 job_id = create_job(client, settings["api"], f"{run_id}-{scenario_label}", sla, scenario)
                 job = wait_job(client, settings["api"], job_id, recovery=inject_delay,
                                w3=w3 if inject_delay else None, failed_agent=failed_agent_wallet)
@@ -389,7 +441,7 @@ def run(scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
         evidence.update(status="FAIL", failure=f"{type(exc).__name__}: {exc}",
                         duration_seconds=round(time.monotonic() - started, 3),
                         completed_at_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-        raise
+        raise ScenarioRunFailure(evidence) from exc
     finally:
         for scenario_label in ("normal", "recovery"):
             service_logs = CACHE / "e2e" / run_id / scenario_label / "runtime" / "logs"
@@ -406,7 +458,7 @@ def run(scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
             write_json(output_dir / "result.json", evidence)
 
 
-def run_batch(repeat: int, scenario: str = "cross_org_analysis", *, browser: bool = False) -> dict:
+def run_batch(repeat: int, scenario: str = "cross_org_analysis", *, browser: bool = False, dynamic_dispatch: bool = False) -> dict:
     if repeat < 1:
         raise ValueError("repeat must be at least 1")
     batch_id = str(uuid.uuid4())
@@ -416,16 +468,16 @@ def run_batch(repeat: int, scenario: str = "cross_org_analysis", *, browser: boo
     batch_started_at = time.time()
     runs = []
     for index in range(1, repeat + 1):
-        before = {path.name for path in OUTPUT.iterdir() if path.is_dir() and not path.name.startswith("batch-")}
         try:
-            evidence = run(scenario, browser=True) if browser and index == 1 else run(scenario)
+            if dynamic_dispatch and index == 1:
+                evidence = run(scenario, browser=browser, dynamic_dispatch=True)
+            else:
+                evidence = run(scenario, browser=True) if browser and index == 1 else run(scenario)
         except Exception as exc:
-            after = [path for path in OUTPUT.iterdir()
-                     if path.is_dir() and not path.name.startswith("batch-") and path.name not in before]
-            failed = next((json.loads((path / "result.json").read_text(encoding="utf-8"))
-                           for path in after if (path / "result.json").is_file()), None)
-            evidence = failed or {"run_id": None, "status": "FAIL",
-                                  "failure": f"{type(exc).__name__}: {exc}", "duration_seconds": None}
+            # A parallel successful run must never mask this invocation's failure.
+            evidence = getattr(exc, "evidence", None) or {"run_id": None, "status": "FAIL",
+                "failure": f"{type(exc).__name__}: {exc}", "duration_seconds": None}
+            evidence["status"] = "FAIL"
         record = {"iteration": index, "run_id": evidence.get("run_id"),
                   "status": evidence.get("status", "FAIL"),
                   "duration_seconds": evidence.get("duration_seconds"),
@@ -456,9 +508,10 @@ if __name__ == "__main__":
                         default="cross_org_analysis", help="application scenario to exercise")
     parser.add_argument("--browser", action="store_true", help="create one job through the real browser UI")
     parser.add_argument("--transport", choices=("a2a-v1", "b-http-v1"), default="a2a-v1")
+    parser.add_argument("--dynamic-dispatch", action="store_true", help="also verify reviewed workspace dispatch and merchant reuse")
     args = parser.parse_args()
     os.environ["AGENTFLOW_E2E_TRANSPORT"] = args.transport
-    result = run_batch(args.repeat, args.scenario, browser=args.browser)
+    result = run_batch(args.repeat, args.scenario, browser=args.browser, dynamic_dispatch=args.dynamic_dispatch)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["status"] != "PASS":
         raise SystemExit(1)

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Background, Controls, ReactFlow } from "@xyflow/react";
+import { useEffect, useRef, useState } from "react";
+import { Background, Controls, MarkerType, ReactFlow } from "@xyflow/react";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -16,7 +16,74 @@ const labels: Record<string, string> = {
   route: "每日行程",
 };
 
-export function PlanningGraph({ tasks }: { tasks: Row[] }) {
+export function PlanningGraph({
+  tasks,
+  onChange,
+  disabled = false,
+}: {
+  tasks: Row[];
+  onChange?: (tasks: Row[]) => void;
+  disabled?: boolean;
+}) {
+  const [source, setSource] = useState("");
+  const [target, setTarget] = useState("");
+  const [selectedEdge, setSelectedEdge] = useState("");
+  const [error, setError] = useState("");
+  const fitGraph = useRef<(() => void) | null>(null);
+  const layout = JSON.stringify(
+    tasks.map((t) => [t.key, t.dependencies, t.title]),
+  );
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => fitGraph.current?.());
+    return () => cancelAnimationFrame(frame);
+  }, [layout]);
+  const editable = !!onChange && !disabled;
+  const title = (key: string) => tasks.find((t) => t.key === key)?.title || key;
+  const connect = (from: string, to: string) => {
+    if (!editable) return;
+    const parent = tasks.find((t) => t.key === from);
+    const child = tasks.find((t) => t.key === to);
+    if (!parent || !child) return;
+    if (from === to) {
+      setError("任务不能等待自己。");
+      return;
+    }
+    const pending = [from],
+      visited = new Set<string>();
+    while (pending.length) {
+      const key = pending.pop()!;
+      if (key === to) {
+        setError("这条连线会让任务互相等待，不能添加。");
+        return;
+      }
+      if (visited.has(key)) continue;
+      visited.add(key);
+      pending.push(...(tasks.find((t) => t.key === key)?.dependencies || []));
+    }
+    if (child.dependencies.includes(from)) {
+      setError("这条前后关系已经存在。");
+      return;
+    }
+    setError("");
+    onChange!(
+      tasks.map((t) =>
+        t.key === to ? { ...t, dependencies: [...t.dependencies, from] } : t,
+      ),
+    );
+  };
+  const remove = (ids: string[]) => {
+    if (!editable) return;
+    setError("");
+    setSelectedEdge("");
+    onChange!(
+      tasks.map((t) => ({
+        ...t,
+        dependencies: t.dependencies.filter(
+          (key: string) => !ids.includes(`${key}-${t.key}`),
+        ),
+      })),
+    );
+  };
   const levels: Record<string, number> = {};
   for (let pass = 0; pass < tasks.length; pass++)
     for (const task of tasks)
@@ -40,7 +107,8 @@ export function PlanningGraph({ tasks }: { tasks: Row[] }) {
           <div>
             <b>{task.title}</b>
             <br />
-            {task.estimatedProvider || "等待前置工作完成后执行"}
+            {task.estimatedProvider ||
+              (task.dependencies.length ? "前置任务完成后执行" : "可直接开始")}
           </div>
         ),
       },
@@ -50,6 +118,7 @@ export function PlanningGraph({ tasks }: { tasks: Row[] }) {
         color: "#eaf3ff",
         border: "1px solid #668ba9",
       },
+      deletable: false,
     };
   });
   const edges = tasks.flatMap((task) =>
@@ -57,24 +126,121 @@ export function PlanningGraph({ tasks }: { tasks: Row[] }) {
       id: `${key}-${task.key}`,
       source: key,
       target: task.key,
-      style: { stroke: "#72b5ef", strokeWidth: 2 },
+      ariaLabel: `${title(key)} → ${task.title}`,
+      selected: selectedEdge === `${key}-${task.key}`,
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#72b5ef" },
+      style: {
+        stroke: selectedEdge === `${key}-${task.key}` ? "#f5c86d" : "#72b5ef",
+        strokeWidth: selectedEdge === `${key}-${task.key}` ? 3 : 2,
+      },
     })),
   );
   return (
-    <div className="planning-graph" aria-label="子任务依赖图">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        fitView
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable={false}
-        minZoom={0.3}
-      >
-        <Background />
-        <Controls showInteractive={false} />
-      </ReactFlow>
-    </div>
+    <>
+      <p className="hint">
+        箭头从前置任务指向后续任务：前面的成果通过验收后，后面的任务才能开始。没有依赖的任务可以并行。
+      </p>
+      <div className="planning-graph" aria-label="子任务依赖图">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          fitView
+          onInit={(instance) => {
+            fitGraph.current = () => {
+              void instance.fitView({ padding: 0.15 });
+            };
+          }}
+          nodesDraggable={false}
+          nodesConnectable={editable}
+          elementsSelectable={editable}
+          onConnect={({ source: from, target: to }) => connect(from, to)}
+          onEdgeClick={(_, edge) => editable && setSelectedEdge(edge.id)}
+          onPaneClick={() => setSelectedEdge("")}
+          onEdgesDelete={(removed) => remove(removed.map((edge) => edge.id))}
+          deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
+          minZoom={0.3}
+        >
+          <Background />
+          <Controls showInteractive={false} />
+        </ReactFlow>
+      </div>
+      {onChange && (
+        <>
+          <p className="hint">
+            可从节点底部的圆点连到另一个节点顶部，调整执行顺序；也可展开下方列表操作。必要输入仍需通过确认时的校验。
+          </p>
+          {edges.some((edge) => edge.id === selectedEdge) && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => remove([selectedEdge])}
+            >
+              删除选中的连线
+            </button>
+          )}
+          {error && <p role="alert">{error}</p>}
+          <details className="dependency-editor">
+            <summary>调整前后关系</summary>
+            <fieldset disabled={disabled}>
+              <legend>图中的连线</legend>
+              {edges.map((edge) => (
+                <div className="dependency-row" key={edge.id}>
+                  <span>
+                    {title(edge.source)} → {title(edge.target)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`删除连线：${title(edge.source)} → ${title(edge.target)}`}
+                    onClick={() => remove([edge.id])}
+                  >
+                    删除连线
+                  </button>
+                </div>
+              ))}
+              {!edges.length && <p>尚无前后关系。</p>}
+              <label>
+                先完成的任务
+                <select
+                  value={tasks.some((t) => t.key === source) ? source : ""}
+                  onChange={(e) => setSource(e.target.value)}
+                >
+                  <option value="">选择前置任务</option>
+                  {tasks.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                随后执行的任务
+                <select
+                  value={tasks.some((t) => t.key === target) ? target : ""}
+                  onChange={(e) => setTarget(e.target.value)}
+                >
+                  <option value="">选择后续任务</option>
+                  {tasks.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={
+                  !tasks.some((t) => t.key === source) ||
+                  !tasks.some((t) => t.key === target)
+                }
+                onClick={() => connect(source, target)}
+              >
+                添加连线
+              </button>
+            </fieldset>
+          </details>
+        </>
+      )}
+    </>
   );
 }
 
@@ -84,12 +250,14 @@ function GraphEditor({
   capabilities,
   onChange,
   disabled = false,
+  readOnly = false,
 }: {
   value: Row;
   scenario: string;
   capabilities: Row[];
   onChange: (value: Row) => void;
   disabled?: boolean;
+  readOnly?: boolean;
 }) {
   const skills = capabilities.filter((c) => c.scenario === scenario);
   const outputs =
@@ -103,14 +271,41 @@ function GraphEditor({
         t.key === key ? { ...t, ...patch } : t,
       ),
     });
+  if (readOnly)
+    return (
+      <div className="template-preview" aria-label="模板内容预览">
+        <p className="workspace-notice">
+          模板预览（只读）。采用后可修改本次任务；模板原版会保留。
+        </p>
+        <p>
+          <strong>最终交付：</strong>
+          {value.outputs.map((key: string) => labels[key] || key).join("、") ||
+            "尚未选择"}
+        </p>
+        {value.outputs.includes("report") && (
+          <p>
+            报告格式：
+            {value.tier === "detailed"
+              ? "文本报告、离线网页与来源对照表"
+              : "文本报告与引用"}
+          </p>
+        )}
+        {!!value.tasks.length && <PlanningGraph tasks={value.tasks} />}
+        {value.tasks.map((task: Row) => (
+          <p key={task.key}>
+            <strong>{task.title}：</strong>
+            {task.reason}
+          </p>
+        ))}
+      </div>
+    );
   return (
     <>
-      {!!value.tasks.length && <PlanningGraph tasks={value.tasks} />}
-      <p className="hint">
-        箭头表示前置依赖，同层任务可并行。可以修改步骤、标题和依赖；缺少必需前置时会提示修正，不会偷偷补收费任务。
-      </p>
       <fieldset disabled={disabled}>
         <legend>最终需要哪些成果</legend>
+        <p className="hint">
+          这里选择最终单独交付的文件。取消交付某份文件，不会跳过其他成果必需的前置工作；执行步骤以任务图为准。
+        </p>
         {outputs.map((key) => (
           <label className="check-row" key={key}>
             <input
@@ -153,6 +348,16 @@ function GraphEditor({
             </select>
           </label>
         )}
+      </fieldset>
+      {!!value.tasks.length && (
+        <PlanningGraph
+          tasks={value.tasks}
+          disabled={disabled}
+          onChange={(tasks) => change({ tasks })}
+        />
+      )}
+      <fieldset disabled={disabled}>
+        <legend>子任务内容</legend>
         {value.tasks.map((task: Row) => (
           <section className="task-editor" key={task.key}>
             <h4>
@@ -178,30 +383,6 @@ function GraphEditor({
                 }
               />
             </label>
-            <fieldset>
-              <legend>这一步要等待哪些任务</legend>
-              {value.tasks
-                .filter((t: Row) => t.key !== task.key)
-                .map((other: Row) => (
-                  <label className="check-row" key={other.key}>
-                    <input
-                      type="checkbox"
-                      checked={task.dependencies.includes(other.key)}
-                      onChange={(e) =>
-                        changeTask(task.key, {
-                          dependencies: e.target.checked
-                            ? [...task.dependencies, other.key]
-                            : task.dependencies.filter(
-                                (x: string) => x !== other.key,
-                              ),
-                        })
-                      }
-                    />
-                    {other.title}
-                  </label>
-                ))}
-              {value.tasks.length === 1 && <p>没有其他子任务。</p>}
-            </fieldset>
             <p className="hint">
               验收：{skills.find((c) => c.skill === task.skill)?.acceptance}
             </p>
@@ -452,6 +633,11 @@ export function TemplateLibrary({
     setDeleting(false);
     setMessage("");
   };
+  const adopt = async (item: Row) => {
+    await onUse(item);
+    setValue(null);
+    setSelected(null);
+  };
   const editable = (item: Row) =>
     Object.fromEntries(
       [
@@ -547,7 +733,7 @@ export function TemplateLibrary({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void run("use-template", () => onUse(item))}
+              onClick={() => void run("use-template", () => adopt(item))}
             >
               采用并核对 / 微调
             </button>
@@ -557,6 +743,26 @@ export function TemplateLibrary({
       {value && (
         <section className="workspace-panel">
           <h3>{editing ? "编辑模板" : value.name}</h3>
+          {!editing && selected && (
+            <div className="workspace-actions">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void run("use-template", () => adopt(selected))}
+              >
+                采用并修改本次任务
+              </button>
+              {!compact && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setEditing(true)}
+                >
+                  {selected.builtin ? "复制后编辑" : "编辑此模板"}
+                </button>
+              )}
+            </div>
+          )}
           {editing && (
             <>
               <label>
@@ -621,17 +827,9 @@ export function TemplateLibrary({
             scenario={value.scenario}
             capabilities={capabilities}
             onChange={setValue}
-            disabled={!editing || busy}
+            readOnly={!editing}
+            disabled={busy}
           />
-          {!compact && !editing && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setEditing(true)}
-            >
-              {selected?.builtin ? "复制后编辑" : "编辑此模板"}
-            </button>
-          )}
           {editing && (
             <>
               {selected && !selected.builtin && (

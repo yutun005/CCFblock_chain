@@ -15,6 +15,21 @@ SPEC.loader.exec_module(SCENARIO)
 
 
 class E2EBatchTests(unittest.TestCase):
+    def test_failed_run_cannot_borrow_a_parallel_success(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            def failing_run(*_args):
+                foreign = output / "unrelated-success"
+                foreign.mkdir()
+                (foreign / "result.json").write_text(json.dumps({"run_id": "foreign", "status": "PASS"}), encoding="utf-8")
+                raise RuntimeError("this run failed")
+            with patch.object(SCENARIO, "OUTPUT", output), patch.object(SCENARIO, "run", side_effect=failing_run):
+                summary = SCENARIO.run_batch(1)
+            self.assertEqual(summary["status"], "FAIL")
+            self.assertEqual(summary["passed_runs"], 0)
+            self.assertIsNone(summary["runs"][0]["run_id"])
+
     def test_source_revision_accepts_container_build_revision(self):
         import manage
 

@@ -721,7 +721,7 @@ class Workspace:
         selected = cache["pareto"]["options"][option_index]
         team, total, seconds = selected["team"], selected["price"], selected["seconds"]
         for index, (row, chosen) in enumerate(zip(work, team)):
-            # Freeze each selected estimate as the spending cap, including during fallback.
+            # Freeze spending limits, not executors. Reference merchants are estimates only.
             tasks[index] = tasks[index].model_copy(update={"budget_cap": display_units(chosen["price"])})
             row.update(
                 estimatedPrice=display_units(chosen["price"]),
@@ -748,8 +748,7 @@ class Workspace:
                 input_hashes=tuple(p["sha256"] for p in inputs),
                 duration_seconds=recipe.reviewSeconds + 600,
                 planning_mode=planning["mode"] if planning else "workspace_v1",
-                execution=ExecutionPolicy(selection=recipe.preference,
-                    preferred_agents={spec.key: offer["wallet"] for spec, offer in zip(tasks, team)}),
+                execution=ExecutionPolicy(selection=recipe.preference, dispatch="on_ready"),
             )
         result = {
             "id": str(uuid.uuid4()),

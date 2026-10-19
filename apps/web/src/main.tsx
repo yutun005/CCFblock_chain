@@ -83,6 +83,8 @@ const states: Record<string, string> = {
   PARTIAL_FAILED: "部分失败",
   INTERRUPTED: "已中断",
   BIDDING: "询价中",
+  WAITING_AGENT: "等待商家空闲",
+  WAITING_DEPENDENCIES: "等待前置成果",
   ASSIGNING: "委派确认中",
   RUNNING: "执行中",
   VERIFYING: "验证中",
