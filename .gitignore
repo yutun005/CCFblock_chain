@@ -46,3 +46,6 @@ __pycache__/
 /forge-results.tmp.json
 .DS_Store
 Thumbs.db
+
+# Office temporary lock files
+~$*

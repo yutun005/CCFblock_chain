@@ -47,22 +47,8 @@ def forge(*args, output=None):
 
 
 def start_anvil(port):
-    DEPLOYMENTS.mkdir(parents=True, exist_ok=True)
-    log = open(DEPLOYMENTS / "anvil.log", "w", encoding="utf-8")
-    command = [tool("anvil"), "--host", "127.0.0.1", "--port", str(port), "--chain-id", "31337", "--silent"]
-    # Suppress default account output; fixtures use independently generated random accounts.
-    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    process = subprocess.Popen(command, stdout=log, stderr=log, creationflags=creationflags)
-    write_json(DEPLOYMENTS / "local-anvil-process.json", {"pid": process.pid, "port": port})
-    web3 = Web3(Web3.HTTPProvider(f"http://127.0.0.1:{port}"))
-    for _ in range(50):
-        if process.poll() is not None:
-            raise RuntimeError("Anvil failed to start; inspect deployments/anvil.log")
-        if web3.is_connected():
-            print(f"Anvil running on 127.0.0.1:{port}, pid={process.pid}")
-            return
-        time.sleep(0.1)
-    raise TimeoutError("Anvil did not become ready")
+    from scripts.anvil_state import AnvilManager
+    return AnvilManager(ROOT, port=port).ensure_running()
 
 
 def deploy(rpc, chain_id):

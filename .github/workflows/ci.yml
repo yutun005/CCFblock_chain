@@ -44,6 +44,8 @@ jobs:
           .cache/venv/bin/python scripts/module_c.py deploy
           .cache/venv/bin/python scripts/module_c.py test-security
           .cache/venv/bin/python tests/e2e/run_platform_acceptance.py
+      - name: Verify persistent Anvil and application restart
+        run: .cache/venv/bin/python tests/e2e/run_anvil_persistence.py
       - name: Run REST, A2A, ABI and recovery scenarios
         run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --repeat 10
       - name: Run travel planning REST, A2A, ABI and recovery scenarios
@@ -68,6 +70,7 @@ jobs:
             experiments/raw/e2e/**
             experiments/raw/forge/**
             experiments/raw/security/**
+            experiments/raw/persistence/**
             experiments/results/**
             .cache/delivery/**
             submission/*.zip

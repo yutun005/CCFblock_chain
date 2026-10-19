@@ -423,14 +423,14 @@ def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
     parser.add_argument("command", choices=["setup", "build", "test-contract", "test-security", "test-e2e", "test-browser-live", "run-data",
                         "run-travel", "collect-results", "reset-demo", "package", "schema", "configure",
-                        "approve", "start", "archive-evidence", "check", "chain-up", "deploy", "dev", "test-integration"], nargs="?", default="start")
+                        "approve", "start", "archive-evidence", "check", "chain-up", "deploy", "dev", "stop-chain", "save-chain", "test-integration"], nargs="?", default="start")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
     parser.add_argument("--amount", help="exact six-decimal token allowance for approve")
     parser.add_argument("--run-commit", help="commit used for raw E2E and Foundry runs when archiving evidence")
     args = parser.parse_args()
-    if args.command in {"chain-up", "deploy", "dev"}:
+    if args.command in {"chain-up", "deploy", "dev", "stop-chain", "save-chain"}:
         run([PYTHON if PYTHON.is_file() else sys.executable, ROOT / "scripts/local_demo.py", args.command])
         return
     if args.command == "test-integration":

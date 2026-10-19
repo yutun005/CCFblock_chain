@@ -14,7 +14,8 @@ sys.path.insert(0, str(ROOT))
 from eth_account import Account
 from web3 import Web3
 from app import Chain, ServiceCluster, configure_deployment, local_web3, settings_file
-from scripts.module_c import deploy as deploy_chain, start_anvil
+from scripts.module_c import deploy as deploy_chain
+from scripts.anvil_state import AnvilManager
 
 CACHE = ROOT / ".cache"
 ENV = CACHE / "local-environment.json"
@@ -22,12 +23,26 @@ CONFIG = CACHE / "local-project.json"
 
 
 def chain_up():
-    chain = local_web3("http://127.0.0.1:8545")
-    if chain.is_connected():
-        if chain.eth.chain_id != 31337:
-            raise RuntimeError("port 8545 belongs to another chain; refusing to alter it")
-    else:
-        start_anvil(8545)
+    return AnvilManager(ROOT).ensure_running()
+
+
+def validate_saved_deployment(settings):
+    path = settings["directory"] / "deployment.json"
+    if not path.exists():
+        raise RuntimeError("Local deployment record is missing. Run python manage.py deploy; old application files are preserved.")
+    deployment = json.loads(path.read_text(encoding="utf-8"))
+    w3 = local_web3(deployment["rpc"])
+    if w3.eth.chain_id != deployment["chainId"]:
+        raise RuntimeError("Saved deployment belongs to a different chain; use the correct runtime configuration.")
+    mismatches = [name for name in ("token", "escrow")
+                  if Web3.keccak(w3.eth.get_code(deployment[name])).to_0x_hex() != deployment[name + "CodeHash"]]
+    if mismatches:
+        raise RuntimeError(
+            "Saved contracts are missing or changed on the current chain. "
+            "Old application data and keys have NOT been overwritten. "
+            "If the earlier memory-only Anvil was lost before persistence was enabled, its state cannot be reconstructed. "
+            "Restore an existing .cache/anvil checkpoint, or run python manage.py deploy to create a new backed-up demo. "
+            "New persistent Anvil runs save and restore their chain automatically.")
 
 
 def load_environment():
@@ -73,39 +88,20 @@ def deploy():
     (CACHE / "local-access.txt").write_text(values[runtime["apiTokenEnv"]]+"\n",encoding="utf-8")
     load_environment()
     configure_deployment(settings_file(CONFIG))
+    AnvilManager(ROOT).checkpoint()
     print("Local contracts deployed. Local access token: .cache/local-access.txt",flush=True)
 
 
 def stop_chain():
-    record=ROOT/"deployments/local-anvil-process.json"
-    if not record.exists():
-        print("No chain owned by this checkout was recorded");return
-    pid=int(json.loads(record.read_text(encoding="utf-8"))["pid"])
-    expected=(CACHE/"tools/foundry"/("anvil.exe" if os.name=="nt" else "anvil")).resolve()
-    if os.name=="nt":
-        import subprocess
-        process=subprocess.run(["powershell","-NoProfile","-Command",
-                                f"(Get-Process -Id {pid} -ErrorAction SilentlyContinue).Path"],
-                               capture_output=True,text=True,check=True)
-        path=process.stdout.strip()
-        if not path:
-            print("Recorded chain has already stopped");return
-        actual=Path(path).resolve()
-    else:
-        executable=Path(f"/proc/{pid}/exe")
-        if not executable.exists():
-            print("Recorded chain has already stopped");return
-        actual=executable.resolve()
-    if actual!=expected:
-        raise RuntimeError("recorded PID is not this checkout's Anvil; refusing to stop it")
-    os.kill(pid,signal.SIGTERM)
-    print("Project Anvil stopped; evidence and keys preserved")
+    AnvilManager(ROOT).stop()
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command",choices=["chain-up","deploy","dev","stop-chain"])
+    parser.add_argument("command",choices=["chain-up","deploy","dev","stop-chain","save-chain"])
     args=parser.parse_args()
+    if args.command=="save-chain":
+        AnvilManager(ROOT).checkpoint();return
     if args.command=="stop-chain":
         stop_chain();return
     if args.command=="chain-up":
@@ -117,6 +113,7 @@ def main():
         deploy()
     load_environment()
     settings=settings_file(CONFIG)
+    validate_saved_deployment(settings)
     try:
         with ServiceCluster(settings) as cluster:
             print("Open "+cluster.config["api"]+" ; token is in .cache/local-access.txt",flush=True)
@@ -127,6 +124,8 @@ def main():
                 time.sleep(.5)
     except KeyboardInterrupt:
         pass
+    finally:
+        AnvilManager(ROOT).checkpoint()
 
 
 if __name__=="__main__":

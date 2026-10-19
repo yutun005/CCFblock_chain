@@ -1754,6 +1754,10 @@ def struct_dict(components: list, values: tuple) -> dict:
             for c, v in zip(components, values, strict=True)}
 
 
+class JobNotFunded(ValueError):
+    """A local creation record exists, but no funded on-chain Job exists yet."""
+
+
 class ChainReverted(RuntimeError):
     def __init__(self, receipt: dict):
         self.receipt = receipt
@@ -1788,6 +1792,15 @@ class Chain:
     @property
     def now(self) -> int:
         return self.w3.eth.get_block("latest")["timestamp"]
+
+    def funding_deadline(self, duration: int) -> int:
+        timestamp = self.now
+        # Anvil mines on demand: after an idle/restored chain its next block may
+        # jump to wall time. Keep deadlines valid for that next block, while
+        # preserving an explicitly advanced test clock and Besu's chain clock.
+        if self.chain_id == 31337 and "anvil" in self.w3.client_version.lower():
+            timestamp = max(timestamp, int(time.time()))
+        return timestamp + duration
 
     @property
     def domain(self) -> dict:
@@ -3216,10 +3229,13 @@ class Engine:
         if existing:
             if existing["plan"] != plan.model_dump(mode="json"):
                 raise ValueError("request id reused with a different plan")
+            fault = existing.get("lastFault") or {}
+            if not existing.get("fundedAt") and fault.get("action") == "cancel":
+                raise JobNotFunded(existing.get("lastError") or "托管失败，请重新创建任务。")
             await self.recover_commands(job_id)
             return job_id
         record = {"jobId": job_id, "plan": plan.model_dump(mode="json"), "inputs": inputs,
-                  "createdAt": time.time(), "status": "FUNDING", "deadline": self.chain.now + plan.duration_seconds}
+                  "createdAt": time.time(), "status": "FUNDING", "deadline": self.chain.funding_deadline(plan.duration_seconds)}
         masks = plan.masks()
         configs = [(plan.requirement_hash(t, policy_id(t.skill)), policy_id(t.skill), units(t.budget_cap),
                     masks[t.key], t.sla_seconds, t.max_attempts) for t in plan.topological()]
@@ -3228,11 +3244,22 @@ class Engine:
         # Persist the exact deadline/config before transmitting; a restart never silently creates new terms.
         record["createArgs"] = args
         self.db.put("jobs", job_id, record)
-        await self.submit(job_id, "createBoundJob", args, owner=True)
+        try:
+            await self.submit(job_id, "createBoundJob", args, owner=True)
+        except ChainReverted as exc:
+            self.record_funding_failure(job_id, exc)
+            raise
         record.update(status="ACTIVE", fundedAt=time.time())
         self.db.put("jobs", job_id, record)
         self.db.event(job_id, "JOB_FUNDED", {"planHash": plan.plan_hash, "deposit": plan.deposit})
         return job_id
+
+    def record_funding_failure(self, job_id: str, exc: ChainReverted):
+        record = self.db.get("jobs", job_id)
+        message = "任务托管交易未成功，预算没有完成托管，请重新创建任务。交易：" + exc.receipt["transactionHash"]
+        record.update(status="INTERRUPTED", lastError=message,
+                      lastFault=classify_fault(exc, "chain", "cancel").model_dump())
+        self.db.put("jobs", job_id, record)
 
     async def recover_commands(self, job_id: str):
         job = self.db.get("jobs", job_id)
@@ -3487,6 +3514,8 @@ class Engine:
         record = self.db.get("jobs", job_id)
         plan = Plan.model_validate(record["plan"])
         chain_job = self.chain.job(job_id)
+        if chain_job["owner"] == "0x" + "00" * 20:
+            raise JobNotFunded(record.get("lastError") or "任务尚未完成链上托管，请稍后刷新；如果创建失败，请重新创建任务。")
         self.chain.check_plan(job_id, plan, chain_job["snapshotBlock"])
         chain_job["planHash"] = plan.plan_hash
         chain_job["stopping"] = chain_job["stopping"] or bool(record.get("stopRequested"))
@@ -3600,6 +3629,9 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
                     await engine.run(job_id)
                     return
                 except Exception as exc:  # noqa: BLE001 - durable supervisor boundary, CancelledError propagates
+                    if isinstance(exc, ChainReverted) and not engine.db.get("jobs", job_id).get("fundedAt"):
+                        engine.record_funding_failure(job_id, exc)
+                        return
                     failures += 1
                     delay = min(2 ** min(failures, 5), 30)
                     fault = classify_fault(exc).model_dump()
@@ -3612,7 +3644,10 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
             active.pop(job_id, None)
 
     def start(job_id):
-        if job_id in active or engine.db.get("jobs", job_id)["status"] in {"SUCCEEDED", "PARTIAL_FAILED"}:
+        record = engine.db.get("jobs", job_id)
+        failed_funding = (not record.get("fundedAt") and record.get("lastFault", {})
+                          and record["lastFault"].get("action") == "cancel")
+        if job_id in active or failed_funding or record["status"] in {"SUCCEEDED", "PARTIAL_FAILED"}:
             return False
         active[job_id] = asyncio.create_task(run_job(job_id))
         return True
@@ -3631,6 +3666,18 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
 
     app = FastAPI(title="AgentFlow Pay API", lifespan=lifespan, default_response_class=ProtocolJSONResponse)
     protect(app, config["token"])
+
+    @app.exception_handler(JobNotFunded)
+    async def unfunded_response(request, exc):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(ChainReverted)
+    async def reverted_response(request, exc):
+        return JSONResponse(status_code=409, content={
+            "detail": ("托管交易被链拒绝，任务未成功创建。请重新创建任务；如仍失败，请检查余额、授权和链状态。"
+                       if request.url.path == "/api/jobs" else "链上交易被拒绝，本次操作未完成，请检查任务状态。"),
+            "transactionHash": exc.receipt["transactionHash"]})
+
 
     @app.get("/health")
     def health():

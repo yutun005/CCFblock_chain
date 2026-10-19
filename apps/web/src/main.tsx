@@ -163,6 +163,7 @@ function App() {
   const [artifacts, setArtifacts] = useState<AnyRecord[]>([]),
     [ledger, setLedger] = useState<AnyRecord[]>([]);
   const [error, setError] = useState("");
+  const [createError, setCreateError] = useState("");
   const [scenario, setScenario] = useState("cross_org_analysis"),
     [preview, setPreview] = useState<AnyRecord | null>(null),
     [previewError, setPreviewError] = useState("");
@@ -312,7 +313,7 @@ function App() {
     return () => controller.abort();
   }, [jobId, token]);
   useEffect(() => {
-    if (createOpen) modalRef.current?.showModal();
+    if (createOpen) { setCreateError(""); modalRef.current?.showModal(); }
     else modalRef.current?.close();
   }, [createOpen]);
   useEffect(() => {
@@ -356,12 +357,12 @@ function App() {
   }, [jobId]);
   async function action(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
-    setError("");
+    if (name === "create") setCreateError(""); else setError("");
     try {
       await fn();
-      await refresh();
+      if (name !== "create") await refresh();
     } catch (e) {
-      setError(String(e));
+      if (name === "create") setCreateError(String(e)); else setError(String(e));
     } finally {
       setBusy("");
     }
@@ -1120,11 +1121,11 @@ function App() {
         </div>
         <label htmlFor="scenario">业务场景</label>
         <select id="scenario" value={scenario} disabled={!!busy}
-          onChange={(e) => { setScenario(e.target.value); setPreview(null); setError(""); }}>
+          onChange={(e) => { setScenario(e.target.value); setPreview(null); setCreateError(""); }}>
           {(config.scenarios || []).map((s: AnyRecord) => <option key={s.id} value={s.id}>{s.title}</option>)}
         </select>
         <p>{config.scenarios?.find((s: AnyRecord) => s.id === scenario)?.description}</p>
-        {(previewError || error) && <p className="error" role="alert">{previewError || error}</p>}
+        {(previewError || createError) && <p className="error" role="alert">{previewError || createError}</p>}
         <div className="input-list">
           <Database size={20} />
           <div>
