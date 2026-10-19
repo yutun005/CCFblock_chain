@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { amount as money, price } from "./amount";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -57,14 +58,6 @@ const initial = {
   requirement: "",
   forceRedo: [] as string[],
   reviewSeconds: 1800,
-};
-const money = (value: unknown) => {
-  const units = BigInt(String(value ?? "0"));
-  const fraction = (units % 1000000n)
-    .toString()
-    .padStart(6, "0")
-    .replace(/0+$/, "");
-  return (units / 1000000n).toString() + (fraction ? "." + fraction : "");
 };
 
 function Report({ text }: { text: string }) {
@@ -821,7 +814,7 @@ export default function Workspace({
                 </p>
                 <>
                   <strong className="price">
-                    {offer.proposal.estimatedPrice} USDC
+                    {price(offer.proposal.estimatedPrice)} USDC
                   </strong>
                   <p>预计服务执行 {offer.proposal.estimatedSeconds} 秒</p>
                   {offer.proposal.work.map((w: Row) => (
@@ -829,7 +822,7 @@ export default function Workspace({
                       <p>
                         {w.title}：{w.estimatedProvider}
                         <br />
-                        {w.estimatedPrice} USDC · {w.estimatedSeconds} 秒
+                        {price(w.estimatedPrice)} USDC · {w.estimatedSeconds} 秒
                       </p>
                       <p className="hint">
                         {w.history.settled + w.history.expired
@@ -871,8 +864,9 @@ export default function Workspace({
               )}
               <p>材料：{chosen.materials.map((m: Row) => m.name).join("、")}</p>
               <p>
-                预计新增费用：<b>{chosen.estimatedPrice} USDC</b>；预算上限：
-                {chosen.budget} USDC。
+                预计新增费用：<b>{price(chosen.estimatedPrice)} USDC</b>
+                ；预算上限：
+                {price(chosen.budget)} USDC。
               </p>
               <p>报告需人工接受才付款；最多免费返工两次，到期不自动接受。</p>
               <div className="workspace-columns">
@@ -880,7 +874,7 @@ export default function Workspace({
                   <h4>本次执行</h4>
                   {chosen.work.map((w: Row) => (
                     <p key={w.key}>
-                      {w.title} · {w.estimatedPrice} USDC
+                      {w.title} · {price(w.estimatedPrice)} USDC
                       <br />
                       <small>
                         {w.reason}
@@ -940,7 +934,7 @@ export default function Workspace({
                       .join("、")}
                     <small>
                       {new Date(v.createdAt * 1000).toLocaleString()} · 估价{" "}
-                      {v.estimatedPrice} USDC
+                      {price(v.estimatedPrice)} USDC
                     </small>
                   </span>
                   <button
@@ -975,7 +969,7 @@ export default function Workspace({
               <div className="workspace-panel">
                 <p>
                   状态：{statuses[version.status] || version.status}
-                  ；预计新增服务费：{version.estimatedPrice} USDC。
+                  ；预计新增服务费：{price(version.estimatedPrice)} USDC。
                 </p>
                 <p>
                   材料：{version.materials.map((m: Row) => m.name).join("、")}

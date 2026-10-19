@@ -52,6 +52,11 @@ TRAVEL_OUTPUTS = {
 }
 
 
+def display_money(value):
+    cents = (value + 5_000) // 10_000
+    return f"{cents // 100}.{cents % 100:02d}"
+
+
 def output_files(recipe):
     mapping = TRAVEL_OUTPUTS if recipe.scenario == "travel_planning" else SALES_OUTPUTS
     if set(recipe.outputs) - set(mapping) or len(set(recipe.outputs)) != len(recipe.outputs):
@@ -699,7 +704,7 @@ class Workspace:
         budget = units(recipe.budget)
         if total > budget:
             raise ValueError(
-                f"预计新增费用 {display_units(total)} 超过预算 {recipe.budget}，请提高预算或减少交付内容"
+                f"预计新增费用 {display_money(total)} 超过预算 {display_money(budget)}，请提高预算或减少交付内容"
             )
         plan = None
         if tasks:
