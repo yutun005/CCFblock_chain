@@ -14,6 +14,32 @@ def team_key(option):
     return tuple(offer["agentId"] for offer in option["team"])
 
 
+def elapsed_seconds(tasks, team):
+    """Reference schedule: dependencies plus one active task per merchant wallet.
+
+    Ready nodes may start without waiting for an unrelated slow branch. This is
+    a deterministic estimate, not a promise about the live dispatcher's choices.
+    """
+    pending = list(zip(tasks, team, strict=True))
+    running, done, now = {}, set(), 0
+    while pending or running:
+        occupied = {wallet for _, wallet in running.values()}
+        for spec, offer in list(pending):
+            wallet = offer.get("wallet", offer["agentId"])
+            if set(spec.dependencies) <= done and wallet not in occupied:
+                running[spec.key] = (now + offer["seconds"], wallet)
+                occupied.add(wallet)
+                pending.remove((spec, offer))
+        if not running:
+            raise ValueError("任务依赖无法执行")
+        now = min(end for end, _ in running.values())
+        for key, (end, _) in list(running.items()):
+            if end == now:
+                done.add(key)
+                del running[key]
+    return now
+
+
 def frontier(tasks, pools, budget, preference="lowest_price", limit=10):
     if any(not pool for pool in pools):
         raise ValueError("有子任务没有可用且具备近期履约记录的商家，无法比较三个指标")
@@ -25,15 +51,14 @@ def frontier(tasks, pools, budget, preference="lowest_price", limit=10):
         total = sum(offer["price"] for offer in team)
         if total > budget:
             continue
-        finishes, success = {}, Fraction(1)
+        success = Fraction(1)
         for spec, offer in zip(tasks, team, strict=True):
-            finishes[spec.key] = offer["seconds"] + max((finishes[key] for key in spec.dependencies), default=0)
             history = offer["history"]
             count = history["settled"] + history["expired"]
             if count <= 0:
                 raise ValueError("缺少近期履约记录，不能虚构任务成功率")
             success *= Fraction(history["settled"], count)
-        feasible.append({"team": team, "price": total, "seconds": max(finishes.values(), default=0), "success": success})
+        feasible.append({"team": team, "price": total, "seconds": elapsed_seconds(tasks, team), "success": success})
     if not feasible:
         minimum = sum(min(o["price"] for o in pool) for pool in pools)
         raise ValueError(f"全部组合均超过预算；最低服务费为 {minimum / 1_000_000:.2f} USDC")

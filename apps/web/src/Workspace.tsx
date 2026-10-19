@@ -41,6 +41,8 @@ const statuses: Record<string, string> = {
   TIMED_OUT: "确认超时",
   CANCELED: "已取消",
   BIDDING: "询价中",
+  WAITING_AGENT: "等待商家空闲",
+  WAITING_DEPENDENCIES: "等待前置成果",
   ASSIGNING: "正在委派",
   RUNNING: "执行中",
   VERIFYING: "校验中",
@@ -793,47 +795,69 @@ export default function Workspace({
             </section>
             <section className="workspace-panel">
               <h2>2. 交付与预算</h2>
-              <fieldset disabled={recipe.planningMode !== "manual"}>
-                <legend>本次希望拿到的成果</legend>
-                {availableOutputs.map((key) => (
-                  <label className="check-row" key={key}>
-                    <input
-                      type="checkbox"
-                      checked={recipe.outputs.includes(key)}
-                      onChange={(e) =>
-                        update({
-                          outputs: e.target.checked
-                            ? [...recipe.outputs, key]
-                            : recipe.outputs.filter(
-                                (item: string) => item !== key,
-                              ),
-                        })
-                      }
-                    />
-                    {travel && key === "report" ? "完整行程报告" : labels[key]}
-                  </label>
-                ))}
-              </fieldset>
+              {recipe.planningMode === "manual" ? (
+                <fieldset>
+                  <legend>本次希望拿到的成果</legend>
+                  {availableOutputs.map((key) => (
+                    <label className="check-row" key={key}>
+                      <input
+                        type="checkbox"
+                        checked={recipe.outputs.includes(key)}
+                        onChange={(e) =>
+                          update({
+                            outputs: e.target.checked
+                              ? [...recipe.outputs, key]
+                              : recipe.outputs.filter(
+                                  (item: string) => item !== key,
+                                ),
+                          })
+                        }
+                      />
+                      {travel && key === "report"
+                        ? "完整行程报告"
+                        : labels[key]}
+                    </label>
+                  ))}
+                </fieldset>
+              ) : (
+                <section aria-label="交付确认摘要">
+                  <h3>
+                    {goalPlan?.reviewedAt && !planDirty
+                      ? "已确认的交付成果"
+                      : "交付成果待确认"}
+                  </h3>
+                  <p>
+                    {goalPlan?.reviewedAt && !planDirty
+                      ? recipe.outputs
+                          .map((key: string) => labels[key] || key)
+                          .join("、")
+                      : "请在任务规划中勾选最终成果，再确认子任务。"}
+                  </p>
+                </section>
+              )}
               <p className="hint">
                 {recipe.planningMode !== "manual"
                   ? "在左侧任务图中核对和修改交付，再点击确认子任务。修改这里的材料或参数后，需要重新载入模板或规划并确认。"
                   : "勾选要交付的成果，必要前置工作按业务规则补齐。此模式使用预设规则，不调用规划模型。"}
               </p>
-              {recipe.outputs.includes("report") && (
-                <label>
-                  报告文件形式
-                  <select
-                    value={recipe.tier === "detailed" ? "detailed" : "standard"}
-                    onChange={(e) => update({ tier: e.target.value })}
-                  >
-                    <option value="standard">文本报告与引用资料</option>
-                    <option value="detailed">
-                      文本报告、离线网页与来源对照表（增加报告费用）
-                    </option>
-                  </select>
-                </label>
-              )}
-              {!travel && (
+              {recipe.planningMode === "manual" &&
+                recipe.outputs.includes("report") && (
+                  <label>
+                    报告文件形式
+                    <select
+                      value={
+                        recipe.tier === "detailed" ? "detailed" : "standard"
+                      }
+                      onChange={(e) => update({ tier: e.target.value })}
+                    >
+                      <option value="standard">文本报告与引用资料</option>
+                      <option value="detailed">
+                        文本报告、离线网页与来源对照表（增加报告费用）
+                      </option>
+                    </select>
+                  </label>
+                )}
+              {recipe.planningMode === "manual" && !travel && (
                 <label>
                   统计分组
                   <select
@@ -899,7 +923,7 @@ export default function Workspace({
                 </fieldset>
               )}
               <label>
-                方案展示顺序（均从帕累托前沿选取）
+                任务就绪时的选人偏好（也用于方案排序）
                 <select
                   value={
                     recipe.preference === "balanced"
@@ -908,9 +932,9 @@ export default function Workspace({
                   }
                   onChange={(e) => update({ preference: e.target.value })}
                 >
-                  <option value="lowest_price">费用从低到高</option>
-                  <option value="fastest">预计耗时从短到长</option>
-                  <option value="reliability">估算成功率从高到低</option>
+                  <option value="lowest_price">费用优先</option>
+                  <option value="fastest">速度优先</option>
+                  <option value="reliability">履约优先</option>
                 </select>
               </label>
               <label>
@@ -981,10 +1005,11 @@ export default function Workspace({
       )}
       {page === "compare" && (
         <section>
-          <h2>同一任务的帕累托方案：费用、耗时、成功率</h2>
+          <h2>同一任务的执行预估：费用、耗时、成功率</h2>
           <p>
-            所有方案完成同一份已确认的任务。只保留没有被其他组合全面超过的方案：没有别的组合能更便宜、更快、成功率更高，同时不牺牲其他指标。最多展示
-            10 种。
+            所有方案完成同一份已确认的任务。这里的商家用于估价，不提前锁定执行者。
+            每一步满足前置条件后，才按您的偏好从当时空闲、报价有效且未超出该步预算的商家中选人。
+            只展示费用、耗时、成功率上不被其他组合全面超过的参考方案，最多 10 种。
           </p>
           {frontier && (
             <p>
@@ -1050,7 +1075,7 @@ export default function Workspace({
           )}
           {!!offers.length && (
             <p className="hint">
-              费用和耗时来自在线商家的签名估价；总耗时按任务依赖计算，不含排队、重试和人工确认。每项成功率取最近最多
+              费用和耗时来自在线商家的签名估价；总耗时考虑任务依赖以及同一商家串行执行，不含其他项目占用、重试和人工确认。实际商家在任务就绪时确定，预估可能变化。每项成功率取最近最多
               50
               次履约的成功比例，优先使用链上记录，否则采用明确标注的语料数据。整单成功率是各步骤成功率的乘积，依赖独立性假设，不是履约保证。
             </p>
@@ -1079,7 +1104,7 @@ export default function Workspace({
                   </p>
                   {offer.proposal.historySummary?.totalTasks > 0 && (
                     <p>
-                      所选服务近期记录合计：成功{" "}
+                      参考商家近期记录合计：成功{" "}
                       {offer.proposal.historySummary.settled} 次，失败或失效{" "}
                       {offer.proposal.historySummary.expired} 次。
                       {offer.proposal.historySummary.coveredTasks}/
@@ -1090,7 +1115,7 @@ export default function Workspace({
                   {offer.proposal.work.map((w: Row) => (
                     <div key={w.key}>
                       <p>
-                        {w.title}：{w.estimatedProvider}
+                        {w.title} · 参考商家：{w.estimatedProvider}
                         <br />
                         {price(w.estimatedPrice)} USDC · {w.estimatedSeconds} 秒
                       </p>
@@ -1169,8 +1194,10 @@ export default function Workspace({
                 </div>
               </div>
               <p>
-                优先委派给所选
-                Agent；不可用或失败时按本方案的偏好重新选人，且不超过各项展示费用。实际执行者和成交费用可在任务中查看，剩余资金在结束后退款。
+                确认任务、选人偏好和各步费用上限，不锁定上面的参考商家。
+                前置完成后才询价并委派；商家空闲后可继续承接后续步骤。
+                本工作区同一商家同时只承接一个未完成委托；暂时没有空闲商家时等待，不计为执行失败。
+                实际执行者和成交费用可在任务中查看，不超过各项展示费用，剩余资金在结束后退款。
               </p>
               <button
                 className="primary"

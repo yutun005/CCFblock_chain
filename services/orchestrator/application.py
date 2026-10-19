@@ -231,8 +231,17 @@ class ExecutionPolicy(StrictModel):
     recovery: Literal["reassign", "abort"] = "reassign"
     selection: Literal["lowest_price", "risk_aware", "fastest", "balanced", "reliability"] = "lowest_price"
     risk_penalty: str = "30.000000"
+    # Old funded plans keep their hashes and confirmed-team behavior. New workspace
+    # plans explicitly authorize choosing an executor only when the node is ready.
+    dispatch: Literal["preferred", "on_ready"] = Field(default="preferred", exclude_if=lambda value: value == "preferred")
     # Omit an empty mapping so existing signed plans retain their original hashes.
     preferred_agents: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+
+    @model_validator(mode="after")
+    def no_preassignment(self) -> Self:
+        if self.dispatch == "on_ready" and self.preferred_agents:
+            raise ValueError("on_ready dispatch cannot pin task executors")
+        return self
 
     @field_validator("preferred_agents")
     @classmethod
@@ -348,7 +357,8 @@ WireUint = Annotated[int, BeforeValidator(runtime_uint), Field(ge=0, le=MAX_UINT
                                     mode="serialization")]
 JobPhase = Literal["FUNDING", "ACTIVE", "INTERRUPTED", "SUCCEEDED", "PARTIAL_FAILED"]
 TaskPhase = Literal["BIDDING", "ASSIGNING", "RUNNING", "VERIFYING", "SETTLING", "SETTLED",
-                    "RECOVERING", "REASSIGNING", "CANCELED", "AWAITING_REVIEW", "REWORKING", "ACCEPTED"]
+                    "RECOVERING", "REASSIGNING", "CANCELED", "AWAITING_REVIEW", "REWORKING", "ACCEPTED",
+                    "WAITING_AGENT", "WAITING_DEPENDENCIES"]
 FaultCode = Literal["NO_VALID_QUOTE", "DEADLINE_EXCEEDED", "VALIDATION_REJECTED", "INVALID_DELIVERY",
                     "AGENT_REQUEST_FAILED", "VALIDATOR_REQUEST_FAILED", "MARKET_REQUEST_FAILED",
                     "CHAIN_REVERTED", "CHAIN_UNAVAILABLE", "UPSTREAM_UNAVAILABLE", "STOP_REQUESTED",
@@ -1708,7 +1718,12 @@ def validate_skills(plan: Plan) -> None:
                     "statistics": ["statistics"], "travel_request": [],
                     "travel_candidates": ["attractions", "hotels"], "itinerary": ["itinerary"]}[task.input_type]
         if actual != required:
-            raise ValueError("dependency output types do not match task inputs")
+            names = {"cleaned_dataset": "清洗后的数据", "quality_report": "质量检查结果", "statistics": "统计结果",
+                     "attractions": "景点推荐", "hotels": "酒店推荐", "itinerary": "每日行程"}
+            if not required:
+                raise ValueError(f"“{task.title}”直接使用原始材料，请移除指向它的多余连线。")
+            needed = "、".join(names.get(kind, kind) for kind in required)
+            raise ValueError(f"“{task.title}”需要前置成果：{needed}。请补齐必要连线并移除不匹配的连线，再确认任务图。")
         if task.policy != SKILL_POLICIES[task.skill] or task.policy != SCENARIOS[plan.scenario]["policy"]:
             raise ValueError("unknown frozen policy")
 
@@ -2951,9 +2966,9 @@ class Market:
 
     @staticmethod
     def candidate_order(candidate: dict, policy: ExecutionPolicy, task_key: str):
-        """Honor the confirmed team when its quote is valid; otherwise use the frozen fallback policy."""
+        """Legacy plans keep their preference; ready-time dispatch ranks fresh offers."""
         return (
-            candidate["wallet"] != policy.preferred_agents.get(task_key),
+            policy.dispatch != "on_ready" and candidate["wallet"] != policy.preferred_agents.get(task_key),
             Fraction(int(candidate["scoreNumerator"]), int(candidate["scoreDenominator"])),
             candidate["quote"]["price"], candidate.get("estimatedSeconds", 3600), candidate["agentId"],
         )
@@ -3096,6 +3111,8 @@ class Engine:
         self.allowed_origins = {service_endpoint(url) for url in (allowed_origins or [])}
         self.delegation_locks: dict[str, asyncio.Lock] = {}
         self.locks: dict[str, asyncio.Lock] = {}
+        # Shared across jobs and skills: selection + persisted assignment is atomic.
+        self.dispatch_lock = asyncio.Lock()
 
     def agent_origin(self, endpoint: str) -> str:
         origin = service_endpoint(endpoint)
@@ -3110,7 +3127,9 @@ class Engine:
         q = selected["quote"]
         signer = recover("Quote", q, selected["signature"], self.chain.chain_id, self.chain.escrow.address)
         frozen_graph = self.db.get("job_service_graph", job_id)
-        if frozen_graph and signer not in frozen_graph["providers"].get(spec.skill, []):
+        record = self.db.get("jobs", job_id)
+        dynamic = record and Plan.model_validate(record["plan"]).execution_policy.dispatch == "on_ready"
+        if frozen_graph and not dynamic and signer not in frozen_graph["providers"].get(spec.skill, []):
             raise ValueError("selected merchant is outside the job's confirmed service graph")
         if (signer != selected["wallet"] or signer != q["agentWallet"] or signer in excluded
                 or (q["jobId"], q["taskId"], q["attempt"]) != (job_id, task_id, state["attempt"])
@@ -3127,11 +3146,18 @@ class Engine:
         if not isinstance(challenge, dict) or not binding.get("signature"):
             raise ValueError("B must supply metadata.binding wallet proof before delegation")
         if (binding["wallet"] != signer or binding["endpoint"] != origin
+                or binding["status"] != "ONLINE"
                 or binding["bindingVersion"] != selected["bindingVersion"] or spec.skill not in binding["skills"]
                 or Web3.to_checksum_address(challenge["wallet"]) != signer or challenge["endpoint"] != origin
                 or challenge["cardHash"] != object_hash(binding["card"])
                 or recover_challenge(challenge, binding["signature"]) != signer):
             raise ValueError("selected endpoint/wallet binding proof mismatch")
+        from types import SimpleNamespace
+        from .catalog import corpus
+        current = corpus(SimpleNamespace(engine=self))
+        if (spec.skill in current["removedServices"] or selected["agentId"] in current["removedMerchants"]
+                or selected["agentId"] + ":" + spec.skill in current.get("removedOffers", [])):
+            raise ValueError("selected merchant or service was removed before dispatch")
         self.db.put("selected_bindings", selected["quoteHash"], binding)
 
     async def agents(self) -> list[dict]:
@@ -3143,16 +3169,16 @@ class Engine:
 
     async def request_quotes(self, request: dict, state: dict) -> dict:
         frozen_graph = self.db.get("job_service_graph", request["jobId"])
+        plan = Plan.model_validate(request["plan"])
         allowed = None
-        if frozen_graph:
-            spec = Plan.model_validate(request["plan"]).topological()[request["taskId"]]
+        if frozen_graph and plan.execution_policy.dispatch != "on_ready":
+            spec = plan.topological()[request["taskId"]]
             allowed = set(frozen_graph["providers"].get(spec.skill, []))
             excluded = set(request.get("excludeWallets", []))
             excluded.update(a["wallet"] for a in await self.agents() if a["wallet"] not in allowed)
             request = {**request, "excludeWallets": sorted(excluded)}
         if self.service_transport == "a2a-v1":
             return await self.post(self.market_url + "/api/rfq", request)
-        plan = Plan.model_validate(request["plan"])
         await asyncio.to_thread(self.chain.check_plan, request["jobId"], plan)
         spec = plan.topological()[request["taskId"]]
         body = b_task_request(request, state)
@@ -3441,6 +3467,115 @@ class Engine:
                     worker.cancel()
                 await asyncio.gather(*workers.values(), return_exceptions=True)
 
+    async def busy_wallets(self, job_id: str, task_id: int) -> set[str]:
+        """One live delegation per wallet in this workspace, including after restart.
+
+        Use chain state rather than stale UI status. A pending assignment is also
+        reserved until its transaction is reconciled, even if RPC failed mid-send.
+        """
+        occupied = set()
+        for intent in self.db.values("outbox"):
+            payload = intent["payload"]
+            if intent["state"] == "PENDING" and payload["operation"] == "assignTask":
+                quote = dict(zip((field for field, _ in FIELDS["Quote"]), payload["args"][0], strict=True))
+                if (payload["jobId"], int(quote["taskId"])) != (job_id, task_id):
+                    occupied.add(Web3.to_checksum_address(quote["agentWallet"]))
+        now = self.chain.now
+        for checkpoint in self.db.values("tasks"):
+            if ((checkpoint["jobId"], checkpoint["taskId"]) == (job_id, task_id)
+                    or not checkpoint.get("selected")
+                    or checkpoint["status"] in {"SETTLED", "CANCELED"}):
+                continue
+            state = await asyncio.to_thread(self.chain.task, checkpoint["jobId"], checkpoint["taskId"])
+            if state["state"] == 1 and state["deadline"] >= now:
+                occupied.add(state["payee"])
+        return occupied
+
+    async def wait_for_agent(self, job_id, task_id, attempt):
+        old = self.db.get("tasks", f"{job_id}:{task_id}", {})
+        if old.get("status") != "WAITING_AGENT":
+            self.checkpoint(job_id, task_id, "WAITING_AGENT", attempt=attempt, selected=None,
+                            reason="符合预算的商家正在执行其他委托，空闲后重新询价；等待不计为执行失败")
+        await asyncio.sleep(0.5)
+
+    async def assign_ready_node(self, job_id, task_id, spec, state, history):
+        job = self.db.get("jobs", job_id)
+        plan = Plan.model_validate(job["plan"])
+        chain_job = await asyncio.to_thread(self.chain.job, job_id)
+        deps = state["config"]["depsMask"]
+        if job.get("stopRequested") or chain_job["stopping"]:
+            return None
+        # Readiness is checked here as well as in the DAG loop, before any RFQ or payment.
+        if chain_job["settledMask"] & deps != deps:
+            self.checkpoint(job_id, task_id, "WAITING_DEPENDENCIES", attempt=state["attempt"], selected=None,
+                            reason="前置任务尚未结算，不询价、不委派")
+            return None
+        for index in range(len(plan.tasks)):
+            if deps & (1 << index):
+                predecessor = await asyncio.to_thread(self.chain.task, job_id, index)
+                if not self.db.get("results", predecessor["resultHash"]):
+                    raise WorkflowFault(RuntimeFault(code="UPSTREAM_UNAVAILABLE", phase="scheduler", action="retry",
+                                                     message="前置结果尚不可读取，暂不委派后续任务"))
+        attempt = state["attempt"]
+        key = f"{job_id}:{task_id}"
+        rfq_id = f"rfq:{job_id}:{task_id}:{attempt}:{uuid.uuid4()}"
+        self.checkpoint(job_id, task_id, "BIDDING", attempt=attempt, selected=None)
+        try:
+            quotes = await self.request_quotes({"jobId": job_id, "taskId": task_id,
+                "attempt": attempt, "plan": job["plan"], "idempotencyKey": rfq_id, "excludeWallets": history}, state)
+            validate_protocol("RFQReply", quotes)
+            if (quotes["jobId"], quotes["taskId"], quotes["attempt"]) != (job_id, task_id, attempt):
+                raise ValueError("RFQ response context mismatch")
+        except (httpx.HTTPError, ValueError) as exc:
+            raise WorkflowFault(classify_fault(exc, "market")) from exc
+        waiting = False
+        async with self.dispatch_lock:
+            async with self.delegation_locks.setdefault(job_id, asyncio.Lock()):
+                if self.db.get("jobs", job_id).get("stopRequested"):
+                    return None
+                latest = await asyncio.to_thread(self.chain.job, job_id)
+                if latest["stopping"] or self.chain.now + spec.sla_seconds > latest["deadline"]:
+                    return None  # The DAG loop handles stop/deadline cancellation without a new assignment.
+                occupied = await self.busy_wallets(job_id, task_id)
+                valid = sorted((q for q in quotes["candidates"] if q["valid"]),
+                               key=lambda q: Market.candidate_order(q, plan.execution_policy, spec.key))
+                selected = None
+                for candidate in valid:
+                    if candidate["wallet"] in occupied:
+                        waiting = True
+                        continue
+                    try:
+                        await self.validate_selection(candidate, job_id, task_id, state, spec, history)
+                    except ValueError as exc:
+                        candidate.update(valid=False, reason=str(exc))
+                        continue
+                    selected = candidate
+                    break
+                # Record the executor actually chosen under the capacity lock, not the RFQ's preview winner.
+                quotes["selected"] = selected
+                self.db.put("quotes", rfq_id, quotes)
+                self.db.event(job_id, "QUOTES_RECEIVED", {"taskId": task_id, "attempt": attempt,
+                    "candidates": [{k: v for k, v in q.items() if k != "signature"} for q in quotes["candidates"]]})
+                if selected:
+                    self.db.put("rfq_failures", key, 0)
+                    checkpoint = self.checkpoint(job_id, task_id, "ASSIGNING", attempt=attempt, selected=selected)
+                    await self.submit(job_id, "assignTask", [self.chain.wire("Quote", selected["quote"]), selected["signature"]],
+                                      checkpoint=checkpoint)
+                    return selected
+        if waiting:
+            await self.wait_for_agent(job_id, task_id, attempt)
+            return None
+        count = self.db.get("rfq_failures", key, 0) + 1
+        self.db.put("rfq_failures", key, count)
+        if count >= 3:
+            await self.submit(job_id, "cancelTask", [job_id, task_id])
+            self.checkpoint(job_id, task_id, "CANCELED", reason="NO_VALID_QUOTE",
+                            fault=RuntimeFault(code="NO_VALID_QUOTE", phase="market", action="cancel",
+                                               message="No valid quote after three requests").model_dump())
+        else:
+            await asyncio.sleep(1)
+        return None
+
     async def execute_node(self, job_id: str, task_id: int, spec):
         job = self.db.get("jobs", job_id)
         state = await asyncio.to_thread(self.chain.task, job_id, task_id)
@@ -3449,40 +3584,9 @@ class Engine:
         checkpoint = self.db.get("tasks", key, {})
         history = self.db.get("failed_wallets", key, [])
         if state["state"] == 0:
-            selected = checkpoint.get("selected") if checkpoint.get("attempt") == attempt else None
-            if selected is None or selected["quote"]["validUntil"] < self.chain.now:
-                rfq_id = f"rfq:{job_id}:{task_id}:{attempt}:{uuid.uuid4()}"
-                self.checkpoint(job_id, task_id, "BIDDING", attempt=attempt)
-                try:
-                    quotes = await self.request_quotes({"jobId": job_id, "taskId": task_id,
-                        "attempt": attempt, "plan": job["plan"], "idempotencyKey": rfq_id, "excludeWallets": history}, state)
-                    validate_protocol("RFQReply", quotes)
-                    if (quotes["jobId"], quotes["taskId"], quotes["attempt"]) != (job_id, task_id, attempt):
-                        raise ValueError("RFQ response context mismatch")
-                except (httpx.HTTPError, ValueError) as exc:
-                    raise WorkflowFault(classify_fault(exc, "market")) from exc
-                self.db.put("quotes", rfq_id, quotes)
-                self.db.event(job_id, "QUOTES_RECEIVED", {"taskId": task_id, "attempt": attempt,
-                    "candidates": [{k: v for k, v in q.items() if k != "signature"} for q in quotes["candidates"]]})
-                selected = quotes["selected"]
-                if not selected:
-                    count = self.db.get("rfq_failures", key, 0) + 1
-                    self.db.put("rfq_failures", key, count)
-                    if count >= 3:
-                        await self.submit(job_id, "cancelTask", [job_id, task_id])
-                        self.checkpoint(job_id, task_id, "CANCELED", reason="NO_VALID_QUOTE",
-                                        fault=RuntimeFault(code="NO_VALID_QUOTE", phase="market", action="cancel",
-                                                           message="No valid quote after three requests").model_dump())
-                    else:
-                        await asyncio.sleep(1)
-                    return
-            await self.validate_selection(selected, job_id, task_id, state, spec, history)
-            async with self.delegation_locks.setdefault(job_id, asyncio.Lock()):
-                if self.db.get("jobs", job_id).get("stopRequested"):
-                    return
-                checkpoint = self.checkpoint(job_id, task_id, "ASSIGNING", attempt=attempt, selected=selected)
-                await self.submit(job_id, "assignTask", [self.chain.wire("Quote", selected["quote"]), selected["signature"]],
-                                  checkpoint=checkpoint)
+            selected = await self.assign_ready_node(job_id, task_id, spec, state, history)
+            if selected is None:
+                return
             state = await asyncio.to_thread(self.chain.task, job_id, task_id)
         else:
             selected = checkpoint.get("selected")

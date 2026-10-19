@@ -1560,6 +1560,10 @@ dialog > p {
 
 .planning-graph { height: 420px; width: 100%; border: 1px solid #42586b; border-radius: 12px; margin: 16px 0; }
 .planning-result { margin-top: 20px; }
+.dependency-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.dependency-row span { overflow-wrap: anywhere; }
+.planning-graph .react-flow__handle { width: 14px; height: 14px; background: #72b5ef; border: 2px solid #152638; }
+.project-workspace fieldset:disabled .check-row { cursor: wait; opacity: .65; }
 .task-editor { margin: 12px 0; padding: 16px; border: 1px solid #3d5368; border-radius: 10px; }
 .template-library { margin: 20px 0; }
 .template-library button { margin: 4px 8px 4px 0; }
