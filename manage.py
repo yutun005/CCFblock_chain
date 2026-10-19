@@ -10,9 +10,11 @@ import shutil
 import signal
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import time
 import urllib.request
+import uuid
 import venv
 import zipfile
 from pathlib import Path
@@ -21,9 +23,9 @@ ROOT = Path(__file__).resolve().parent
 CACHE = (ROOT / os.environ.get("AGENTFLOW_BUILD_DIR", ".cache")).resolve()
 PYTHON = CACHE / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 TOOLS = CACHE / "tools" / "foundry"
-FOUNDRY_VERSION = "1.8.5"
-WINDOWS_ARCHIVE_SHA256 = "21f86b563d87404a68481f513bf3e419780ee536307b89c658215ae6f8f5aa45"
-LINUX_ARCHIVE_SHA256 = "6c66ffcc55fa4249197721baa3098bc208014ea1d8aa04b2ed50ac6bccffb226"
+FOUNDRY_VERSION = "1.5.1"
+WINDOWS_ARCHIVE_SHA256 = "293fedd9ad45eb9d774008815dbda820bddd3c85cab3baf55a0be3775e86d5ae"
+LINUX_ARCHIVE_SHA256 = "73640b01bd9ed29fdb4965085099371f8cf0dbbec3e2086cf54564efc4dcfe88"
 
 
 def run(command, cwd=ROOT, **kwargs):
@@ -35,42 +37,65 @@ def pnpm():
         raise RuntimeError("pnpm 11.25.0 is required on PATH (npm install -g pnpm@11.25.0)")
     return executable
 
+def source_revision() -> str:
+    configured = os.environ.get("AGENTFLOW_SOURCE_COMMIT_SHA")
+    if configured:
+        return configured
+    if (ROOT / ".git").exists() and shutil.which("git"):
+        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                                capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    return "unversioned"
+
+
 def foundry(name):
     local = TOOLS / (name + (".exe" if os.name == "nt" else ""))
     executable = str(local) if local.exists() else shutil.which(name)
     if not executable:
-        raise RuntimeError("Foundry missing. Run setup or install Foundry v1.8.5.")
+        raise RuntimeError("Foundry missing. Run setup or install Foundry v1.5.1.")
     return executable
 
+def foundry_archive_spec(system=None, machine=None, platform_id=None):
+    system = system or platform.system()
+    machine = (machine or platform.machine() or "").strip().lower()
+    if not machine:
+        platform_id = platform_id or sysconfig.get_platform()
+        machine = platform_id.strip().lower().rsplit("-", 1)[-1]
+    if system not in {"Windows", "Linux"} or machine not in {"amd64", "x86_64"}:
+        raise RuntimeError("Install Foundry v1.5.1 for this platform, then rerun setup; see README.md")
+    if system == "Windows":
+        return "win32_amd64.zip", WINDOWS_ARCHIVE_SHA256
+    return "linux_amd64.tar.gz", LINUX_ARCHIVE_SHA256
+
 def install_foundry():
-    if (TOOLS / ("forge.exe" if os.name == "nt" else "forge")).exists() or shutil.which("forge"):
+    forge_available = (TOOLS / ("forge.exe" if os.name == "nt" else "forge")).exists() or shutil.which("forge")
+    anvil_available = (TOOLS / ("anvil.exe" if os.name == "nt" else "anvil")).exists() or shutil.which("anvil")
+    if forge_available and anvil_available:
         version = run([foundry("forge"), "--version"], capture_output=True, text=True).stdout
-        if "Version: 1.8.5" not in version:
-            raise RuntimeError("Expected Foundry 1.8.5, found: " + version.splitlines()[0])
+        if "Version: 1.5.1" not in version:
+            raise RuntimeError("Expected Foundry 1.5.1, found: " + version.splitlines()[0])
         return
-    if platform.system() not in {"Windows", "Linux"} or platform.machine().lower() not in {"amd64", "x86_64"}:
-        raise RuntimeError("Install Foundry v1.8.5 for this platform, then rerun setup; see README.md")
     TOOLS.mkdir(parents=True, exist_ok=True)
-    asset = "win32_amd64.zip" if os.name == "nt" else "linux_amd64.tar.gz"
-    checksum = WINDOWS_ARCHIVE_SHA256 if os.name == "nt" else LINUX_ARCHIVE_SHA256
-    archive = TOOLS.parent / ("foundry_v1.8.5_" + asset)
+    asset, checksum = foundry_archive_spec()
+    archive = TOOLS.parent / ("foundry_v1.5.1_" + asset)
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != checksum:
-        url = "https://github.com/foundry-rs/foundry/releases/download/v1.8.5/" + archive.name
-        print("Downloading pinned Foundry v1.8.5 archive", flush=True)
+        url = "https://github.com/foundry-rs/foundry/releases/download/v1.5.1/" + archive.name
+        print("Downloading pinned Foundry v1.5.1 archive", flush=True)
         with urllib.request.urlopen(url, timeout=120) as response, archive.open("wb") as target:
             shutil.copyfileobj(response, target)
     if hashlib.sha256(archive.read_bytes()).hexdigest() != checksum:
         raise RuntimeError("Foundry archive SHA-256 mismatch; extraction refused")
     if os.name == "nt":
         with zipfile.ZipFile(archive) as package:
-            for name in ("forge.exe",):
+            for name in ("forge.exe", "anvil.exe", "cast.exe"):
                 matches = [i for i in package.infolist() if Path(i.filename).name == name]
                 if len(matches) != 1:
                     raise RuntimeError("unexpected Foundry archive contents")
                 (TOOLS / name).write_bytes(package.read(matches[0]))
     else:
         with tarfile.open(archive, "r:gz") as package:
-            for name in ("forge",):
+            for name in ("forge", "anvil", "cast"):
                 matches = [i for i in package.getmembers() if Path(i.name).name == name and i.isfile()]
                 if len(matches) != 1:
                     raise RuntimeError("unexpected Foundry archive contents")
@@ -79,79 +104,61 @@ def install_foundry():
                 (TOOLS / name).chmod(0o755)
 
 def install_contract_libraries():
-    config = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))
-    for name, spec in config["dependencies"].items():
-        folder = "openzeppelin-contracts" if name == "openzeppelin" else name
-        target = CACHE / "contracts/lib" / folder
-        stamp = target / ".agentflow-pin"
-        if stamp.exists() and stamp.read_text() == spec["commit"]:
-            continue
-        url = f"https://codeload.github.com/{spec['repository']}/zip/{spec['commit']}"
-        archive = CACHE / (folder + ".zip")
-        with urllib.request.urlopen(url, timeout=60) as response:
-            archive.write_bytes(response.read())
-        if hashlib.sha256(archive.read_bytes()).hexdigest() != spec["sha256"]:
-            raise RuntimeError("Third-party archive digest mismatch: " + name)
-        with zipfile.ZipFile(archive) as package:
-            for item in package.infolist():
-                relative = Path(*Path(item.filename).parts[1:])
-                output = (target / relative).resolve()
-                if not output.is_relative_to(target.resolve()):
-                    raise RuntimeError("Unsafe archive path")
-                if item.is_dir():
-                    output.mkdir(parents=True, exist_ok=True)
-                else:
-                    output.parent.mkdir(parents=True, exist_ok=True)
-                    output.write_bytes(package.read(item))
-        stamp.write_text(spec["commit"])
-        archive.unlink()
+    from scripts.contract_dependencies import install
+    install(ROOT)
 
 
-def prepare_generated():
-    config = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))
-    web, contracts = CACHE / "web", CACHE / "contracts"
-    for directory in (web / "src", contracts / "src"):
-        directory.mkdir(parents=True, exist_ok=True)
-    for name, content in config["webConfig"].items():
-        (web / name).write_text(content, encoding="utf-8")
-    (web / "src/vite-env.d.ts").write_text('/// <reference types="vite/client" />\n', encoding="utf-8")
-    (web / "package.json").write_text(json.dumps(config["webPackage"], indent=2), encoding="utf-8")
-    shutil.copyfile(ROOT / "pnpm-lock.yaml", web / "pnpm-lock.yaml")
-    source = (ROOT / "web.tsx").read_text(encoding="utf-8")
-    code, styles = source.split("/* @agentflow-styles\n", 1)
-    (web / "src/main.tsx").write_text(code, encoding="utf-8")
-    (web / "src/style.css").write_text(styles.split("\n@end-agentflow-styles */", 1)[0], encoding="utf-8")
-    (contracts / "foundry.toml").write_text(config["foundryConfig"], encoding="utf-8")
-    shutil.copyfile(ROOT / "TaskEscrow.sol", contracts / "src/TaskEscrow.sol")
+def reset_demo(runtime: Path | None = None, cache: Path | None = None):
+    cache = (cache or CACHE).resolve()
+    if runtime is None:
+        from app import settings_file
+        runtime = settings_file().get("directory")
+    demo = Path(runtime).resolve()
+    if demo == cache or not demo.is_relative_to(cache):
+        raise RuntimeError("refusing to reset a runtime directory outside the dedicated cache")
+    backup = None
+    if demo.exists():
+        backup_root = cache / "demo-backups"
+        backup_root.mkdir(parents=True, exist_ok=True)
+        backup = backup_root / time.strftime("demo-%Y%m%d-%H%M%S")
+        if backup.exists():
+            backup = backup.with_name(backup.name + "-" + str(uuid.uuid4())[:8])
+        shutil.move(str(demo), str(backup))
+    demo.mkdir(parents=True, exist_ok=True)
+    result = {"status": "PASS", "reset_directory": str(demo),
+              "backup_directory": str(backup) if backup else None}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
 
 
 def build():
-    prepare_generated()
-    run([foundry("forge"), "build", "--skip", "test", "--skip", "script"], cwd=CACHE / "contracts")
-    run([pnpm(), "run", "build"], cwd=CACHE / "web")
+    run([foundry("forge"), "build", "--skip", "test", "--skip", "script"], cwd=ROOT / "contracts")
+    run([pnpm(), "run", "build"], cwd=ROOT / "apps/web")
 
 
 def setup():
-    if sys.version_info[:2] != (3, 12):
-        raise RuntimeError("Use Python 3.12 for the pinned runtime dependencies")
+    if not ((3, 11) <= sys.version_info[:2] <= (3, 13)):
+        raise RuntimeError("Use Python 3.11, 3.12 or 3.13")
     if not PYTHON.exists():
         venv.EnvBuilder(with_pip=True).create(CACHE / "venv")
     run([PYTHON, "-m", "pip", "install", "-r", ROOT / "requirements.lock"])
     install_foundry()
     install_contract_libraries()
-    prepare_generated()
-    run([pnpm(), "install", "--frozen-lockfile"], cwd=CACHE / "web")
+    run([pnpm(), "install", "--frozen-lockfile"], cwd=ROOT / "apps/web")
     build()
 
 
 def main():
     parser = argparse.ArgumentParser(description="AgentFlow build, configuration and business services")
-    parser.add_argument("command", choices=["setup", "build", "schema", "check", "configure", "approve", "start"], nargs="?", default="start")
+    parser.add_argument("command", choices=["setup", "build", "reset-demo", "schema", "configure", "approve", "start", "check", "chain-up", "deploy", "dev", "stop-chain"], nargs="?", default="dev")
     parser.add_argument("--output", type=Path, help="schema export path, relative to the project directory")
     parser.add_argument("--config", type=Path, help="configuration path, resolved against the project directory")
     parser.add_argument("--runtime", type=Path, help="runtime path, resolved against the configuration directory")
     parser.add_argument("--amount", help="exact six-decimal token allowance for approve")
     args = parser.parse_args()
+    if args.command in {"chain-up", "deploy", "dev", "stop-chain"}:
+        run([PYTHON if PYTHON.is_file() else sys.executable, ROOT / "scripts/local_demo.py", args.command])
+        return
     if args.command == "setup":
         setup()
         return
@@ -159,6 +166,10 @@ def main():
         raise SystemExit(subprocess.call([str(PYTHON), str(ROOT / "manage.py"), *sys.argv[1:]], cwd=ROOT))
     if args.command == "build":
         build()
+        return
+    if args.command == "reset-demo":
+        from app import settings_file
+        reset_demo(settings_file(args.config, args.runtime)["directory"])
         return
     if args.command == "schema":
         from app import (
@@ -172,7 +183,7 @@ def main():
         document = {"plan": plan_schema_document(), "runtime": runtime_schema_document(),
                     "protocol": protocol_schema_document(), "travelInput": TravelInput.model_json_schema()}
         destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps({"exported": str(destination), "protocolVersion": 2, "status": "integration_candidate"}))
+        print(json.dumps({"exported": str(destination), "protocolVersion": 1, "status": "local_proposal"}))
         return
     from app import (
         Chain,
@@ -186,7 +197,6 @@ def main():
     if args.command == "check":
         from app import check_services
         config = runtime_config(settings, "api")
-        Chain(config["deployment"]["rpc"], settings["directory"], config["deployment"])
         print(json.dumps({"compatible": True, "services": check_services(config)}, ensure_ascii=False))
     elif args.command == "configure":
         deployment = configure_deployment(settings)

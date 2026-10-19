@@ -1,54 +1,5 @@
 {
   "schemaVersion": 1,
-  "webPackage": {
-    "name": "agentflow-pay-web",
-    "private": true,
-    "version": "0.1.0",
-    "type": "module",
-    "scripts": {
-      "dev": "vite --host 127.0.0.1",
-      "build": "tsc --noEmit && vite build",
-      "typecheck": "tsc --noEmit",
-      "lint": "eslint .",
-      "format": "prettier --write src *.ts *.js"
-    },
-    "dependencies": {
-      "@xyflow/react": "12.12.0",
-      "lucide-react": "1.55.0",
-      "react": "19.3.0",
-      "react-dom": "19.3.0"
-    },
-    "devDependencies": {
-      "@eslint/js": "10.0.1",
-      "@tailwindcss/vite": "4.3.3",
-      "@types/react": "19.3.0",
-      "@types/react-dom": "19.3.0",
-      "@vitejs/plugin-react": "6.1.2",
-      "eslint": "10.12.0",
-      "eslint-plugin-react-hooks": "7.1.1",
-      "eslint-plugin-react-refresh": "0.5.7",
-      "globals": "17.13.0",
-      "prettier": "3.9.10",
-      "tailwindcss": "4.3.3",
-      "typescript": "6.0.3",
-      "typescript-eslint": "8.71.1",
-      "vite": "8.3.4"
-    }
-  },
-  "webConfig": {
-    "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\", \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"ESNext\", \"moduleResolution\": \"bundler\", \"jsx\": \"react-jsx\",\n    \"strict\": true, \"noEmit\": true, \"skipLibCheck\": true,\n    \"allowSyntheticDefaultImports\": true, \"esModuleInterop\": true\n  },\n  \"include\": [\"src\"]\n}\n",
-    "vite.config.ts": "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\nimport tailwindcss from '@tailwindcss/vite'\n\nexport default defineConfig({plugins: [react(), tailwindcss()], build: {sourcemap: true}})\n",
-    "eslint.config.js": "import js from \"@eslint/js\";\nimport tseslint from \"typescript-eslint\";\nimport reactHooks from \"eslint-plugin-react-hooks\";\nimport globals from \"globals\";\n\nexport default tseslint.config(\n  { ignores: [\"dist/**\"] },\n  js.configs.recommended,\n  ...tseslint.configs.recommended,\n  {\n    files: [\"src/**/*.{ts,tsx}\"],\n    languageOptions: { globals: globals.browser },\n    plugins: { \"react-hooks\": reactHooks },\n    rules: {\n      \"react-hooks/rules-of-hooks\": \"error\",\n      \"react-hooks/exhaustive-deps\": \"error\",\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n    },\n  },\n  {\n    files: [\"*.{js,ts}\"],\n    languageOptions: { globals: globals.node },\n  },\n);\n",
-    "index.html": "<!doctype html>\n<html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/><meta name=\"color-scheme\" content=\"dark\"/><title>AgentFlow Pay · 协作控制台</title></head><body><div id=\"root\"></div><script type=\"module\" src=\"/src/main.tsx\"></script></body></html>\n"
-  },
-  "foundryConfig": "[profile.default]\nsrc = \"src\"\nout = \"out\"\nlibs = [\"lib\"]\nsolc_version = \"0.8.28\"\noptimizer = true\noptimizer_runs = 200\nvia_ir = true\nevm_version = \"cancun\"\nremappings = [\"@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/\"]\n",
-  "dependencies": {
-    "openzeppelin": {
-      "repository": "OpenZeppelin/openzeppelin-contracts",
-      "commit": "c64a1edb67b6e3f4a15cca8909c9482ad33a02b0",
-      "sha256": "4d25d3c8cda3a7eee050f347294521d9482742e6418a8cc15e784cf8e85c5d54"
-    }
-  },
   "runtime": {
     "directory": ".cache/runtime",
     "inputDirectory": "data",
@@ -76,6 +27,7 @@
     "agents": [
       {
         "id": "clean-a",
+        "estimatedSeconds": 12,
         "keyEnv": "AGENTFLOW_CLEAN_A_KEY",
         "endpoint": "http://127.0.0.1:8090",
         "prices": {
@@ -85,6 +37,7 @@
       },
       {
         "id": "clean-b",
+        "estimatedSeconds": 8,
         "keyEnv": "AGENTFLOW_CLEAN_B_KEY",
         "endpoint": "http://127.0.0.1:8091",
         "prices": {
@@ -94,6 +47,7 @@
       },
       {
         "id": "quality-a",
+        "estimatedSeconds": 8,
         "keyEnv": "AGENTFLOW_QUALITY_A_KEY",
         "endpoint": "http://127.0.0.1:8092",
         "prices": {
@@ -103,6 +57,7 @@
       },
       {
         "id": "stats-a",
+        "estimatedSeconds": 12,
         "keyEnv": "AGENTFLOW_STATS_A_KEY",
         "endpoint": "http://127.0.0.1:8093",
         "prices": {
@@ -112,6 +67,7 @@
       },
       {
         "id": "stats-b",
+        "estimatedSeconds": 6,
         "keyEnv": "AGENTFLOW_STATS_B_KEY",
         "endpoint": "http://127.0.0.1:8094",
         "prices": {
@@ -121,6 +77,7 @@
       },
       {
         "id": "report-a",
+        "estimatedSeconds": 10,
         "keyEnv": "AGENTFLOW_REPORT_A_KEY",
         "endpoint": "http://127.0.0.1:8095",
         "prices": {

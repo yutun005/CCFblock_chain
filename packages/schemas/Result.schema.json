@@ -1,0 +1,53 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "jobId": {
+      "pattern": "^0x[0-9a-fA-F]{64}$",
+      "title": "Jobid",
+      "type": "string"
+    },
+    "taskId": {
+      "maximum": 255,
+      "minimum": 0,
+      "title": "Taskid",
+      "type": "integer"
+    },
+    "attempt": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "agentWallet": {
+      "title": "Agentwallet",
+      "type": "string"
+    },
+    "resultHash": {
+      "pattern": "^0x[0-9a-fA-F]{64}$",
+      "title": "Resulthash",
+      "type": "string"
+    },
+    "artifactURIHash": {
+      "pattern": "^0x[0-9a-fA-F]{64}$",
+      "title": "Artifacturihash",
+      "type": "string"
+    },
+    "submittedAt": {
+      "maximum": 18446744073709551615,
+      "minimum": 0,
+      "title": "Submittedat",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "jobId",
+    "taskId",
+    "attempt",
+    "agentWallet",
+    "resultHash",
+    "artifactURIHash",
+    "submittedAt"
+  ],
+  "title": "Result",
+  "type": "object"
+}
