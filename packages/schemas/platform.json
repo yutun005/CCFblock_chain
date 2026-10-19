@@ -31,7 +31,8 @@
               "lowest_price",
               "risk_aware",
               "fastest",
-              "balanced"
+              "balanced",
+              "reliability"
             ],
             "title": "Selection",
             "type": "string"
@@ -40,6 +41,13 @@
             "default": "30.000000",
             "title": "Risk Penalty",
             "type": "string"
+          },
+          "preferred_agents": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Preferred Agents",
+            "type": "object"
           }
         },
         "title": "ExecutionPolicy",
@@ -227,7 +235,8 @@
               "lowest_price",
               "risk_aware",
               "fastest",
-              "balanced"
+              "balanced",
+              "reliability"
             ],
             "title": "Selection",
             "type": "string"
@@ -236,6 +245,13 @@
             "default": "30.000000",
             "title": "Risk Penalty",
             "type": "string"
+          },
+          "preferred_agents": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Preferred Agents",
+            "type": "object"
           }
         },
         "title": "ExecutionPolicy",
@@ -2476,7 +2492,8 @@
                   "lowest_price",
                   "risk_aware",
                   "fastest",
-                  "balanced"
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -2485,6 +2502,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -3055,7 +3079,8 @@
                   "lowest_price",
                   "risk_aware",
                   "fastest",
-                  "balanced"
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -3064,6 +3089,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -3534,7 +3566,8 @@
               "lowest_price",
               "risk_aware",
               "fastest",
-              "balanced"
+              "balanced",
+              "reliability"
             ],
             "title": "Selectionrule",
             "type": "string"
@@ -3593,7 +3626,8 @@
                   "lowest_price",
                   "risk_aware",
                   "fastest",
-                  "balanced"
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -3602,6 +3636,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -3970,7 +4011,8 @@
                   "lowest_price",
                   "risk_aware",
                   "fastest",
-                  "balanced"
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -3979,6 +4021,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",
@@ -4674,7 +4723,8 @@
                   "lowest_price",
                   "risk_aware",
                   "fastest",
-                  "balanced"
+                  "balanced",
+                  "reliability"
                 ],
                 "title": "Selection",
                 "type": "string"
@@ -4683,6 +4733,13 @@
                 "default": "30.000000",
                 "title": "Risk Penalty",
                 "type": "string"
+              },
+              "preferred_agents": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Preferred Agents",
+                "type": "object"
               }
             },
             "title": "ExecutionPolicy",

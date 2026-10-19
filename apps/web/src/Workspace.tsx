@@ -5,9 +5,10 @@ type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
 const prefix = "/api/workspace";
 const preferences: Record<string, string> = {
-  lowest_price: "低价优先",
+  lowest_price: "费用优先",
   fastest: "速度优先",
-  balanced: "综合选择",
+  reliability: "履约优先",
+  balanced: "费用优先",
 };
 const labels: Record<string, string> = {
   clean: "清洗数据",
@@ -52,7 +53,7 @@ const initial = {
   materialIds: [] as string[],
   outputs: ["clean", "validate", "statistics", "charts", "report"],
   tier: "standard",
-  preference: "balanced",
+  preference: "lowest_price",
   budget: "100",
   groupBy: "organization_quarter",
   requirement: "",
@@ -671,13 +672,19 @@ export default function Workspace({
               <label>
                 优先查看哪类服务方案
                 <select
-                  value={recipe.preference}
+                  value={
+                    recipe.preference === "balanced"
+                      ? "lowest_price"
+                      : recipe.preference
+                  }
                   onChange={(e) => update({ preference: e.target.value })}
                 >
-                  <option value="lowest_price">低价优先</option>
+                  <option value="lowest_price">
+                    费用优先（整份任务花钱最少）
+                  </option>
                   <option value="fastest">速度优先</option>
-                  <option value="balanced">
-                    综合选择（价格、耗时、履约记录）
+                  <option value="reliability">
+                    履约优先（参考历史完成与失效记录）
                   </option>
                 </select>
               </label>
@@ -745,9 +752,10 @@ export default function Workspace({
       )}
       {page === "compare" && (
         <section>
-          <h2>同一交付，比较执行服务</h2>
+          <h2>同一任务，比较费用、速度和履约表现</h2>
           <p>
-            所有方案都完成您选择的成果和必要的前置工作，只比较服务、费用和执行时间。相同方案只显示一次。
+            所有方案都完成您选择的成果和必要的前置工作。在预算内，分别找总价最低、整体最快、历史履约评分更好的
+            Agent 组合；选到同一组时只显示一次。
           </p>
           {!!offers.length && (
             <div className="workspace-panel">
@@ -789,7 +797,7 @@ export default function Workspace({
           )}
           {!!offers.length && (
             <p className="hint">
-              估价来自在线服务。预计耗时按前后依赖和可并行工作计算，不含排队、重试、链上确认和人工确认时间；实际成交以签名报价为准。
+              估价和耗时来自在线服务。整体耗时考虑前后依赖和并行工作，不含排队、重试、链上确认和人工确认。履约记录来自本工作区可核验的链上任务；没有记录不代表可靠，也不代表不可靠。
             </p>
           )}
           <div className="tier-grid">
@@ -812,11 +820,22 @@ export default function Workspace({
                     .join("、")}
                   得到此方案
                 </p>
+                <p>{offer.proposal.selectionReason}</p>
                 <>
                   <strong className="price">
                     {price(offer.proposal.estimatedPrice)} USDC
                   </strong>
-                  <p>预计服务执行 {offer.proposal.estimatedSeconds} 秒</p>
+                  <p>整份任务预计 {offer.proposal.estimatedSeconds} 秒</p>
+                  {offer.proposal.historySummary?.totalTasks > 0 && (
+                    <p>
+                      所选服务历史合计：已结算{" "}
+                      {offer.proposal.historySummary.settled} 次，失效{" "}
+                      {offer.proposal.historySummary.expired} 次。
+                      {offer.proposal.historySummary.coveredTasks}/
+                      {offer.proposal.historySummary.totalTasks}{" "}
+                      项工作有历史记录。
+                    </p>
+                  )}
                   {offer.proposal.work.map((w: Row) => (
                     <div key={w.key}>
                       <p>
@@ -898,7 +917,8 @@ export default function Workspace({
                 </div>
               </div>
               <p>
-                实际报价超过展示的节点预算时不会成交；剩余资金在结束后退款。
+                优先委派给所选
+                Agent；不可用或失败时按本方案的偏好重新选人，且不超过各项展示费用。实际执行者和成交费用可在任务中查看，剩余资金在结束后退款。
               </p>
               <button
                 className="primary"

@@ -229,8 +229,15 @@ class TaskSpec(StrictModel):
 class ExecutionPolicy(StrictModel):
     scheduling: Literal["dag", "sequential"] = "dag"
     recovery: Literal["reassign", "abort"] = "reassign"
-    selection: Literal["lowest_price", "risk_aware", "fastest", "balanced"] = "lowest_price"
+    selection: Literal["lowest_price", "risk_aware", "fastest", "balanced", "reliability"] = "lowest_price"
     risk_penalty: str = "30.000000"
+    # Omit an empty mapping so existing signed plans retain their original hashes.
+    preferred_agents: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+
+    @field_validator("preferred_agents")
+    @classmethod
+    def valid_preferred_agents(cls, value):
+        return {key: Web3.to_checksum_address(wallet) for key, wallet in value.items()}
 
     @field_validator("risk_penalty")
     @classmethod
@@ -263,6 +270,8 @@ class Plan(StrictModel):
         if len(keys) != len(set(keys)):
             raise ValueError("duplicate task key")
         known = set(keys)
+        if self.execution and not set(self.execution.preferred_agents) <= known:
+            raise ValueError("preferred agent refers to an unknown task")
         for task in self.tasks:
             if not set(task.dependencies) <= known:
                 raise ValueError("missing dependency")
@@ -820,7 +829,7 @@ class RFQReply(StrictModel):
     attempt: RoundIndex
     candidates: list[QuoteCandidate]
     selected: QuoteCandidate | None
-    selectionRule: Literal["lowest_price", "risk_aware", "fastest", "balanced"]
+    selectionRule: Literal["lowest_price", "risk_aware", "fastest", "balanced", "reliability"]
     riskPenalty: str
     createdAt: Annotated[int, Field(ge=0, le=(1 << 53) - 1, strict=True)]
 
@@ -2902,13 +2911,13 @@ class Market:
 
         results = await asyncio.gather(*(quote(agent) for agent in candidates))
         policy = plan.execution_policy
-        history = await asyncio.to_thread(self.outcomes, spec.skill) if policy.selection in {"risk_aware", "balanced"} else {}
+        history = await asyncio.to_thread(self.outcomes, spec.skill) if policy.selection in {"risk_aware", "balanced", "reliability"} else {}
         valid = [q for q in results if q["valid"]]
         for candidate in valid:
             counts = history.get(candidate["wallet"], {"settled": 0, "expired": 0, "evidence": []})
             score = self.selection_score(candidate["quote"]["price"], {**counts, "seconds": candidate.get("estimatedSeconds", 3600)}, policy)
             candidate.update(history=counts, scoreNumerator=str(score.numerator), scoreDenominator=str(score.denominator))
-        valid.sort(key=lambda q: (Fraction(int(q["scoreNumerator"]), int(q["scoreDenominator"])), q["agentId"]))
+        valid.sort(key=lambda q: self.candidate_order(q, policy, spec.key))
         record = {"jobId": request["jobId"], "taskId": request["taskId"], "attempt": request["attempt"],
                   "candidates": results, "selected": valid[0] if valid else None,
                   "selectionRule": policy.selection, "riskPenalty": policy.risk_penalty,
@@ -2919,17 +2928,32 @@ class Market:
     @staticmethod
     def selection_score(price: int, counts: dict, policy: ExecutionPolicy) -> Fraction:
         # A Beta(1,1) prior makes unknown services explicit; this is a heuristic, not a risk guarantee.
+        if policy.selection == "reliability":
+            return Fraction(counts["expired"] + 1, counts["settled"] + counts["expired"] + 2)
         if policy.selection == "fastest":
-            return Fraction(counts.get("seconds", 3600) * 10**12 + price)
+            return Fraction(counts.get("seconds", 3600))
         penalty = units(policy.risk_penalty) if policy.selection in {"risk_aware", "balanced"} else 0
         speed = counts.get("seconds", 3600) * 100_000 if policy.selection == "balanced" else 0
         return Fraction(price + speed) + Fraction(penalty * (counts["expired"] + 1), counts["settled"] + counts["expired"] + 2)
 
+    @staticmethod
+    def candidate_order(candidate: dict, policy: ExecutionPolicy, task_key: str):
+        """Honor the confirmed team when its quote is valid; otherwise use the frozen fallback policy."""
+        return (
+            candidate["wallet"] != policy.preferred_agents.get(task_key),
+            Fraction(int(candidate["scoreNumerator"]), int(candidate["scoreDenominator"])),
+            candidate["quote"]["price"], candidate.get("estimatedSeconds", 3600), candidate["agentId"],
+        )
+
     def outcomes(self, skill: str) -> dict:
         """Rebuild from canonical contract logs; never accept agent self-reported reputation."""
         head = self.chain.w3.eth.get_block("latest")
-        known = {row["jobId"]: Plan.model_validate(row["plan"]) for row in self.db.values("known_plans")}
-        known = {job_id: plan for job_id, plan in known.items() if self.chain.job(job_id)["planHash"] == plan.plan_hash}
+        # The orchestrator stores its funded plans in jobs; A2A RFQs live in the market's separate DB.
+        known = {row["jobId"]: Plan.model_validate(row["plan"])
+                 for bucket in ("known_plans", "jobs") for row in self.db.values(bucket)
+                 if row.get("jobId") and row.get("plan")}
+        known = {job_id: plan for job_id, plan in known.items()
+                 if self.chain.job(job_id, block_identifier=head["number"])["planHash"] == plan.plan_hash}
         assignments, outcomes = {}, {}
         for event_name in ("TaskAssigned", "TaskSettled", "TaskInvalidated"):
             for log in getattr(self.chain.escrow.events, event_name)().get_logs(
@@ -3115,7 +3139,7 @@ class Engine:
         self.db.put("known_plans", request["jobId"], {"jobId": request["jobId"], "plan": request["plan"]})
         policy = plan.execution_policy
         history = (await asyncio.to_thread(Market(self.chain, self.db, self.token, list(self.allowed_origins)).outcomes,
-                                          spec.skill)) if policy.selection in {"risk_aware", "balanced"} else {}
+                                          spec.skill)) if policy.selection in {"risk_aware", "balanced", "reliability"} else {}
         for raw in response["quotes"]:
             parsed = BQuote.model_validate(raw)
             agent = agents.get(parsed.agent_id)
@@ -3140,8 +3164,8 @@ class Engine:
             except ValueError as exc:
                 item.update(valid=False, reason=str(exc))
             candidates.append(item)
-        valid = sorted((q for q in candidates if q["valid"]), key=lambda q: (
-            Fraction(int(q["scoreNumerator"]), int(q["scoreDenominator"])), q["agentId"]))
+        valid = sorted((q for q in candidates if q["valid"]),
+                       key=lambda q: Market.candidate_order(q, policy, spec.key))
         return {"jobId": request["jobId"], "taskId": request["taskId"], "attempt": request["attempt"],
                 "candidates": candidates, "selected": valid[0] if valid else None,
                 "selectionRule": policy.selection, "riskPenalty": policy.risk_penalty, "createdAt": int(time.time())}

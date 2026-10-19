@@ -10,11 +10,13 @@ import time
 import uuid
 from copy import deepcopy
 from fractions import Fraction
+from itertools import product
+from math import prod
 from typing import Literal
 
 import httpx
 from fastapi import HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .products import Terms, needs_review, normalize_change
 
@@ -28,13 +30,18 @@ class Recipe(BaseModel):
     materialIds: list[str] = Field(min_length=1, max_length=12)
     outputs: list[str] = Field(min_length=1, max_length=5)
     tier: Literal["basic", "standard", "detailed"] = "standard"
-    preference: Literal["lowest_price", "fastest", "balanced"] = "balanced"
+    preference: Literal["lowest_price", "fastest", "reliability"] = "lowest_price"
     budget: str = "100"
     groupBy: Literal["organization_quarter", "organization", "category", "month"] = "organization_quarter"
     travelRequest: dict | None = None
     requirement: str = Field(default="", max_length=4000)
     forceRedo: list[str] = Field(default_factory=list, max_length=4)
     reviewSeconds: int = Field(default=1800, ge=60, le=3300, strict=True)
+
+    @field_validator("preference", mode="before")
+    @classmethod
+    def legacy_preference(cls, value):
+        return "lowest_price" if value == "balanced" else value
 
 
 SALES_OUTPUTS = {
@@ -106,7 +113,8 @@ def parse_requirement(text, scenario):
             ("低价", "lowest_price"),
             ("最快", "fastest"),
             ("速度", "fastest"),
-            ("综合", "balanced"),
+            ("综合", "lowest_price"),
+            ("履约", "reliability"),
         ):
             if word in clause:
                 patches["preference"] = key
@@ -123,6 +131,7 @@ def parse_requirement(text, scenario):
                 "低价",
                 "最快",
                 "速度",
+                "履约",
                 "综合",
                 "分析这份销售数据",
                 "销售数据分析",
@@ -501,11 +510,42 @@ class Workspace:
 
         return [value for value in await asyncio.gather(*(estimate(agent) for agent in agents)) if value]
 
+    @staticmethod
+    def choose_team(tasks, pools, budget, preference):
+        """Compare whole feasible teams, including parallel branches, using exact integer prices."""
+        if prod(len(pool) for pool in pools) > 100_000:
+            raise ValueError("候选组合过多，请缩小服务范围后重新比较")
+        cheapest = sum(min(offer["price"] for offer in pool) for pool in pools)
+        if cheapest > budget:
+            raise ValueError(
+                f"完成全部交付至少需要 {display_money(cheapest)} USDC，超过预算 {display_money(budget)} USDC"
+            )
+        best, best_rank = None, None
+        for team in product(*pools):
+            total = sum(offer["price"] for offer in team)
+            if total > budget:
+                continue
+            finish = {}
+            for spec, offer in zip(tasks, team):
+                finish[spec.key] = offer["seconds"] + max((finish[key] for key in spec.dependencies), default=0)
+            seconds = max(finish.values(), default=0)
+            # Same required work in every team. Smoothing avoids treating 1/1 as certain success.
+            # Unknown history uses a neutral prior, never a fabricated success record.
+            risk = sum((Fraction(offer["history"]["expired"] + 1,
+                                 offer["history"]["settled"] + offer["history"]["expired"] + 2)
+                        for offer in team), Fraction())
+            rank = {"lowest_price": (total, seconds, risk), "fastest": (seconds, total, risk),
+                    "reliability": (risk, total, seconds)}[preference]
+            rank += (tuple(offer["agentId"] for offer in team),)
+            if best_rank is None or rank < best_rank:
+                best, best_rank = (team, total, seconds), rank
+        return best
+
     async def compare(self, data):
         from services.orchestrator.application import object_hash
 
         recipe = Recipe.model_validate(data)
-        policies = list(dict.fromkeys([recipe.preference, "lowest_price", "fastest", "balanced"]))
+        policies = list(dict.fromkeys([recipe.preference, "lowest_price", "fastest", "reliability"]))
         cache, unique, failures = {}, {}, {}
         for preference in policies:
             try:
@@ -594,7 +634,7 @@ class Workspace:
         if set(recipe.forceRedo) - wanted:
             raise ValueError("只能重做本次方案包含的工作，请先添加对应交付")
         nodes, work, reused, tasks = {}, [], [], []
-        prices, finish_times = {}, {}
+        pools = []
         for spec in template.topological():
             if spec.key not in wanted:
                 continue
@@ -650,7 +690,6 @@ class Workspace:
             }
             if reuse:
                 reused.append(row)
-                finish_times[spec.key] = 0
                 continue
             options["reused"] = [nodes[key]["source"] for key in spec.dependencies if nodes[key]["source"]]
             spec = spec.model_copy(
@@ -666,7 +705,6 @@ class Workspace:
             available = deepcopy(cache[estimate_key])
             if not available:
                 raise ValueError(f"{spec.title} 当前没有可用服务，请稍后重试或调整交付内容")
-            policy = ExecutionPolicy(selection=recipe.preference)
             history_key = ("history", spec.skill)
             if history_key not in cache:
                 cache[history_key] = await asyncio.to_thread(
@@ -679,33 +717,36 @@ class Workspace:
             for offer in available:
                 counts = history.get(offer["wallet"], {"settled": 0, "expired": 0, "evidence": []})
                 offer["history"] = {key: counts[key] for key in ("settled", "expired")}
-                offer["score"] = str(
-                    Market.selection_score(offer["price"], {**counts, "seconds": offer["seconds"]}, policy)
-                )
-            available.sort(key=lambda x: (Fraction(x["score"]), x["agentId"]))
-            chosen = available[0]
-            prices[spec.key] = chosen["price"]
-            # Only the displayed cap is funded. A higher later quote cannot silently spend the remainder.
-            spec = spec.model_copy(update={"budget_cap": display_units(chosen["price"])})
+            available.sort(key=lambda offer: offer["agentId"])
             tasks.append(spec)
+            pools.append(available)
+            row.update(candidates=available, requiresReview=needs_review(spec))
+            work.append(row)
+        budget = units(recipe.budget)
+        team, total, seconds = self.choose_team(tasks, pools, budget, recipe.preference)
+        for index, (row, chosen) in enumerate(zip(work, team)):
+            # Freeze each selected estimate as the spending cap, including during fallback.
+            tasks[index] = tasks[index].model_copy(update={"budget_cap": display_units(chosen["price"])})
             row.update(
                 estimatedPrice=display_units(chosen["price"]),
                 estimatedSeconds=chosen["seconds"],
                 estimatedProvider=chosen["agentId"],
+                estimatedWallet=chosen["wallet"],
                 history=chosen["history"],
-                candidates=available,
-                requiresReview=needs_review(spec),
             )
-            work.append(row)
-            finish_times[spec.key] = chosen["seconds"] + max(
-                (finish_times[key] for key in spec.dependencies), default=0
-            )
-        total = sum(prices.values())
-        budget = units(recipe.budget)
-        if total > budget:
-            raise ValueError(
-                f"预计新增费用 {display_money(total)} 超过预算 {display_money(budget)}，请提高预算或减少交付内容"
-            )
+        history_summary = {
+            "settled": sum(offer["history"]["settled"] for offer in team),
+            "expired": sum(offer["history"]["expired"] for offer in team),
+            "coveredTasks": sum(bool(sum(offer["history"].values())) for offer in team),
+            "totalTasks": len(team),
+        }
+        any_history = any(sum(offer["history"].values()) for pool in pools for offer in pool)
+        reason = {
+            "lowest_price": "在预算内，整份任务总费用最低；同价时选整体更快的组合。",
+            "fastest": "在预算内，整份任务预计完成最快；同速时选总费用更低的组合。",
+            "reliability": "优先选择历史履约评分更好的组合；评分相同时选费用更低的组合。"
+                if any_history else "候选服务都没有可核验的履约记录，无法比较可靠性，按费用和耗时选择。",
+        }[recipe.preference] if tasks else "全部沿用已结算成果，无需新增执行。"
         plan = None
         if tasks:
             plan = Plan(
@@ -716,7 +757,8 @@ class Workspace:
                 input_hashes=tuple(p["sha256"] for p in inputs),
                 duration_seconds=recipe.reviewSeconds + 600,
                 planning_mode="workspace_v1",
-                execution=ExecutionPolicy(selection=recipe.preference),
+                execution=ExecutionPolicy(selection=recipe.preference,
+                    preferred_agents={spec.key: offer["wallet"] for spec, offer in zip(tasks, team)}),
             )
         result = {
             "id": str(uuid.uuid4()),
@@ -730,9 +772,11 @@ class Workspace:
             "nodes": nodes,
             "estimatedPrice": display_units(total),
             "budget": recipe.budget,
-            "estimatedSeconds": max(finish_times.values(), default=0),
+            "estimatedSeconds": seconds,
+            "historySummary": history_summary,
+            "selectionReason": reason,
             "createdAt": time.time(),
-            "expiresAt": time.time() + 300,
+            "expiresAt": min([time.time() + 300, *(offer["validUntil"] for offer in team)]),
             "noCharge": not tasks,
             "overrides": overrides,
         }
