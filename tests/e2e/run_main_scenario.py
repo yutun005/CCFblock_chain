@@ -88,7 +88,7 @@ def deploy(w3: Web3, owner, verifier, evidence: dict) -> tuple[str, str]:
 
 
 def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, *, delay: bool,
-                   scenario: str = "cross_org_analysis") -> tuple[Path, dict]:
+                   scenario: str = "cross_org_analysis", delay_seconds: float = 15) -> tuple[Path, dict]:
     project = json.loads((ROOT / "project.json").read_text(encoding="utf-8"))
     runtime = copy.deepcopy(project["runtime"])
     # Keep the established six-merchant fixture and its timeout/reassignment price ordering.
@@ -138,15 +138,17 @@ def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, 
         # Only test child processes receive this hook; business modules contain no fault-injection path.
         hook = root / "fault-hook"
         hook.mkdir(parents=True, exist_ok=True)
-        (hook / "sitecustomize.py").write_text("import asyncio\nimport app\n_original = app.ServiceExecutor.handle\nasync def _delayed(self, request):\n    if request.get('operation') == 'execute' and self.config['id'] == 'clean-a' and self.chain.chain_id == 31337:\n        await asyncio.sleep(15)\n    return await _original(self, request)\napp.ServiceExecutor.handle = _delayed\n", encoding="utf-8")
+        (hook / "sitecustomize.py").write_text(
+            "import asyncio\nimport app\n"
+            "_original = app.ServiceExecutor.handle\n"
+            "async def _delayed(self, request):\n"
+            "    if request.get('operation') == 'execute' and self.config['id'] == 'clean-a' and self.chain.chain_id == 31337:\n"
+            f"        await asyncio.sleep({float(delay_seconds)!r})\n"
+            "    return await _original(self, request)\n"
+            "app.ServiceExecutor.handle = _delayed\n", encoding="utf-8")
         os.environ["PYTHONPATH"] = os.pathsep.join([str(hook), str(ROOT)])
-        os.environ["AGENTFLOW_E2E_FAULTS_ENABLED"] = "1"
-        os.environ["AGENTFLOW_E2E_DELAY_AGENT_ID"] = "clean-a"
-        os.environ["AGENTFLOW_E2E_DELAY_SECONDS"] = "15"
     else:
         os.environ.pop("PYTHONPATH", None)
-        for name in ("AGENTFLOW_E2E_FAULTS_ENABLED", "AGENTFLOW_E2E_DELAY_AGENT_ID", "AGENTFLOW_E2E_DELAY_SECONDS"):
-            os.environ.pop(name, None)
     return path, settings
 
 

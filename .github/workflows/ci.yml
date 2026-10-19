@@ -70,6 +70,7 @@ jobs:
             experiments/raw/e2e/**
             experiments/raw/forge/**
             experiments/raw/security/**
+            experiments/raw/platform/**
             experiments/raw/persistence/**
             experiments/results/**
             .cache/delivery/**

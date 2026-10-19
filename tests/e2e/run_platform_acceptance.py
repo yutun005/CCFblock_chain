@@ -17,6 +17,7 @@ from tests.e2e import run_main_scenario as fixture
 
 
 def run():
+    previous_pythonpath = os.environ.get("PYTHONPATH")
     run_id = str(uuid.uuid4())
     output = ROOT / "experiments/raw/platform" / run_id
     output.mkdir(parents=True)
@@ -37,9 +38,11 @@ def run():
         keys=fixture.accounts()
         deployment={"run_id":run_id,"transactions":[]}
         token,escrow=fixture.deploy(w3,keys[0],keys[2],deployment)
-        _,settings=fixture.build_settings(ROOT/".cache/platform"/run_id,rpc,token,escrow,keys,delay=False)
+        # Delay only this fixture's clean-a child, including after an API restart.
+        # The production API deliberately has no fault-injection endpoint.
+        _,settings=fixture.build_settings(ROOT/".cache/platform"/run_id,rpc,token,escrow,keys,
+                                          delay=True,delay_seconds=6)
         chain=fixture.configure(settings,rpc,token,escrow,keys[0])
-        os.environ["AGENTFLOW_DEMO_FAULTS_ENABLED"]="1"
         with app.ServiceCluster(settings) as cluster, httpx.Client(trust_env=False,timeout=15) as client:
             api=settings["api"]
             headers=fixture.request_headers()
@@ -62,7 +65,9 @@ def run():
             r=post("/api/plans/preview",{"deposit":"50"})
             assert r.status_code==400
             record("UNIT-DAG-BUDGET",{"http_status":r.status_code})
-            r=post("/api/demo/faults",{"agentId":"clean-a","fault":"timeout","seconds":6});r.raise_for_status()
+            r=post("/api/demo/faults",{"agentId":"clean-a","fault":"timeout","seconds":6})
+            assert r.status_code==404, r.text
+            record("FAULT-ENDPOINT-ABSENT",{"http_status":r.status_code})
             preview=post("/api/plans/preview",{"scenario":"cross_org_analysis","deposit":"100","slaSeconds":30}).json()
             job_id=fixture.create_job(client,api,run_id+"-verification",30)
             deadline=time.monotonic()+20
@@ -141,14 +146,16 @@ def run():
             assert all(t["onchain"]["state"]==3 for t in job["tasks"][2:])
             claims=post("/api/jobs/"+job_id+"/claims",{});claims.raise_for_status()
             record("STOP-REFUND",{"job_id":job_id,"status":job["status"],"chain":claims.json()["chain"]})
-            post("/api/demo/faults",{"agentId":"clean-a","fault":"none"}).raise_for_status()
             evidence.update(status="PASS",chain_id=31337,escrow=escrow,transactions=deployment["transactions"])
     except Exception as exc:
         evidence.update(status="FAIL",failure=type(exc).__name__+": "+str(exc))
         raise
     finally:
         anvil.terminate();anvil.wait(timeout=15);log.close()
-        os.environ.pop("AGENTFLOW_DEMO_FAULTS_ENABLED",None)
+        if previous_pythonpath is None:
+            os.environ.pop("PYTHONPATH",None)
+        else:
+            os.environ["PYTHONPATH"]=previous_pythonpath
         fixture.write_json(output/"result.json",evidence)
     print(json.dumps({"status":evidence["status"],"cases":len(evidence["cases"]),"path":str(output)},ensure_ascii=False))
 
