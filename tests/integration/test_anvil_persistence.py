@@ -10,6 +10,7 @@ from functools import partial
 from unittest.mock import patch
 
 import pytest
+import httpx
 
 import app
 from scripts import local_demo
@@ -78,6 +79,57 @@ def local_launcher(monkeypatch, root):
                            ('CHAIN_PORT', 'local-chain-port.json')]:
         monkeypatch.setattr(local_demo, name, root / '.cache' / filename)
     monkeypatch.setattr(local_demo, 'AnvilManager', partial(AnvilManager, executable=BINARY))
+
+
+@pytest.mark.parametrize('kind', ['same', 'foreign', 'unauthorized', 'different-chain', 'different-token', 'offline'])
+def test_running_demo_requires_matching_deployment_and_authentication(tmp_path, monkeypatch, kind):
+    local_launcher(monkeypatch, tmp_path)
+    settings = {'directory':tmp_path / '.cache/runtime', 'api':'http://127.0.0.1:12345', 'apiTokenEnv':'TEST_TOKEN'}
+    deployment = {'chainId':31337, 'escrow':'escrow', 'token':'token', 'owner':'owner'}
+    atomic_json(local_demo.CONFIG, {'runtime':{}})
+    atomic_json(local_demo.ENV, {'TEST_TOKEN':'test-token'})
+    atomic_json(settings['directory'] / 'deployment.json', deployment)
+    before = {p:p.read_bytes() for p in (local_demo.CONFIG, local_demo.ENV, settings['directory'] / 'deployment.json')}
+    protocol = {'profile':'test-protocol'}
+    def response(request):
+        if kind == 'offline':
+            raise httpx.ConnectError('offline', request=request)
+        if request.url.path == '/health':
+            assert 'Authorization' not in request.headers
+            return httpx.Response(200, json={'ok':True, 'protocol':{} if kind == 'foreign' else protocol})
+        assert request.headers['Authorization'] == 'Bearer test-token'
+        if kind == 'unauthorized':
+            return httpx.Response(401)
+        public = {**deployment, 'chainId':'31337'}
+        if kind == 'different-chain': public['chainId'] = '1'
+        if kind == 'different-token': public['token'] = 'other-token'
+        return httpx.Response(200, json=public)
+    client = httpx.Client
+    with patch.object(local_demo, 'settings_file', return_value=settings), \
+         patch.object(local_demo, 'service_protocol', return_value=protocol), \
+         patch.object(local_demo.httpx, 'Client', side_effect=lambda **kwargs:client(transport=httpx.MockTransport(response), **kwargs)), \
+         patch.object(local_demo, 'check_services') as check:
+        assert local_demo.running_demo() == (settings['api'] if kind == 'same' else None)
+        assert check.call_count == (1 if kind == 'same' else 0)
+    assert all(p.read_bytes() == data for p,data in before.items())
+
+
+def test_repeated_launch_opens_existing_app_without_starting_or_stopping_services(tmp_path, monkeypatch):
+    local_launcher(monkeypatch, tmp_path)
+    monkeypatch.setenv('AGENTFLOW_OPEN_BROWSER', '1')
+    with patch.object(local_demo, 'running_demo', return_value='http://127.0.0.1:12345'), \
+         patch.object(local_demo, 'chain_up') as chain, \
+         patch.object(local_demo, 'available_service_ports') as ports, \
+         patch.object(local_demo, 'ServiceCluster') as cluster, \
+         patch.object(local_demo.webbrowser, 'open') as browser, \
+         patch.object(AnvilManager, 'checkpoint') as checkpoint:
+        local_demo.run_demo()
+        local_demo.run_demo()
+        assert browser.call_count == 2
+        chain.assert_not_called()
+        ports.assert_not_called()
+        cluster.assert_not_called()
+        checkpoint.assert_not_called()
 
 
 @pytest.mark.skipif(not BINARY.exists(), reason='Run manage.py setup to install Anvil')

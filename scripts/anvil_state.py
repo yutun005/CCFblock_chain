@@ -131,14 +131,14 @@ class AnvilManager:
         self.process = None
 
     @contextmanager
-    def locked(self, directory=None):
+    def locked(self, directory=None, timeout=20):
         directory = Path(directory) if directory else self.directory
         directory.mkdir(parents=True, exist_ok=True)
         with (directory / 'control.lock').open('a+b') as stream:
             stream.seek(0)
             if not stream.read(1):
                 stream.write(b'0'); stream.flush()
-            deadline = time.monotonic() + 20
+            deadline = time.monotonic() + timeout
             while True:
                 try:
                     stream.seek(0)
