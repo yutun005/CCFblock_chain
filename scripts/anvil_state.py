@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import socket
 import subprocess
 import time
 import uuid
@@ -104,6 +105,10 @@ def validate_state(value) -> dict:
     return value
 
 
+class AnvilOwnershipError(RuntimeError):
+    """The endpoint belongs to another process; it must never be stopped or adopted."""
+
+
 class AnvilManager:
     def __init__(self, root: Path, port=8545, directory=None, executable=None, interval=5):
         self.root = Path(root).resolve()
@@ -126,8 +131,10 @@ class AnvilManager:
         self.process = None
 
     @contextmanager
-    def locked(self):
-        with (self.directory / 'control.lock').open('a+b') as stream:
+    def locked(self, directory=None):
+        directory = Path(directory) if directory else self.directory
+        directory.mkdir(parents=True, exist_ok=True)
+        with (directory / 'control.lock').open('a+b') as stream:
             stream.seek(0)
             if not stream.read(1):
                 stream.write(b'0'); stream.flush()
@@ -159,18 +166,18 @@ class AnvilManager:
 
     def _owned(self):
         if not self.record.exists():
-            raise RuntimeError('Port is not owned by this checkout; refusing to stop or adopt another chain')
+            raise AnvilOwnershipError('Port is not owned by this checkout; refusing to stop or adopt another chain')
         record = json.loads(self.record.read_text(encoding='utf-8'))
         pid = int(record['pid'])
         identity = process_identity(pid)
         if not identity or Path(identity[0]) != self.executable or int(record['port']) != self.port:
-            raise RuntimeError('Recorded PID is not this checkout\'s listening Anvil')
+            raise AnvilOwnershipError('Recorded PID is not this checkout\'s listening Anvil')
         if record.get('creation_id') and record['creation_id'] != identity[1]:
-            raise RuntimeError('Anvil PID has been reused; refusing to stop it')
+            raise AnvilOwnershipError('Anvil PID has been reused; refusing to stop it')
         if not owns_port(pid, self.port):
-            raise RuntimeError('Recorded Anvil does not own the configured RPC port')
+            raise AnvilOwnershipError('Recorded Anvil does not own the configured RPC port')
         if self.w3.eth.chain_id != 31337 or 'anvil' not in self.w3.client_version.lower():
-            raise RuntimeError('Persistence is restricted to owned local Anvil chainId 31337')
+            raise AnvilOwnershipError('Persistence is restricted to owned local Anvil chainId 31337')
         return record
 
     def _snapshot(self):
@@ -247,6 +254,13 @@ class AnvilManager:
                 if not (saved and self.w3.eth.block_number == 0 and json.loads(saved.read_text(encoding='utf-8'))['best_block_number'] > 0):
                     self._snapshot()
                 self._stop(save=False)
+            with socket.socket() as probe:
+                if os.name != 'nt':
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    probe.bind(('127.0.0.1', self.port))
+                except OSError as exc:
+                    raise AnvilOwnershipError('RPC port is occupied by another service') from exc
             path = self._load_path()
             command = [str(self.executable), '--host', '127.0.0.1', '--port', str(self.port),
                        '--chain-id', '31337', '--silent', '--dump-state', str(self.autosave),
