@@ -20,10 +20,14 @@ export function PlanningGraph({
   tasks,
   onChange,
   disabled = false,
+  selectedTask,
+  onSelectTask,
 }: {
   tasks: Row[];
   onChange?: (tasks: Row[]) => void;
   disabled?: boolean;
+  selectedTask?: string;
+  onSelectTask?: (key: string) => void;
 }) {
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
@@ -116,7 +120,8 @@ export function PlanningGraph({
         width: 230,
         background: "#152638",
         color: "#eaf3ff",
-        border: "1px solid #668ba9",
+        border:
+          task.key === selectedTask ? "2px solid #edc56c" : "1px solid #668ba9",
       },
       deletable: false,
     };
@@ -137,9 +142,7 @@ export function PlanningGraph({
   );
   return (
     <>
-      <p className="hint">
-        箭头从前置任务指向后续任务：前面的成果通过验收后，后面的任务才能开始。没有依赖的任务可以并行。
-      </p>
+      <p className="hint">箭头表示先后关系；没有连线依赖的任务可以同时进行。</p>
       <div className="planning-graph" aria-label="子任务依赖图">
         <ReactFlow
           nodes={nodes}
@@ -155,6 +158,7 @@ export function PlanningGraph({
           elementsSelectable={editable}
           onConnect={({ source: from, target: to }) => connect(from, to)}
           onEdgeClick={(_, edge) => editable && setSelectedEdge(edge.id)}
+          onNodeClick={(_, node) => onSelectTask?.(node.id)}
           onPaneClick={() => setSelectedEdge("")}
           onEdgesDelete={(removed) => remove(removed.map((edge) => edge.id))}
           deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
@@ -167,7 +171,7 @@ export function PlanningGraph({
       {onChange && (
         <>
           <p className="hint">
-            可从节点底部的圆点连到另一个节点顶部，调整执行顺序；也可展开下方列表操作。必要输入仍需通过确认时的校验。
+            拖动节点圆点可以连线。点击节点编辑内容，点击连线可以删除。
           </p>
           {edges.some((edge) => edge.id === selectedEdge) && (
             <button
@@ -259,6 +263,9 @@ function GraphEditor({
   disabled?: boolean;
   readOnly?: boolean;
 }) {
+  const [selectedKey, setSelectedKey] = useState("");
+  const selected =
+    value.tasks.find((t: Row) => t.key === selectedKey) || value.tasks[0];
   const skills = capabilities.filter((c) => c.scenario === scenario);
   const outputs =
     scenario === "travel_planning"
@@ -301,10 +308,10 @@ function GraphEditor({
     );
   return (
     <>
-      <fieldset disabled={disabled}>
+      <fieldset className="deliverable-picker" disabled={disabled}>
         <legend>最终需要哪些成果</legend>
         <p className="hint">
-          这里选择最终单独交付的文件。取消交付某份文件，不会跳过其他成果必需的前置工作；执行步骤以任务图为准。
+          勾选要收到的成果。生成成果所需的前置工作会保留在任务图中。
         </p>
         {outputs.map((key) => (
           <label className="check-row" key={key}>
@@ -349,94 +356,123 @@ function GraphEditor({
           </label>
         )}
       </fieldset>
-      {!!value.tasks.length && (
-        <PlanningGraph
-          tasks={value.tasks}
-          disabled={disabled}
-          onChange={(tasks) => change({ tasks })}
-        />
-      )}
-      <fieldset disabled={disabled}>
-        <legend>子任务内容</legend>
-        {value.tasks.map((task: Row) => (
-          <section className="task-editor" key={task.key}>
-            <h4>
-              {skills.find((c) => c.skill === task.skill)?.title || task.skill}
-            </h4>
-            <label>
-              子任务名称
-              <input
-                maxLength={120}
-                value={task.title}
-                onChange={(e) =>
-                  changeTask(task.key, { title: e.target.value })
+      <div className="graph-workbench">
+        <section className="graph-canvas">
+          <h3>
+            任务安排{" "}
+            <span className="count-label">{value.tasks.length} 项工作</span>
+          </h3>
+          {!!value.tasks.length && (
+            <PlanningGraph
+              tasks={value.tasks}
+              disabled={disabled}
+              onChange={(tasks) => change({ tasks })}
+              selectedTask={selected?.key}
+              onSelectTask={setSelectedKey}
+            />
+          )}
+          {!value.tasks.length && (
+            <p className="empty-materials">还没有任务，请添加需要的工作。</p>
+          )}
+        </section>
+        <fieldset className="node-inspector" disabled={disabled}>
+          <legend>编辑任务</legend>
+          <div className="task-selectors">
+            {value.tasks.map((task: Row, index: number) => (
+              <button
+                type="button"
+                aria-label={`编辑任务：${task.title}`}
+                aria-pressed={selected?.key === task.key}
+                key={task.key}
+                onClick={() => setSelectedKey(task.key)}
+              >
+                <span>{index + 1}</span>
+                {task.title}
+              </button>
+            ))}
+          </div>
+          {(selected ? [selected] : []).map((task: Row) => (
+            <section className="task-editor" key={task.key}>
+              <h4>
+                {skills.find((c) => c.skill === task.skill)?.title ||
+                  task.skill}
+              </h4>
+              <label>
+                子任务名称
+                <input
+                  maxLength={120}
+                  value={task.title}
+                  onChange={(e) =>
+                    changeTask(task.key, { title: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                工作内容
+                <textarea
+                  maxLength={500}
+                  value={task.reason}
+                  onChange={(e) =>
+                    changeTask(task.key, { reason: e.target.value })
+                  }
+                />
+              </label>
+              <p className="hint">
+                验收：{skills.find((c) => c.skill === task.skill)?.acceptance}
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  change({
+                    tasks: value.tasks
+                      .filter((t: Row) => t.key !== task.key)
+                      .map((t: Row) => ({
+                        ...t,
+                        dependencies: t.dependencies.filter(
+                          (x: string) => x !== task.key,
+                        ),
+                      })),
+                  })
                 }
-              />
-            </label>
-            <label>
-              为什么需要这一步
-              <textarea
-                maxLength={500}
-                value={task.reason}
-                onChange={(e) =>
-                  changeTask(task.key, { reason: e.target.value })
-                }
-              />
-            </label>
-            <p className="hint">
-              验收：{skills.find((c) => c.skill === task.skill)?.acceptance}
-            </p>
-            <button
-              type="button"
-              onClick={() =>
-                change({
-                  tasks: value.tasks
-                    .filter((t: Row) => t.key !== task.key)
-                    .map((t: Row) => ({
-                      ...t,
-                      dependencies: t.dependencies.filter(
-                        (x: string) => x !== task.key,
-                      ),
-                    })),
-                })
-              }
+              >
+                移除此步骤
+              </button>
+            </section>
+          ))}
+          <label>
+            添加子任务
+            <select
+              value=""
+              onChange={(e) => {
+                const c = skills.find((x) => x.skill === e.target.value);
+                if (c)
+                  change({
+                    tasks: [
+                      ...value.tasks,
+                      {
+                        key: c.key,
+                        skill: c.skill,
+                        title: c.title,
+                        reason: "为本次目标提供必要成果",
+                        dependencies: [],
+                      },
+                    ],
+                  });
+                if (c) setSelectedKey(c.key);
+              }}
             >
-              移除此步骤
-            </button>
-          </section>
-        ))}
-        <label>
-          添加子任务
-          <select
-            value=""
-            onChange={(e) => {
-              const c = skills.find((x) => x.skill === e.target.value);
-              if (c)
-                change({
-                  tasks: [
-                    ...value.tasks,
-                    {
-                      key: c.key,
-                      skill: c.skill,
-                      title: c.title,
-                      reason: "为本次目标提供必要成果",
-                      dependencies: [],
-                    },
-                  ],
-                });
-            }}
-          >
-            <option value="">选择当前支持的服务能力</option>
-            {skills
-              .filter((c) => !value.tasks.some((t: Row) => t.key === c.key))
-              .map((c) => (
-                <option value={c.skill} key={c.skill}>
-                  {c.title}
-                </option>
-              ))}
-          </select>
-        </label>
-      </fieldset>
+              <option value="">选择当前支持的服务能力</option>
+              {skills
+                .filter((c) => !value.tasks.some((t: Row) => t.key === c.key))
+                .map((c) => (
+                  <option value={c.skill} key={c.skill}>
+                    {c.title}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </fieldset>
+      </div>
     </>
   );
 }
@@ -458,7 +494,7 @@ export function PlanReview({
   run: Run;
   busy: boolean;
   onReviewed: (value: Row) => void;
-  onDirty: () => void;
+  onDirty: (draft: Row) => void;
 }) {
   const [draft, setDraft] = useState<Row>(plan.draft);
   const [dirty, setDirty] = useState(false);
@@ -467,28 +503,29 @@ export function PlanReview({
   const change = (value: Row) => {
     setDraft(value);
     setDirty(true);
-    onDirty();
+    setSaved("");
+    onDirty(value);
   };
   return (
     <section className="planning-result">
-      <h3>检查并确认子任务</h3>
-      <p>本次目标：{recipe.requirement}</p>
-      <p className="hint">
-        来源：
-        {plan.mode === "template_dag"
-          ? "已有模板（未调用模型）"
-          : "主 Agent 调用模型拆解"}
-        。请核对这些工作是否符合您的预期。
-      </p>
-      <label>
-        对目标的理解
-        <textarea
-          value={draft.summary}
-          maxLength={1500}
-          disabled={busy}
-          onChange={(e) => change({ ...draft, summary: e.target.value })}
-        />
-      </label>
+      <div className="request-brief">
+        <span className="subtle-badge">
+          {plan.mode === "template_dag" ? "来自模板" : "Agent 生成"}
+        </span>
+        <p>{recipe.requirement}</p>
+      </div>
+      <details>
+        <summary>查看与修改方案说明</summary>
+        <label>
+          对目标的理解
+          <textarea
+            value={draft.summary}
+            maxLength={1500}
+            disabled={busy}
+            onChange={(e) => change({ ...draft, summary: e.target.value })}
+          />
+        </label>
+      </details>
       {(draft.limitations || []).map((limit: string, i: number) => (
         <p className="hint" key={i}>
           {limit}
@@ -512,18 +549,15 @@ export function PlanReview({
               draft,
             });
             onReviewed(result);
+            setDirty(false);
           })
         }
       >
-        {plan.reviewedAt && !dirty
-          ? "已确认任务图"
-          : "检查通过，确认这些子任务"}
+        {plan.reviewedAt && !dirty ? "已确认任务图" : "确认任务方案"}
       </button>
-      <p className="hint">
-        确认任务图后才可比较执行方案；下一步确认托管时才开始付费执行。
-      </p>
+      <p className="hint">确认方案不会付款；下一页确认预算托管后才开始执行。</p>
       <details>
-        <summary>把这份任务拆解保存为模板</summary>
+        <summary>保存到模板库，下次复用</summary>
         <label>
           模板名称
           <input
@@ -653,11 +687,11 @@ export function TemplateLibrary({
     );
   return (
     <section className="template-library">
-      <h3>{compact ? "先查找可复用的任务模板" : "任务模板库"}</h3>
+      <h2>{compact ? "可用模板" : "模板库"}</h2>
       <p className="hint">
         {compact
-          ? "按当前目标和场景查找。命中只代表关键词相近，采用前仍需核对子任务。"
-          : "保留两套内置模板；自己的模板可修改、删除，也可复制成新模板。修改模板不会改变已经确认的任务。"}
+          ? "选一个作为起点，再按本次目标编辑。"
+          : "保存常用的任务方案。选用后可修改本次任务，原模板保持不变。"}
       </p>
       {!compact && (
         <>
@@ -735,7 +769,7 @@ export function TemplateLibrary({
               disabled={busy}
               onClick={() => void run("use-template", () => adopt(item))}
             >
-              采用并核对 / 微调
+              用此模板创建任务
             </button>
           </article>
         ))}
@@ -750,7 +784,7 @@ export function TemplateLibrary({
                 disabled={busy}
                 onClick={() => void run("use-template", () => adopt(selected))}
               >
-                采用并修改本次任务
+                用此模板创建任务
               </button>
               {!compact && (
                 <button

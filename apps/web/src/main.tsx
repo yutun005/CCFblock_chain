@@ -591,7 +591,10 @@ function App() {
           </div>
         </header>
         <main id="main">
-          {tab === "workspace" ? <Workspace api={api} token={token} currentJob={jobId} onJob={selectJob} /> : <>
+          <div hidden={tab !== "workspace"}>
+            <Workspace api={api} token={token} currentJob={jobId} onJob={selectJob} />
+          </div>
+          {tab !== "workspace" && <>
           <div className="page-heading">
             <div>
               <div className="eyebrow">AUTONOMOUS COLLABORATION</div>
