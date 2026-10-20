@@ -187,14 +187,15 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
     await page.goto("/");
     await page.getByLabel("访问令牌").fill(token);
     await page.getByRole("button", { name: /连接工作区/ }).click();
-    await page.getByRole("combobox", { name: "任务场景", exact: true }).selectOption(scenario);
-    await page.getByRole("checkbox", { name: /测试材料/ }).check();
-    await page.getByLabel("想完成什么？", { exact: true }).fill("测试目标");
-    await page.getByRole("button", { name: "查看子任务" }).click();
+    await page.getByRole("combobox", { name: "任务类型", exact: true }).selectOption(scenario);
+    await page.getByRole(travel ? "radio" : "checkbox", { name: /测试材料/ }).check();
+    await page.getByLabel("任务目标", { exact: true }).fill("测试目标");
+    await page.getByRole("button", { name: "模板库", exact: true }).click();
+    await page.getByRole("button", { name: "查看 / 管理" }).click();
     const preview = page.getByLabel("模板内容预览");
     await expect(preview).toContainText("模板预览（只读）");
     await expect(preview.getByRole("checkbox")).toHaveCount(0);
-    await page.getByRole("button", { name: "采用并修改本次任务" }).click();
+    await page.locator(".template-library > .workspace-panel").getByRole("button", { name: "用此模板创建任务" }).click();
     await expect(preview).toHaveCount(0);
     const review = page.locator(".planning-result");
     const outputs = review.getByRole("group", { name: "最终需要哪些成果", exact: true });
@@ -248,29 +249,138 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
     await page.mouse.up();
     await expect(review.getByRole("button", { name: `删除连线：${names[0]} → ${names[2]}`, exact: true })).toBeVisible();
     await review.locator(".planning-graph").screenshot({ path: testInfo.outputPath("dependency-graph.png") });
-    await review.getByRole("button", { name: "检查通过，确认这些子任务" }).click();
-    await expect(page.getByRole("heading", { name: "已确认的交付成果" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "比较方案与新增费用", exact: true })).toBeEnabled();
+    await review.getByRole("button", { name: "确认任务方案" }).click();
+    await expect(page.locator(".plan-footer")).toContainText("任务方案已确认");
+    await expect(page.getByRole("button", { name: "查看执行方案", exact: true })).toBeEnabled();
     expect(reviewed[0].outputs).toEqual(["report", keys[0]]);
     expect([...reviewed[0].tasks[2].dependencies].sort()).toEqual(keys.slice(0, 2).sort());
-    await review.getByText("把这份任务拆解保存为模板", { exact: true }).click();
+    await review.getByText("保存到模板库，下次复用", { exact: true }).click();
     await review.getByRole("button", { name: "保存为新模板" }).click();
     await expect(review.getByText(/已保存“/)).toBeVisible();
     expect(saved[0].outputs).toEqual(reviewed[0].outputs);
     expect(saved[0].tasks).toEqual(reviewed[0].tasks);
+    // Switching views must preserve unfinished graph edits.
+    await review.getByRole("textbox", { name: "子任务名称", exact: true }).fill("保留我的任务修改");
+    await page.getByRole("button", { name: "编辑目标与材料", exact: true }).click();
+    await page.getByRole("button", { name: "返回当前方案", exact: true }).click();
+    await expect(review.getByRole("textbox", { name: "子任务名称", exact: true })).toHaveValue("保留我的任务修改");
     // Any subsequent edit invalidates the accepted summary and comparison gate.
     await review.getByRole("checkbox", { name: names[1], exact: true }).check();
-    await expect(page.getByRole("heading", { name: "交付成果待确认" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "比较方案与新增费用", exact: true })).toBeDisabled();
+    await expect(page.locator(".plan-footer")).toContainText("请先确认这份任务方案");
+    await expect(page.getByRole("button", { name: "查看执行方案", exact: true })).toBeDisabled();
+    await page.screenshot({ path: testInfo.outputPath("task-editor-desktop.png"), fullPage: true });
     if (travel) {
-      await page.setViewportSize({ width: 390, height: 844 });
+      await page.setViewportSize({ width: 375, height: 812 });
       await expect(outputs).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await outputs.screenshot({ path: testInfo.outputPath("mobile-deliverables.png") });
     }
+    await review.getByRole("button", { name: `编辑任务：${names[1]}`, exact: true }).click();
     await review.locator(".task-editor").filter({ has: page.getByRole("heading", { name: names[1], exact: true }) }).getByRole("button", { name: "移除此步骤" }).click();
     await expect(review.locator(".react-flow__node")).toHaveCount(3);
     await expect(review.locator(`.react-flow__edge[data-id="${keys[1]}-${keys[2]}"]`)).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+}
+
+
+for (const entry of ["model", "offline", "template", "search"] as const) {
+  test(`task creation: ${entry} entry has a complete and honest path`, async ({ page }, testInfo) => {
+    const task = { key: "clean", skill: "data_cleaning", title: "清洗数据", reason: "清理输入数据", dependencies: [] };
+    const template = { id: "builtin-sales", name: "销售数据清洗", description: "清理销售数据并交付清洗结果", scenario: "cross_org_analysis", builtin: true, revision: 1, tasks: [task], outputs: ["clean"], tags: [] };
+    const material = { id: "upload-1", scenario: "cross_org_analysis", name: "我的销售.csv", preview: { rows: 2 } };
+    let uploaded = false;
+    let planCalls = 0;
+    let applyCalls = 0;
+    let confirmCalls = 0;
+    let recipe: Record<string, unknown> = {};
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    const draft = { status: "ready", summary: "清理销售数据", tasks: [task], outputs: ["clean"], groupBy: "organization_quarter", tier: "standard" };
+    await page.route("**/api/**", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const path = url.pathname;
+      const post = request.method() === "POST";
+      const body = post ? request.postDataJSON() : {};
+      if (path === "/api/config") return route.fulfill({ json: { scenarios: [], tokenSymbol: "USDC", chainId: 31337 } });
+      if (path.endsWith("/planner")) return route.fulfill({ json: { configured: entry === "model" } });
+      if (path.endsWith("/materials")) {
+        if (post) { expect(body.content).toContain("organization"); uploaded = true; return route.fulfill({ json: material }); }
+        return route.fulfill({ json: uploaded ? [material] : [] });
+      }
+      if (path.endsWith("/capabilities")) return route.fulfill({ json: [{ ...task, scenario: template.scenario, acceptance: "格式与清洗结果可复算" }] });
+      if (path.endsWith("/templates")) return route.fulfill({ json: !url.searchParams.get("q") || entry === "search" ? [template] : [] });
+      if (path.endsWith("/planning") || path.endsWith("/apply")) {
+        if (path.endsWith("/planning")) { planCalls++; expect(body.title).not.toBe(""); expect(body.planningMode).toBe("llm"); }
+        else { applyCalls++; expect(body.requirement).toBeTruthy(); }
+        recipe = { ...body, outputs: ["clean"], planningId: "draft", planningMode: path.endsWith("/planning") ? "llm" : "template" };
+        return route.fulfill({ json: { id: "draft", status: "ready", mode: "llm_dag", draft, recipe } });
+      }
+      if (path.endsWith("/planning/draft/review")) {
+        recipe = { ...body.recipe, planningId: "reviewed", outputs: body.draft.outputs };
+        return route.fulfill({ json: { id: "reviewed", status: "ready", mode: "llm_dag", draft: body.draft, recipe, reviewedAt: 1 } });
+      }
+      if (path.endsWith("/comparisons")) return route.fulfill({ json: { options: [{ rank: 1, proposal: { id: "proposal", confirmationHash: "bound-hash", recipe, estimatedPrice: "10", estimatedSeconds: 5, budget: "100", selectionReason: "费用优先", pareto: { estimatedSuccessPercent: "95.00" }, deliverables: ["cleaned.csv"], work: [{ key: "clean", title: "清洗数据", estimatedProvider: "clean-a", estimatedPrice: "10", estimatedSeconds: 5, history: { window: 0, source: "none" } }], reused: [], materials: [material] } }], unavailable: [] } });
+      if (path.endsWith("/confirm")) { confirmCalls++; expect(body).toEqual({ proposalId: "proposal", confirmationHash: "bound-hash" }); return route.fulfill({ json: { versionId: "v1", noCharge: false } }); }
+      if (path.endsWith("/versions/v1")) return route.fulfill({ json: { id: "v1", number: 1, recipe, status: "PREPARING", estimatedPrice: "10", materials: [material], deliverables: ["cleaned.csv"], reviews: [], files: [] } });
+      return route.fulfill({ json: [] });
+    });
+    await page.goto("/");
+    await page.getByLabel("访问令牌").fill(token);
+    await page.getByRole("button", { name: /连接工作区/ }).click();
+    await expect(page.getByRole("heading", { name: "创建一个新任务" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "规划方式" })).toHaveCount(0);
+    await expect(page.getByText("先查找可复用的任务模板")).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("create-task-desktop.png"), fullPage: true });
+    if (entry === "template") {
+      await page.getByRole("button", { name: "从模板开始", exact: true }).click();
+      await page.getByRole("button", { name: "用此模板创建任务", exact: true }).click();
+      await expect(page.getByLabel("任务目标", { exact: true })).toHaveValue(template.description);
+      await expect(page.getByText("使用模板：")).toBeVisible();
+      expect(applyCalls).toBe(0);
+    } else await page.getByLabel("任务目标", { exact: true }).fill("整理这些订单，清洗后给我数据文件");
+    // Visiting another workspace tool must not erase the task being composed.
+    await page.getByRole("button", { name: "协作任务", exact: true }).click();
+    await page.getByRole("button", { name: "项目与成果", exact: true }).click();
+    await expect(page.getByLabel("任务目标", { exact: true })).not.toHaveValue("");
+    // Upload selects the material automatically; no separate confirmation or hidden CLI step.
+    await page.getByLabel("上传销售数据", { exact: true }).setInputFiles({ name: material.name, mimeType: "text/csv", buffer: Buffer.from("organization,order_id,date,category,quantity,unit_price_cents\nA,1,2026-10-01,book,1,500") });
+    await expect(page.getByRole("checkbox", { name: /我的销售.csv/ })).toBeChecked();
+    await page.getByRole("button", { name: entry === "template" ? "继续编辑方案" : "生成任务方案", exact: true }).click();
+    if (entry === "offline") {
+      await expect(page.getByRole("heading", { name: "为这个目标创建方案" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "按目标生成新方案" })).toBeDisabled();
+      await expect(page.getByText("当前尚未配置模型接口，可以先使用并修改模板。")).toBeVisible();
+      expect(planCalls).toBe(0); expect(confirmCalls).toBe(0);
+      await page.getByRole("button", { name: "修改任务需求" }).click();
+      await expect(page.getByLabel("任务目标", { exact: true })).toHaveValue("整理这些订单，清洗后给我数据文件");
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("create-task-mobile.png"), fullPage: true });
+      await page.setViewportSize({ width: 812, height: 375 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      return;
+    }
+    if (entry === "search") {
+      await expect(page.getByRole("heading", { name: "有可复用的任务方案" })).toBeVisible();
+      expect(applyCalls).toBe(0); expect(planCalls).toBe(0);
+      await page.getByRole("button", { name: "使用并编辑", exact: true }).click();
+    }
+    await expect(page.getByRole("heading", { name: "编辑任务方案", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "查看执行方案" })).toBeDisabled();
+    expect(confirmCalls).toBe(0);
+    await page.getByRole("button", { name: "确认任务方案", exact: true }).click();
+    await page.getByRole("button", { name: "查看执行方案", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "选择执行方案", exact: true })).toBeVisible();
+    expect(confirmCalls).toBe(0);
+    await page.getByRole("button", { name: "选择此方案", exact: true }).click();
+    await page.getByRole("button", { name: "确认方案并托管预算", exact: true }).click();
+    await expect(page.getByRole("heading", { name: /版本 1/ })).toBeVisible();
+    expect(confirmCalls).toBe(1);
+    expect(planCalls).toBe(entry === "model" ? 1 : 0);
+    expect(applyCalls).toBe(entry === "model" ? 0 : 1);
     expect(errors).toEqual([]);
   });
 }

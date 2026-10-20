@@ -8,6 +8,16 @@ import {
 import { amount as money, price } from "./amount";
 import { PlanningGraph, PlanReview, TemplateLibrary } from "./TaskPlanning";
 import ServiceGraph, { evidenceLabels } from "./ServiceGraph";
+import {
+  ArrowLeft,
+  ArrowRight,
+  FileUp,
+  FolderOpen,
+  LayoutTemplate,
+  Sparkles,
+  Check,
+  X,
+} from "lucide-react";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -58,7 +68,7 @@ const groupLabels: Record<string, string> = {
   month: "月份",
 };
 const initial = {
-  title: "销售数据分析",
+  title: "",
   scenario: "cross_org_analysis",
   materialIds: [] as string[],
   outputs: [] as string[],
@@ -219,17 +229,25 @@ export default function Workspace({
   const [target, setTarget] = useState("结论与限制"),
     [revisionAction, setRevisionAction] = useState("shorten"),
     [feedback, setFeedback] = useState("");
-  const [unresolved, setUnresolved] = useState<string[]>([]);
   const [planner, setPlanner] = useState<Row | null>(null);
   const [goalPlan, setGoalPlan] = useState<Row | null>(null);
   const [capabilities, setCapabilities] = useState<Row[]>([]);
   const [planDirty, setPlanDirty] = useState(false);
+  const [editorView, setEditorView] = useState("request");
+  const [matches, setMatches] = useState<Row[] | null>(null);
+  const [pendingTemplate, setPendingTemplate] = useState<Row | null>(null);
+  const [templates, setTemplates] = useState<Row[]>([]);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const confirmation = useRef<HTMLElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, [page, editorView]);
+  useEffect(() => {
+    if (chosen) confirmation.current?.focus();
+  }, [chosen]);
   const recipeRevision = useRef(0);
   const renderedRecipeRevision = recipeRevision.current;
   const travel = recipe.scenario === "travel_planning";
-  const availableOutputs = travel
-    ? ["attractions", "hotels", "route", "report"]
-    : ["clean", "validate", "statistics", "charts", "report"];
   const run = useCallback(async (name: string, action: () => Promise<void>) => {
     setBusy(name);
     setError("");
@@ -243,16 +261,18 @@ export default function Workspace({
     }
   }, []);
   const refresh = useCallback(async () => {
-    const [ms, ps, planningStatus, cs] = await Promise.all([
+    const [ms, ps, planningStatus, cs, ts] = await Promise.all([
       api(prefix + "/materials"),
       api(prefix + "/projects"),
       api(prefix + "/planner"),
       api(prefix + "/capabilities"),
+      api(prefix + "/templates"),
     ]);
     setMaterials(ms);
     setProjects(ps);
     setPlanner(planningStatus);
     setCapabilities(cs);
+    setTemplates(ts);
   }, [api]);
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
@@ -295,6 +315,7 @@ export default function Workspace({
   }, [api, selectedVersion, currentJob]);
   const update = (patch: Row) => {
     recipeRevision.current++;
+    setMatches(null);
     const invalidates =
       [
         "scenario",
@@ -310,6 +331,7 @@ export default function Workspace({
     if (invalidates) {
       setGoalPlan(null);
       setPlanDirty(false);
+      setEditorView("request");
     }
     setRecipe((old) => {
       const next = { ...old, ...patch };
@@ -340,6 +362,8 @@ export default function Workspace({
       forceRedo: [],
     });
     setPage("editor");
+    setEditorView(value.recipe.planningId ? "plan" : "request");
+    setPendingTemplate(null);
     const revision = recipeRevision.current;
     if (value.recipe.planningId)
       void api(`${prefix}/planning/${value.recipe.planningId}`)
@@ -379,6 +403,8 @@ export default function Workspace({
     setRecipe((old) => ({ ...old, planningId: null }));
     const result = await api(prefix + "/planning", {
       ...recipe,
+      title: recipe.title.trim() || (travel ? "旅游行程规划" : "销售数据分析"),
+      planningMode: "llm",
       planningId: null,
     });
     if (recipeRevision.current !== revision) {
@@ -387,11 +413,13 @@ export default function Workspace({
     }
     setGoalPlan(result);
     setPlanDirty(false);
+    setEditorView("plan");
+    setMatches(null);
+    setPendingTemplate(null);
     if (result.status === "ready") {
       setRecipe(result.recipe);
-      setUnresolved([]);
       setNotice(
-        "主 Agent 已提出任务图。请检查、微调并确认子任务；确认后可以保存为模板或比较执行方案。",
+        "方案已生成。可以修改交付成果、任务内容和先后关系，确认后再执行。",
       );
     } else {
       setNotice(
@@ -409,17 +437,36 @@ export default function Workspace({
     update(result.recipe);
     setGoalPlan(result);
     setPlanDirty(false);
-    setNotice("已确认子任务，可以保存为模板，或继续比较执行方案。");
+    setNotice("任务方案已确认。可以查看费用与执行方案了。");
   }
-  async function useTemplate(item: Row) {
-    if (recipe.scenario !== item.scenario)
-      throw new Error(
-        "请先在目标页切换到模板对应的场景，并选择材料，再采用模板。",
-      );
-    if (!recipe.requirement.trim() || !recipe.materialIds.length)
-      throw new Error("请先在目标页填写本次大目标并选择材料。");
+  async function adoptTemplate(item: Row) {
+    const sameScenario = recipe.scenario === item.scenario;
+    const next = {
+      ...recipe,
+      title: sameScenario && recipe.title.trim() ? recipe.title : item.name,
+      scenario: item.scenario,
+      requirement:
+        sameScenario && recipe.requirement.trim()
+          ? recipe.requirement
+          : item.description,
+      materialIds: sameScenario ? recipe.materialIds : [],
+      travelRequest: sameScenario ? recipe.travelRequest : null,
+      planningMode: "template",
+      planningId: null,
+      ...(!sameScenario
+        ? { projectId: null, sourceVersion: null, forceRedo: [] }
+        : {}),
+    };
+    if (!next.materialIds.length) {
+      update(next);
+      setPendingTemplate(item);
+      setPage("editor");
+      setEditorView("request");
+      setNotice(`已选择“${item.name}”。添加材料后即可编辑这份方案。`);
+      return;
+    }
     const revision = recipeRevision.current;
-    const result = await api(`${prefix}/templates/${item.id}/apply`, recipe);
+    const result = await api(`${prefix}/templates/${item.id}/apply`, next);
     if (recipeRevision.current !== revision) {
       setNotice("采用模板期间目标发生变化，请按当前目标重新选择模板。");
       return;
@@ -428,9 +475,29 @@ export default function Workspace({
     setGoalPlan(result);
     setPlanDirty(false);
     setPage("editor");
+    setEditorView("plan");
+    setPendingTemplate(null);
     setNotice(
-      "已载入模板，没有调用模型。请核对或微调子任务，确认符合本次目标后再继续。",
+      `已载入“${item.name}”。请核对是否满足本次目标，修改不会影响原模板。`,
     );
+  }
+  async function preparePlan() {
+    if (!recipe.requirement.trim()) throw new Error("请写下希望完成的任务。");
+    if (!recipe.materialIds.length) throw new Error("请先添加一份任务材料。");
+    if (pendingTemplate) return adoptTemplate(pendingTemplate);
+    const revision = recipeRevision.current;
+    const found = await api(
+      `${prefix}/templates?q=${encodeURIComponent(recipe.requirement)}&scenario=${encodeURIComponent(recipe.scenario)}`,
+    );
+    if (revision !== recipeRevision.current) return;
+    if (found.length) {
+      setMatches(found);
+      setEditorView("choose");
+      return;
+    }
+    if (planner?.configured) return planGoal();
+    setMatches([]);
+    setEditorView("choose");
   }
   async function submit() {
     if (!chosen) return;
@@ -482,12 +549,11 @@ export default function Workspace({
     <section className="project-workspace" aria-label="项目与成果工作区">
       <nav className="workspace-tabs" aria-label="项目操作">
         {[
-          ["editor", "目标与任务规划"],
-          ["services", "服务业务图"],
+          ["editor", "创建任务"],
+          ["history", "我的项目"],
           ["templates", "模板库"],
-          ["compare", "方案对比"],
-          ["history", "历史版本与续单"],
-          ["review", "成果预览与修改"],
+          ["services", "服务管理"],
+          ...(version || currentJob ? [["review", "成果验收"]] : []),
         ].map(([id, label]) => (
           <button
             key={id}
@@ -495,7 +561,11 @@ export default function Workspace({
               setPage(id);
               if (id === "history") void run("refresh", refresh);
             }}
-            aria-current={page === id ? "page" : undefined}
+            aria-current={
+              page === id || (id === "editor" && page === "compare")
+                ? "page"
+                : undefined
+            }
           >
             {label}
             {id === "review" &&
@@ -520,7 +590,7 @@ export default function Workspace({
           {busy === "compare"
             ? "正在向在线服务估价并检查复用成果…"
             : busy === "plan"
-              ? "主 Agent 正在发现服务、拆解目标并校验任务依赖，通常需要几十秒…"
+              ? "正在准备任务方案，请稍候…"
               : "正在处理…"}
         </p>
       )}
@@ -541,495 +611,662 @@ export default function Workspace({
           run={run}
           busy={!!busy}
           capabilities={capabilities}
-          onUse={useTemplate}
+          onUse={adoptTemplate}
         />
       )}
-      {page === "editor" && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void run("compare", buildComparison);
-          }}
-        >
-          <div className="workspace-columns">
-            <section className="workspace-panel">
-              <h2>1. 材料与目标</h2>
-              <label>
-                规划方式
-                <select
-                  value={recipe.planningMode === "manual" ? "manual" : "llm"}
-                  onChange={(e) =>
-                    update({
-                      planningMode: e.target.value,
-                      outputs: e.target.value === "manual" ? ["report"] : [],
-                    })
-                  }
-                >
-                  <option value="llm">先查模板，再由主 Agent 拆解新目标</option>
-                  <option value="manual">旧版手动选择成果</option>
-                </select>
-              </label>
-              {recipe.planningMode !== "manual" && (
-                <p className="hint" role="status">
-                  {planner?.message || "正在读取规划模型配置…"}
-                </p>
-              )}
-              {recipe.sourceVersion && (
-                <p className="workspace-notice">
-                  当前为续单。
-                  <button
-                    type="button"
-                    onClick={() => {
-                      update(initial);
-                      setGoalPlan(null);
-                      setNotice("已切换为新项目。");
-                    }}
-                  >
-                    改为新项目
-                  </button>
-                </p>
-              )}
-              <label>
-                项目名称
-                <input
-                  value={recipe.title}
-                  maxLength={100}
-                  required
-                  onChange={(e) => update({ title: e.target.value })}
-                />
-              </label>
-              <label>
-                任务场景
-                <select
-                  value={recipe.scenario}
-                  disabled={!!recipe.sourceVersion}
-                  onChange={(e) =>
-                    update({
-                      scenario: e.target.value,
-                      materialIds: [],
-                      travelRequest: null,
-                      outputs:
-                        recipe.planningMode !== "manual" ? [] : ["report"],
-                      requirement: "",
-                    })
-                  }
-                >
-                  <option value="cross_org_analysis">销售数据分析</option>
-                  <option value="travel_planning">旅游行程规划</option>
-                </select>
-              </label>
-              <fieldset>
-                <legend>
-                  选择已保存材料{travel ? "（一份）" : "（可多选）"}
-                </legend>
-                {materials
-                  .filter((m) => m.scenario === recipe.scenario)
-                  .map((m) => (
-                    <label className="check-row" key={m.id}>
-                      <input
-                        type="checkbox"
-                        checked={recipe.materialIds.includes(m.id)}
-                        onChange={(e) =>
-                          update({
-                            materialIds: e.target.checked
-                              ? travel
-                                ? [m.id]
-                                : [...recipe.materialIds, m.id]
-                              : recipe.materialIds.filter(
-                                  (id: string) => id !== m.id,
-                                ),
-                            ...(travel && e.target.checked
-                              ? { travelRequest: m.preview.request }
-                              : {}),
-                          })
-                        }
-                      />
-                      {m.name}
-                      <small>
-                        {travel
-                          ? `${m.preview.source} · ${m.preview.as_of}`
-                          : `${m.preview.rows} 行`}
-                      </small>
-                    </label>
-                  ))}
-              </fieldset>
-              <label>
-                导入{travel ? "旅游 JSON 资料" : "自己的销售 CSV"}
-                <input
-                  type="file"
-                  accept={travel ? ".json" : ".csv"}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    void run("upload", async () => {
-                      if (file.size > 2_000_000)
-                        throw new Error("文件不能超过 2 MB");
-                      const material = await api(prefix + "/materials", {
-                        name: file.name,
-                        scenario: recipe.scenario,
-                        content: await file.text(),
-                      });
-                      await refresh();
-                      update({
-                        materialIds: travel
-                          ? [material.id]
-                          : [...new Set([...recipe.materialIds, material.id])],
-                        ...(travel
-                          ? { travelRequest: material.preview.request }
-                          : {}),
-                      });
-                    });
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {!travel && (
-                <p className="hint">
-                  CSV 列名：organization, order_id, date, category, quantity,
-                  unit_price_cents。金额以分计；UTF-8 编码。类别支持
-                  book、food、tool；日期为 YYYY-MM-DD；最多 2 MB、20000 行。
-                </p>
-              )}
-              {materials
-                .filter((m) => recipe.materialIds.includes(m.id))
-                .map((m) => (
-                  <details key={m.id}>
-                    <summary>核对材料：{m.name}</summary>
-                    <pre>{JSON.stringify(m.preview, null, 2)}</pre>
-                  </details>
-                ))}
-              <label>
-                {recipe.planningMode !== "manual"
-                  ? "想完成什么？"
-                  : "文字需求（可选，按关键词解析）"}
-                <textarea
-                  value={recipe.requirement}
-                  maxLength={4000}
-                  onChange={(e) => update({ requirement: e.target.value })}
-                  placeholder={
-                    travel
-                      ? "按这份资料给我安排三天旅游，最后给我一份完整行程，服务费不超过100 USDC。"
-                      : "帮我看懂这批销售数据，按月份汇总并给一份文字分析，不需要图表。"
-                  }
-                />
-              </label>
-              {recipe.planningMode !== "manual" && (
-                <TemplateLibrary
-                  key={recipe.scenario}
-                  api={api}
-                  run={run}
-                  busy={!!busy}
-                  capabilities={capabilities}
-                  onUse={useTemplate}
-                  compact
-                  query={recipe.requirement}
-                  scenario={recipe.scenario}
-                />
-              )}
-              {recipe.planningMode !== "manual" ? (
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={
-                    !!busy ||
-                    !recipe.requirement.trim() ||
-                    !recipe.materialIds.length ||
-                    !planner?.configured
-                  }
-                  onClick={() => void run("plan", planGoal)}
-                >
-                  没有合适模板，让主 Agent 拆解
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={!!busy || !recipe.requirement.trim()}
-                  onClick={() =>
-                    void run("parse", async () => {
-                      const result = await api(prefix + "/parse", {
-                        text: recipe.requirement,
-                        scenario: recipe.scenario,
-                      });
-                      update(result.patch);
-                      setUnresolved(result.unresolved);
-                      setNotice(
-                        "已把识别结果填入可见选项。您可以修改，确认时以最终选项为准。",
-                      );
-                    })
-                  }
-                >
-                  解析并填入选项
-                </button>
-              )}
-              {goalPlan?.status === "ready" && goalPlan.draft && (
-                <PlanReview
-                  key={goalPlan.id}
-                  plan={goalPlan}
-                  recipe={recipe}
-                  capabilities={capabilities}
-                  api={api}
-                  run={run}
-                  busy={!!busy}
-                  onReviewed={acceptReviewed}
-                  onDirty={() => {
-                    setPlanDirty(true);
-                    setChosen(null);
-                    setOffers([]);
-                  }}
-                />
-              )}
-              {goalPlan && goalPlan.status !== "ready" && (
-                <section className="planning-result">
-                  <h3>需要补充或暂不支持的内容</h3>
-                  <p>{goalPlan.summary}</p>
-                  {(goalPlan.questions || []).map((q: string, i: number) => (
-                    <p role="alert" key={i}>
-                      {q}
-                    </p>
-                  ))}
-                </section>
-              )}
-              {!!unresolved.length && (
-                <p role="alert">这些要求需调整：{unresolved.join("；")}</p>
-              )}
-            </section>
-            <section className="workspace-panel">
-              <h2>2. 交付与预算</h2>
-              {recipe.planningMode === "manual" ? (
-                <fieldset>
-                  <legend>本次希望拿到的成果</legend>
-                  {availableOutputs.map((key) => (
-                    <label className="check-row" key={key}>
-                      <input
-                        type="checkbox"
-                        checked={recipe.outputs.includes(key)}
-                        onChange={(e) =>
-                          update({
-                            outputs: e.target.checked
-                              ? [...recipe.outputs, key]
-                              : recipe.outputs.filter(
-                                  (item: string) => item !== key,
-                                ),
-                          })
-                        }
-                      />
-                      {travel && key === "report"
-                        ? "完整行程报告"
-                        : labels[key]}
-                    </label>
-                  ))}
-                </fieldset>
-              ) : (
-                <section aria-label="交付确认摘要">
-                  <h3>
-                    {goalPlan?.reviewedAt && !planDirty
-                      ? "已确认的交付成果"
-                      : "交付成果待确认"}
-                  </h3>
-                  <p>
-                    {goalPlan?.reviewedAt && !planDirty
-                      ? recipe.outputs
-                          .map((key: string) => labels[key] || key)
-                          .join("、")
-                      : "请在任务规划中勾选最终成果，再确认子任务。"}
-                  </p>
-                </section>
-              )}
-              <p className="hint">
-                {recipe.planningMode !== "manual"
-                  ? "在左侧任务图中核对和修改交付，再点击确认子任务。修改这里的材料或参数后，需要重新载入模板或规划并确认。"
-                  : "勾选要交付的成果，必要前置工作按业务规则补齐。此模式使用预设规则，不调用规划模型。"}
-              </p>
-              {recipe.planningMode === "manual" &&
-                recipe.outputs.includes("report") && (
-                  <label>
-                    报告文件形式
+      {page === "editor" && editorView === "request" && (
+        <>
+          <header className="request-heading">
+            <div>
+              <span className="eyebrow">NEW TASK</span>
+              <h1 ref={heading} tabIndex={-1}>
+                {recipe.sourceVersion ? "继续这个项目" : "创建一个新任务"}
+              </h1>
+              <p>告诉我们你想完成什么，确认方案后再开始执行。</p>
+            </div>
+            <button type="button" onClick={() => setPage("templates")}>
+              <LayoutTemplate size={17} />
+              从模板开始
+            </button>
+          </header>
+          <form
+            className="request-layout"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run("plan", preparePlan);
+            }}
+          >
+            <section className="request-main">
+              <fieldset className="request-fields" disabled={!!busy}>
+                <legend className="sr-only">任务需求</legend>
+                <div className="request-card goal-card">
+                  <div className="request-card-title">
+                    <Sparkles size={19} />
+                    <h2>你想完成什么？</h2>
+                  </div>
+                  <label className="scenario-field">
+                    任务类型
                     <select
-                      value={
-                        recipe.tier === "detailed" ? "detailed" : "standard"
-                      }
-                      onChange={(e) => update({ tier: e.target.value })}
+                      value={recipe.scenario}
+                      disabled={!!recipe.sourceVersion}
+                      onChange={(e) => {
+                        update({
+                          scenario: e.target.value,
+                          materialIds: [],
+                          travelRequest: null,
+                          outputs: [],
+                          planningMode: "llm",
+                          title: "",
+                        });
+                        setPendingTemplate(null);
+                      }}
                     >
-                      <option value="standard">文本报告与引用资料</option>
-                      <option value="detailed">
-                        文本报告、离线网页与来源对照表（增加报告费用）
-                      </option>
+                      <option value="cross_org_analysis">销售数据分析</option>
+                      <option value="travel_planning">旅游行程规划</option>
                     </select>
                   </label>
-                )}
-              {recipe.planningMode === "manual" && !travel && (
-                <label>
-                  统计分组
-                  <select
-                    value={recipe.groupBy}
-                    onChange={(e) => update({ groupBy: e.target.value })}
-                  >
-                    <option value="organization_quarter">组织与季度</option>
-                    <option value="organization">组织</option>
-                    <option value="category">商品类别</option>
-                    <option value="month">月份</option>
-                  </select>
-                </label>
-              )}
-              {travel && recipe.travelRequest && (
-                <fieldset>
-                  <legend>本次出行要求</legend>
-                  {[
-                    ["destination", "目的地", "text"],
-                    ["start_date", "出发日期", "date"],
-                    ["days", "天数（1–7）", "number"],
-                    ["travelers", "人数", "number"],
-                    ["budget_cents", "行程预算（分）", "number"],
-                    ["day_start", "每日开始", "time"],
-                    ["day_end", "每日结束", "time"],
-                  ].map(([key, label, type]) => (
-                    <label key={key}>
-                      {label}
-                      <input
-                        type={type}
-                        value={recipe.travelRequest[key]}
-                        required
-                        onChange={(e) =>
-                          update({
-                            travelRequest: {
-                              ...recipe.travelRequest,
-                              [key]:
-                                type === "number"
-                                  ? Number(e.target.value)
-                                  : e.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                  ))}
-                  <label>
-                    兴趣类别（用逗号分隔）
+                  <label className="sr-only" htmlFor="task-goal">
+                    任务目标
+                  </label>
+                  <textarea
+                    id="task-goal"
+                    className="goal-input"
+                    value={recipe.requirement}
+                    required
+                    maxLength={4000}
+                    onChange={(e) => update({ requirement: e.target.value })}
+                    placeholder={
+                      travel
+                        ? "例如：安排三天杭州旅行，两人出行，想去西湖和博物馆，住宿尽量靠近地铁。"
+                        : "例如：分析这批销售数据，按月份汇总，比较各月销售表现，给我一份带图表的报告。"
+                    }
+                  />
+                  {pendingTemplate && (
+                    <div className="template-selection">
+                      <LayoutTemplate size={17} />
+                      <span>
+                        使用模板：<strong>{pendingTemplate.name}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="取消使用模板"
+                        onClick={() => {
+                          setPendingTemplate(null);
+                          update({ planningMode: "llm" });
+                        }}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
+                  <p className="field-help">
+                    写清期望的结果和限制。你可以在下一页修改方案。
+                  </p>
+                </div>
+                <div className="request-card">
+                  <div className="request-card-title">
+                    <FolderOpen size={19} />
+                    <h2>任务材料</h2>
+                    <span className="count-label">
+                      已选 {recipe.materialIds.length} 份
+                    </span>
+                  </div>
+                  <p className="field-help">
+                    {travel
+                      ? "选择一份目的地资料，或上传自己的景点与酒店资料。"
+                      : "添加要分析的销售数据，可选择多份一起分析。"}
+                  </p>
+                  <div className="material-list">
+                    {materials
+                      .filter((m) => m.scenario === recipe.scenario)
+                      .map((m) => (
+                        <label
+                          className={
+                            "material-option " +
+                            (recipe.materialIds.includes(m.id)
+                              ? "selected"
+                              : "")
+                          }
+                          key={m.id}
+                        >
+                          <input
+                            type={travel ? "radio" : "checkbox"}
+                            name={travel ? "travel-material" : undefined}
+                            checked={recipe.materialIds.includes(m.id)}
+                            onChange={(e) =>
+                              update({
+                                materialIds: e.target.checked
+                                  ? travel
+                                    ? [m.id]
+                                    : [...recipe.materialIds, m.id]
+                                  : recipe.materialIds.filter(
+                                      (id: string) => id !== m.id,
+                                    ),
+                                ...(travel && e.target.checked
+                                  ? { travelRequest: m.preview.request }
+                                  : {}),
+                              })
+                            }
+                          />
+                          <span>
+                            <strong>{m.name}</strong>
+                            <small>
+                              {travel
+                                ? `${m.preview.source || "目的地资料"}${m.preview.as_of ? " · " + m.preview.as_of : ""}`
+                                : `${m.preview.rows} 行销售数据`}
+                            </small>
+                          </span>
+                          {recipe.materialIds.includes(m.id) && (
+                            <Check size={17} aria-hidden="true" />
+                          )}
+                        </label>
+                      ))}
+                    {!materials.some((m) => m.scenario === recipe.scenario) && (
+                      <p className="empty-materials">
+                        还没有材料，请上传文件。
+                      </p>
+                    )}
+                  </div>
+                  <label className="upload-area">
+                    <FileUp size={22} />
+                    <span>
+                      <strong>上传{travel ? "旅游资料" : "销售数据"}</strong>
+                      <small>{travel ? "JSON" : "CSV"} 文件，最大 2 MB</small>
+                    </span>
                     <input
-                      value={(recipe.travelRequest.interests || []).join(",")}
-                      onChange={(e) =>
-                        update({
-                          travelRequest: {
-                            ...recipe.travelRequest,
-                            interests: e.target.value
-                              .split(/[,，]/)
-                              .map((s) => s.trim())
-                              .filter(Boolean),
-                          },
-                        })
-                      }
+                      type="file"
+                      aria-label={travel ? "上传旅游资料" : "上传销售数据"}
+                      accept={travel ? ".json" : ".csv"}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const revision = recipeRevision.current;
+                        void run("upload", async () => {
+                          if (file.size > 2_000_000)
+                            throw new Error("文件不能超过 2 MB");
+                          const material = await api(prefix + "/materials", {
+                            name: file.name,
+                            scenario: recipe.scenario,
+                            content: await file.text(),
+                          });
+                          await refresh();
+                          if (revision !== recipeRevision.current) {
+                            setNotice(
+                              "文件已保存到材料列表，请选择需要使用的材料。",
+                            );
+                            return;
+                          }
+                          update({
+                            materialIds: travel
+                              ? [material.id]
+                              : [
+                                  ...new Set([
+                                    ...recipe.materialIds,
+                                    material.id,
+                                  ]),
+                                ],
+                            ...(travel
+                              ? { travelRequest: material.preview.request }
+                              : {}),
+                          });
+                        });
+                        e.target.value = "";
+                      }}
                     />
                   </label>
-                </fieldset>
-              )}
-              <label>
-                任务就绪时的选人偏好（也用于方案排序）
-                <select
-                  value={
-                    recipe.preference === "balanced"
-                      ? "lowest_price"
-                      : recipe.preference
-                  }
-                  onChange={(e) => update({ preference: e.target.value })}
-                >
-                  <option value="lowest_price">费用优先</option>
-                  <option value="fastest">速度优先</option>
-                  <option value="reliability">履约优先</option>
-                </select>
-              </label>
-              <label>
-                服务费用预算上限（USDC）
-                <input
-                  inputMode="decimal"
-                  pattern="[0-9]+(\.[0-9]{1,6})?"
-                  value={recipe.budget}
-                  required
-                  onChange={(e) => update({ budget: e.target.value })}
-                />
-              </label>
-              <label>
-                报告确认时限
-                <select
-                  value={recipe.reviewSeconds}
-                  onChange={(e) =>
-                    update({ reviewSeconds: Number(e.target.value) })
-                  }
-                >
-                  <option value={600}>10 分钟</option>
-                  <option value={1800}>30 分钟</option>
-                  <option value={3300}>55 分钟</option>
-                </select>
-              </label>
-              {recipe.sourceVersion && (
-                <fieldset>
-                  <legend>明确要求重做（会新增费用，并重做相关下游）</legend>
-                  {(travel
-                    ? ["attractions", "hotels", "route", "report"]
-                    : ["clean", "validate", "statistics", "report"]
-                  ).map((key) => (
-                    <label className="check-row" key={key}>
-                      <input
-                        type="checkbox"
-                        checked={recipe.forceRedo.includes(key)}
-                        onChange={(e) =>
-                          update({
-                            forceRedo: e.target.checked
-                              ? [...recipe.forceRedo, key]
-                              : recipe.forceRedo.filter(
-                                  (x: string) => x !== key,
-                                ),
-                          })
-                        }
-                      />
-                      {labels[key]}
-                    </label>
-                  ))}
-                </fieldset>
-              )}
-              <button
-                className="primary"
-                type="submit"
-                disabled={
-                  !!busy ||
-                  !recipe.materialIds.length ||
-                  !recipe.outputs.length ||
-                  (recipe.planningMode !== "manual" &&
-                    (!recipe.planningId || !goalPlan?.reviewedAt || planDirty))
-                }
-              >
-                比较方案与新增费用
-              </button>
+                  <details className="format-help">
+                    <summary>文件格式要求</summary>
+                    <p>
+                      {travel
+                        ? "上传包含 request、attractions、hotels 的旅游 JSON 资料；目的地与出行条件可在下方调整。"
+                        : "CSV 需包含 organization、order_id、date、category、quantity、unit_price_cents 列。金额以分计；UTF-8 编码；类别为 book、food、tool；日期格式 YYYY-MM-DD，最多 20000 行。"}
+                    </p>
+                  </details>
+                  {travel && recipe.travelRequest && (
+                    <details>
+                      <summary>调整出行条件</summary>
+                      <div className="compact-fields">
+                        {[
+                          ["destination", "目的地", "text"],
+                          ["start_date", "出发日期", "date"],
+                          ["days", "出行天数", "number"],
+                          ["travelers", "出行人数", "number"],
+                          ["day_start", "每日开始", "time"],
+                          ["day_end", "每日结束", "time"],
+                        ].map(([key, label, type]) => (
+                          <label key={key}>
+                            {label}
+                            <input
+                              type={type}
+                              value={recipe.travelRequest[key]}
+                              min={type === "number" ? 1 : undefined}
+                              max={key === "days" ? 7 : undefined}
+                              onChange={(e) =>
+                                update({
+                                  travelRequest: {
+                                    ...recipe.travelRequest,
+                                    [key]:
+                                      type === "number"
+                                        ? Number(e.target.value)
+                                        : e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
+                        <label>
+                          行程预算（元）
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={recipe.travelRequest.budget_cents / 100}
+                            onChange={(e) =>
+                              update({
+                                travelRequest: {
+                                  ...recipe.travelRequest,
+                                  budget_cents: Math.round(
+                                    Number(e.target.value) * 100,
+                                  ),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          兴趣偏好
+                          <input
+                            value={(recipe.travelRequest.interests || []).join(
+                              ",",
+                            )}
+                            onChange={(e) =>
+                              update({
+                                travelRequest: {
+                                  ...recipe.travelRequest,
+                                  interests: e.target.value
+                                    .split(/[,，]/)
+                                    .map((v) => v.trim())
+                                    .filter(Boolean),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </fieldset>
             </section>
+            <aside className="request-sidebar">
+              <div className="request-card budget-card">
+                <h2>服务预算</h2>
+                <label>
+                  最多支付（USDC）
+                  <input
+                    inputMode="decimal"
+                    pattern="[0-9]+(\.[0-9]{1,2})?"
+                    value={recipe.budget}
+                    required
+                    disabled={!!busy}
+                    onChange={(e) => update({ budget: e.target.value })}
+                  />
+                </label>
+                <p className="field-help">
+                  用于支付 Agent 的服务报酬。此时不会扣款。
+                </p>
+                <details>
+                  <summary>更多设置</summary>
+                  <label>
+                    项目名称
+                    <input
+                      value={recipe.title}
+                      maxLength={100}
+                      placeholder={travel ? "旅游行程规划" : "销售数据分析"}
+                      disabled={!!busy}
+                      onChange={(e) => update({ title: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    选择服务时优先考虑
+                    <select
+                      disabled={!!busy}
+                      value={
+                        recipe.preference === "balanced"
+                          ? "lowest_price"
+                          : recipe.preference
+                      }
+                      onChange={(e) => update({ preference: e.target.value })}
+                    >
+                      <option value="lowest_price">费用更低</option>
+                      <option value="fastest">完成更快</option>
+                      <option value="reliability">履约记录更好</option>
+                    </select>
+                  </label>
+                  <label>
+                    报告确认时限
+                    <select
+                      disabled={!!busy}
+                      value={recipe.reviewSeconds}
+                      onChange={(e) =>
+                        update({ reviewSeconds: Number(e.target.value) })
+                      }
+                    >
+                      <option value={600}>10 分钟</option>
+                      <option value={1800}>30 分钟</option>
+                      <option value={3300}>55 分钟</option>
+                    </select>
+                  </label>
+                  {recipe.sourceVersion && (
+                    <fieldset>
+                      <legend>需要重新执行的工作</legend>
+                      {(travel
+                        ? ["attractions", "hotels", "route", "report"]
+                        : ["clean", "validate", "statistics", "report"]
+                      ).map((key) => (
+                        <label className="check-row" key={key}>
+                          <input
+                            type="checkbox"
+                            checked={recipe.forceRedo.includes(key)}
+                            onChange={(e) =>
+                              update({
+                                forceRedo: e.target.checked
+                                  ? [...recipe.forceRedo, key]
+                                  : recipe.forceRedo.filter(
+                                      (v: string) => v !== key,
+                                    ),
+                              })
+                            }
+                          />
+                          {labels[key]}
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
+                </details>
+                <button
+                  className="primary request-submit"
+                  type="submit"
+                  disabled={!!busy}
+                >
+                  {busy === "plan"
+                    ? "正在准备方案…"
+                    : pendingTemplate
+                      ? "继续编辑方案"
+                      : "生成任务方案"}
+                  <ArrowRight size={17} />
+                </button>
+                {!planner?.configured && planner && (
+                  <p className="field-help">
+                    可直接使用已有模板。按新目标生成方案需配置模型接口。
+                  </p>
+                )}
+                {goalPlan && (
+                  <button
+                    type="button"
+                    className="text-action"
+                    onClick={() => setEditorView("plan")}
+                  >
+                    返回当前方案
+                  </button>
+                )}
+              </div>
+              <div className="template-shortcuts">
+                <h3>从常用模板开始</h3>
+                {templates
+                  .filter((t) => t.builtin)
+                  .map((t) => (
+                    <button
+                      type="button"
+                      key={t.id}
+                      disabled={!!busy}
+                      onClick={() =>
+                        void run("use-template", () => adoptTemplate(t))
+                      }
+                    >
+                      <LayoutTemplate size={18} />
+                      <span>
+                        <strong>{t.name}</strong>
+                        <small>{t.tasks.length} 项工作 · 可按需修改</small>
+                      </span>
+                      <ArrowRight size={16} />
+                    </button>
+                  ))}
+              </div>
+              {recipe.sourceVersion && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    update({
+                      ...initial,
+                      projectId: null,
+                      sourceVersion: null,
+                    });
+                    setPendingTemplate(null);
+                    setGoalPlan(null);
+                  }}
+                >
+                  另建一个项目
+                </button>
+              )}
+            </aside>
+          </form>
+        </>
+      )}
+      {page === "editor" && editorView === "choose" && (
+        <section className="plan-options">
+          <button
+            type="button"
+            className="text-action"
+            onClick={() => setEditorView("request")}
+          >
+            <ArrowLeft size={17} />
+            修改任务需求
+          </button>
+          <header className="request-heading">
+            <div>
+              <h1 ref={heading} tabIndex={-1}>
+                {matches?.length ? "有可复用的任务方案" : "为这个目标创建方案"}
+              </h1>
+              <p>
+                {matches?.length
+                  ? "选择适合的模板后，可以修改每项工作和最终成果。"
+                  : "没有找到相近的模板。你可以生成新方案，或到模板库中选择。"}
+              </p>
+            </div>
+          </header>
+          <div className="request-brief">
+            <strong>本次目标</strong>
+            <p>{recipe.requirement}</p>
+            <span>
+              {recipe.materialIds.length} 份材料 · 预算 {price(recipe.budget)}{" "}
+              USDC
+            </span>
           </div>
-        </form>
+          <div className="template-cards">
+            {matches?.map((item) => (
+              <article className="request-card" key={item.id}>
+                <span className="subtle-badge">
+                  {item.builtin ? "内置模板" : "我的模板"}
+                </span>
+                <h2>{item.name}</h2>
+                <p>{item.description}</p>
+                <div className="output-chips">
+                  {item.outputs.map((key: string) => (
+                    <span key={key}>{labels[key] || key}</span>
+                  ))}
+                </div>
+                <details>
+                  <summary>包含 {item.tasks.length} 项工作</summary>
+                  {item.tasks.map((task: Row) => (
+                    <p key={task.key}>{task.title}</p>
+                  ))}
+                </details>
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() =>
+                    void run("use-template", () => adoptTemplate(item))
+                  }
+                >
+                  使用并编辑
+                  <ArrowRight size={16} />
+                </button>
+              </article>
+            ))}
+          </div>
+          <div className="alternative-action">
+            <div>
+              <h3>想要不同的方案？</h3>
+              <p>
+                {planner?.configured
+                  ? "让 Agent 按本次目标重新生成，再由你确认。"
+                  : "当前尚未配置模型接口，可以先使用并修改模板。"}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!!busy || !planner?.configured}
+              onClick={() => void run("plan", planGoal)}
+            >
+              按目标生成新方案
+            </button>
+            <button type="button" onClick={() => setPage("templates")}>
+              浏览模板库
+            </button>
+          </div>
+        </section>
+      )}
+      {page === "editor" && editorView === "plan" && (
+        <section className="plan-workbench">
+          <button
+            type="button"
+            className="text-action"
+            onClick={() => setEditorView("request")}
+          >
+            <ArrowLeft size={17} />
+            编辑目标与材料
+          </button>
+          <header className="request-heading">
+            <div>
+              <h1 ref={heading} tabIndex={-1}>
+                编辑任务方案
+              </h1>
+              <p>核对交付成果和任务安排，确认后再查看费用。</p>
+            </div>
+            <span className="subtle-badge">
+              预算 {price(recipe.budget)} USDC
+            </span>
+          </header>
+          {goalPlan?.status === "ready" && goalPlan.draft ? (
+            <>
+              <PlanReview
+                key={goalPlan.id}
+                plan={goalPlan}
+                recipe={recipe}
+                capabilities={capabilities}
+                api={api}
+                run={run}
+                busy={!!busy}
+                onReviewed={acceptReviewed}
+                onDirty={(draft) => {
+                  setPlanDirty(true);
+                  setGoalPlan((old) =>
+                    old ? { ...old, draft, reviewedAt: null } : old,
+                  );
+                  setChosen(null);
+                  setOffers([]);
+                }}
+              />
+              <footer className="plan-footer">
+                <div>
+                  <strong>
+                    {goalPlan?.reviewedAt && !planDirty
+                      ? "任务方案已确认"
+                      : "请先确认这份任务方案"}
+                  </strong>
+                  <p>
+                    {goalPlan?.reviewedAt && !planDirty
+                      ? "下一步查看价格和预计耗时，确认托管后才开始执行。"
+                      : "修改交付或任务后，需要重新确认。"}
+                  </p>
+                </div>
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={!!busy || !goalPlan?.reviewedAt || planDirty}
+                  onClick={() => void run("compare", buildComparison)}
+                >
+                  查看执行方案
+                  <ArrowRight size={17} />
+                </button>
+              </footer>
+            </>
+          ) : (
+            <div className="request-card">
+              <h2>还需要补充一些信息</h2>
+              <p>{goalPlan?.summary || "请先填写任务目标并生成方案。"}</p>
+              {goalPlan?.questions?.map((q: string, i: number) => (
+                <p role="alert" key={i}>
+                  {q}
+                </p>
+              ))}
+              <button type="button" onClick={() => setEditorView("request")}>
+                返回补充
+              </button>
+            </div>
+          )}
+        </section>
       )}
       {page === "compare" && (
         <section>
-          <h2>同一任务的执行预估：费用、耗时、成功率</h2>
+          <button
+            type="button"
+            className="text-action"
+            onClick={() => {
+              setPage("editor");
+              setEditorView("plan");
+            }}
+          >
+            <ArrowLeft size={17} />
+            返回任务方案
+          </button>
+          <h1 ref={heading} tabIndex={-1}>
+            选择执行方案
+          </h1>
           <p>
-            所有方案完成同一份已确认的任务。这里的商家用于估价，不提前锁定执行者。
-            每一步满足前置条件后，才按您的偏好从当时空闲、报价有效且未超出该步预算的商家中选人。
-            只展示费用、耗时、成功率上不被其他组合全面超过的参考方案，最多 10 种。
+            交付内容相同，比较费用、耗时和履约表现。商家在每项任务可以开始时确定，实际费用不超过约定预算。
           </p>
-          {frontier && (
-            <p>
-              检查了 {frontier.candidateCombinations} 种商家组合，其中{" "}
-              {frontier.feasibleCount} 种符合预算；完整前沿有{" "}
-              {frontier.frontierCount} 种，当前展示 {offers.length} 种
-              {frontier.truncated
-                ? "代表方案，保留费用、速度、成功率三个极端并兼顾分布"
-                : ""}
-              。
-            </p>
-          )}
-          {!!unknownHistory.length && (
-            <p className="hint">
-              以下服务缺少近期履约记录，暂未参与三指标比较：
-              {unknownHistory.join("、")}
-            </p>
-          )}
+          <details>
+            <summary>估价与履约记录说明</summary>
+            {frontier && (
+              <p>
+                检查了 {frontier.candidateCombinations} 种商家组合，其中{" "}
+                {frontier.feasibleCount} 种符合预算；完整前沿有{" "}
+                {frontier.frontierCount} 种，当前展示 {offers.length} 种
+                {frontier.truncated
+                  ? "代表方案，保留费用、速度、成功率三个极端并兼顾分布"
+                  : ""}
+                。
+              </p>
+            )}
+            {!!unknownHistory.length && (
+              <p className="hint">
+                以下服务缺少近期履约记录，暂未参与三指标比较：
+                {unknownHistory.join("、")}
+              </p>
+            )}
+            {!!offers.length && (
+              <p className="hint">
+                价格和耗时来自商家估价，耗时考虑等待关系及同一商家的串行执行。成功率是历史样本的估算，不是履约保证；重试、其他项目占用和人工验收可能增加耗时。
+              </p>
+            )}
+          </details>
           {!!offers.length && (
-            <div className="workspace-panel">
+            <details className="workspace-panel">
+              <summary>查看已确认的任务与交付</summary>
               {offers[0].proposal.planning && (
                 <>
                   <h3>您已确认的任务图</h3>
@@ -1053,7 +1290,7 @@ export default function Workspace({
                     。
                   </p>
                 ))}
-            </div>
+            </details>
           )}
           {offers.length === 1 && (
             <p role="status">当前只有一个不被其他组合全面超过的方案。</p>
@@ -1070,14 +1307,7 @@ export default function Workspace({
             <p>
               {unavailable.length
                 ? "当前没有满足预算与交付要求的方案，请返回编辑调整。交付内容未被自动修改。"
-                : "请先在“任务方案编辑”中选择材料和交付内容。"}
-            </p>
-          )}
-          {!!offers.length && (
-            <p className="hint">
-              费用和耗时来自在线商家的签名估价；总耗时考虑任务依赖以及同一商家串行执行，不含其他项目占用、重试和人工确认。实际商家在任务就绪时确定，预估可能变化。每项成功率取最近最多
-              50
-              次履约的成功比例，优先使用链上记录，否则采用明确标注的语料数据。整单成功率是各步骤成功率的乘积，依赖独立性假设，不是履约保证。
+                : "请先创建并确认任务方案。"}
             </p>
           )}
           <div className="tier-grid">
@@ -1112,21 +1342,27 @@ export default function Workspace({
                       项工作有历史记录。
                     </p>
                   )}
-                  {offer.proposal.work.map((w: Row) => (
-                    <div key={w.key}>
-                      <p>
-                        {w.title} · 参考商家：{w.estimatedProvider}
-                        <br />
-                        {price(w.estimatedPrice)} USDC · {w.estimatedSeconds} 秒
-                      </p>
-                      <p className="hint">
-                        {w.history.window
-                          ? `最近 ${w.history.window} 次，成功 ${w.history.settled} 次，成功率 ${((100 * w.history.settled) / w.history.window).toFixed(2)}%`
-                          : "暂无历史履约记录"}{" "}
-                        · {evidenceLabels[w.history.source]}
-                      </p>
-                    </div>
-                  ))}
+                  {!!offer.proposal.work.length && (
+                    <details>
+                      <summary>查看各项服务估价</summary>
+                      {offer.proposal.work.map((w: Row) => (
+                        <div key={w.key}>
+                          <p>
+                            {w.title} · 参考商家：{w.estimatedProvider}
+                            <br />
+                            {price(w.estimatedPrice)} USDC ·{" "}
+                            {w.estimatedSeconds} 秒
+                          </p>
+                          <p className="hint">
+                            {w.history.window
+                              ? `最近 ${w.history.window} 次，成功 ${w.history.settled} 次，成功率 ${((100 * w.history.settled) / w.history.window).toFixed(2)}%`
+                              : "暂无历史履约记录"}{" "}
+                            · {evidenceLabels[w.history.source]}
+                          </p>
+                        </div>
+                      ))}
+                    </details>
+                  )}
                   {!offer.proposal.work.length && (
                     <p>全部沿用已结算成果，无需新增执行。</p>
                   )}
@@ -1141,7 +1377,11 @@ export default function Workspace({
             ))}
           </div>
           {chosen && (
-            <section className="workspace-panel confirmation">
+            <section
+              ref={confirmation}
+              tabIndex={-1}
+              className="workspace-panel confirmation"
+            >
               <h3>确认这份方案后执行</h3>
               <p>
                 最终交付：
@@ -1194,10 +1434,7 @@ export default function Workspace({
                 </div>
               </div>
               <p>
-                确认任务、选人偏好和各步费用上限，不锁定上面的参考商家。
-                前置完成后才询价并委派；商家空闲后可继续承接后续步骤。
-                本工作区同一商家同时只承接一个未完成委托；暂时没有空闲商家时等待，不计为执行失败。
-                实际执行者和成交费用可在任务中查看，不超过各项展示费用，剩余资金在结束后退款。
+                确认后托管预算。每项工作就绪时选择可用商家，费用受约定上限约束；剩余资金在任务结束后可退款。
               </p>
               <button
                 className="primary"

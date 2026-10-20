@@ -30,6 +30,6 @@ test('historical task polling errors do not contaminate the new project form', a
   await expect(page.getByRole('heading', { name: '协作任务', exact: true })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Internal Server Error');
   await page.getByRole('button', { name: /创建协作任务/ }).click();
-  await expect(page.getByRole('heading', { name: '1. 材料与目标' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '创建一个新任务' })).toBeVisible();
   await expect(page.getByRole('region', { name: '项目与成果工作区' }).getByText(/Internal Server Error/)).toHaveCount(0);
 });
