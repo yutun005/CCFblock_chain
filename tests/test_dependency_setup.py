@@ -2,7 +2,9 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import tarfile
 import tempfile
 from unittest.mock import patch
 import zipfile
@@ -10,6 +12,7 @@ import zipfile
 import pytest
 
 from scripts.contract_dependencies import install, source_files
+import manage
 
 
 def archive(entries):
@@ -53,3 +56,45 @@ def test_dependency_download_rejects_wrong_checksum():
             with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
                 install(root)
         assert not (root / "contracts/lib/openzeppelin-contracts").exists()
+
+
+def test_web_tools_bootstrap_without_editor_path_and_work_offline_afterward(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage, "CACHE", tmp_path / "project with spaces/.cache")
+    monkeypatch.delenv("AGENTFLOW_PNPM", raising=False)
+    monkeypatch.setenv("PATH", "")
+    node_name = f"node-v{manage.NODE_VERSION}-{'win-x64/node.exe' if os.name == 'nt' else 'linux-x64/bin/node'}"
+    if os.name == "nt":
+        node_data = archive({node_name: "node binary"})
+    else:
+        output = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="w:gz") as package:
+            member = tarfile.TarInfo(node_name)
+            member.size = 4
+            package.addfile(member, io.BytesIO(b"node"))
+        node_data = output.getvalue()
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w:gz") as package:
+        for name in ("package/bin/pnpm.mjs", "package/dist/pnpm.cjs"):
+            member = tarfile.TarInfo(name)
+            member.size = 5
+            package.addfile(member, io.BytesIO(b"pnpm;"))
+    pnpm_data = output.getvalue()
+    suffix = "win-x64.zip" if os.name == "nt" else "linux-x64.tar.gz"
+    monkeypatch.setitem(manage.NODE_ARCHIVE_SHA256, suffix, hashlib.sha256(node_data).hexdigest())
+    monkeypatch.setattr(manage, "PNPM_ARCHIVE_SHA512", manage.base64.b64encode(hashlib.sha512(pnpm_data).digest()).decode())
+    with patch.object(manage.urllib.request, "urlopen", side_effect=[io.BytesIO(node_data), io.BytesIO(pnpm_data)]) as download:
+        wrapper = Path(manage.pnpm())
+        assert download.call_count == 2
+    assert wrapper.is_file()
+    assert str(tmp_path) not in wrapper.read_text()  # Relocatable launcher.
+    assert (wrapper.parent / "pnpm/dist/pnpm.cjs").is_file()
+    with patch.object(manage.urllib.request, "urlopen", side_effect=AssertionError("offline")):
+        monkeypatch.setenv("PATH", "")
+        assert manage.pnpm() == str(wrapper)
+        assert str(wrapper.parent / "node") in os.environ["PATH"]
+
+
+def test_web_tool_download_rejects_incomplete_or_modified_archive():
+    with patch.object(manage.urllib.request, "urlopen", return_value=io.BytesIO(b"truncated")):
+        with pytest.raises(RuntimeError, match="校验失败"):
+            manage.verified_web_download("https://example.test/node.zip", "sha256", bytes(32))

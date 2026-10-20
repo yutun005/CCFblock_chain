@@ -23,17 +23,18 @@
 
 ## 首次安装与启动
 
-支持 Windows / Linux x64。本轮本地验证使用 Python 3.12、Node.js 24、Git 和 pnpm 11.25.0：
+支持 Windows / Linux x64。先安装 Python 3.12 和 Git：
 
 ```shell
-npm install -g pnpm@11.25.0
 git clone --branch main --single-branch https://github.com/yutun005/CCFblock_chain.git
 cd CCFblock_chain
 python manage.py setup
 python manage.py dev
 ```
 
-Linux 如无 `python` 命令，使用 `python3`。上述命令直接取得 main 分支的整合版本。`setup` 安装锁定的 Python/前端依赖、Foundry 和 Solidity 依赖，并编译合约与前端。首次安装需访问 PyPI、npm、GitHub 和 Solidity 编译器下载源；依赖放在本项目的 `.cache`、`node_modules`、`contracts/lib` 中。
+Linux 如无 `python` 命令，使用 `python3`。上述命令直接取得 main 分支的整合版本。`setup` 安装锁定的 Python/前端依赖、Foundry 和 Solidity 依赖，并编译合约与前端。若当前环境找不到 Node/pnpm，会下载已校验的 Node.js 24.19.0 和 pnpm 11.25.0 到项目 `.cache/tools/web`，不需要全局安装，也不依赖编辑器的环境。首次安装需访问 nodejs.org、PyPI、npm、GitHub 和 Solidity 编译器下载源；依赖放在本项目的 `.cache`、`node_modules`、`contracts/lib` 中。
+
+双击启动时，如页面源码有更新，会先补齐前端依赖并构建页面，成功后才停止旧服务、载入当前版本。下载或构建失败会保留旧服务，原因显示在启动窗口中；联网后再次双击即可重试。工具已下载且依赖未变时不会重复下载安装。
 
 打开启动器打印的 **Open http://127.0.0.1:端口**，访问令牌见 `.cache/local-access.txt`。初次启动会避开被系统保留或占用的端口。Windows 已安装依赖后也可双击 `start-demo.cmd`。启动器首次生成隔离本地账户、部署合约并启动市场、验证器、16 个 Agent 和 Web/API；无需复制开发者的密钥或本地链数据库。
 

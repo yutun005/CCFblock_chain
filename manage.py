@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import hashlib
 import io
@@ -28,16 +29,111 @@ TOOLS = CACHE / "tools" / "foundry"
 FOUNDRY_VERSION = "1.5.1"
 WINDOWS_ARCHIVE_SHA256 = "293fedd9ad45eb9d774008815dbda820bddd3c85cab3baf55a0be3775e86d5ae"
 LINUX_ARCHIVE_SHA256 = "73640b01bd9ed29fdb4965085099371f8cf0dbbec3e2086cf54564efc4dcfe88"
+NODE_VERSION = "24.19.0"
+PNPM_VERSION = "11.25.0"
+NODE_ARCHIVE_SHA256 = {
+    "win-x64.zip": "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73",
+    "linux-x64.tar.gz": "f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4",
+}
+PNPM_ARCHIVE_SHA512 = "XN6SW08HX3Jetx+64YpC/+eEUkeJ8ZthxzHLhyHsKKruFg4BqNWvT+2ypCzb8wDv4j2zVrDUoXtNY+EfirfJVg=="
 
 
 def run(command, cwd=ROOT, **kwargs):
     return subprocess.run([str(x) for x in command], cwd=cwd, check=True, **kwargs)
 
 def pnpm():
-    executable = os.environ.get("AGENTFLOW_PNPM") or shutil.which("pnpm")
-    if not executable:
-        raise RuntimeError("pnpm 11.25.0 is required on PATH (npm install -g pnpm@11.25.0)")
-    return executable
+    """Use project-local tools, so Explorer does not depend on an editor's PATH."""
+    if os.environ.get("AGENTFLOW_PNPM"):
+        return os.environ["AGENTFLOW_PNPM"]
+    directory = CACHE / "tools/web"
+    node = directory / "node" / ("node.exe" if os.name == "nt" else "node")
+    entry = directory / "pnpm/bin/pnpm.mjs"
+    if not (node.is_file() and entry.is_file()):
+        # CI and ordinary terminals may already have a complete toolchain.
+        executable = shutil.which("pnpm")
+        if executable and shutil.which("node"):
+            return executable
+        install_web_tools(directory)
+    os.environ["PATH"] = str(node.parent) + os.pathsep + os.environ.get("PATH", "")
+    wrapper = directory / ("pnpm.cmd" if os.name == "nt" else "pnpm")
+    if os.name == "nt":
+        content = '@echo off\n"%~dp0node\\node.exe" "%~dp0pnpm\\bin\\pnpm.mjs" %*\n'
+    else:
+        content = '#!/bin/sh\nexec "$(dirname "$0")/node/node" "$(dirname "$0")/pnpm/bin/pnpm.mjs" "$@"\n'
+    wrapper.write_text(content, encoding="utf-8")
+    if os.name != "nt":
+        wrapper.chmod(0o755)
+    return str(wrapper)
+
+
+def verified_web_download(url, algorithm, expected):
+    try:
+        with urllib.request.urlopen(url, timeout=45) as response:
+            chunks = []
+            received = 0
+            last_progress = time.monotonic()
+            while chunk := response.read(256 * 1024):
+                chunks.append(chunk)
+                received += len(chunk)
+                if time.monotonic() - last_progress >= 5:
+                    print(f"正在下载 {url.rsplit('/', 1)[-1]}：{received / 1024 / 1024:.1f} MB", flush=True)
+                    last_progress = time.monotonic()
+            data = b"".join(chunks)
+    except OSError as exc:
+        raise RuntimeError("前端工具下载失败，请联网后重新双击启动脚本；原有项目数据未改动。") from exc
+    if hashlib.new(algorithm, data).digest() != expected:
+        raise RuntimeError("前端工具下载校验失败，请重新启动以重试下载。")
+    return data
+
+
+def install_web_tools(directory):
+    """Install pinned tools without administrator rights or global PATH changes."""
+    if platform.system() not in {"Windows", "Linux"} or platform.machine().lower() not in {"amd64", "x86_64"}:
+        raise RuntimeError("此平台请先安装 Node.js 24 和 pnpm 11.25.0，再启动项目。")
+    suffix = "win-x64.zip" if os.name == "nt" else "linux-x64.tar.gz"
+    name = f"node-v{NODE_VERSION}-{suffix}"
+    print(f"正在下载项目自用 Node.js {NODE_VERSION} 和 pnpm {PNPM_VERSION}（仅首次需要）…", flush=True)
+    node_archive = verified_web_download(
+        f"https://nodejs.org/dist/v{NODE_VERSION}/{name}", "sha256", bytes.fromhex(NODE_ARCHIVE_SHA256[suffix]))
+    pnpm_archive = verified_web_download(
+        f"https://registry.npmjs.org/pnpm/-/pnpm-{PNPM_VERSION}.tgz", "sha512", base64.b64decode(PNPM_ARCHIVE_SHA512))
+    node = directory / "node" / ("node.exe" if os.name == "nt" else "node")
+    if os.name == "nt":
+        with zipfile.ZipFile(io.BytesIO(node_archive)) as archive:
+            binary = archive.read(f"node-v{NODE_VERSION}-win-x64/node.exe")
+    else:
+        with tarfile.open(fileobj=io.BytesIO(node_archive), mode="r:gz") as archive:
+            binary = archive.extractfile(f"node-v{NODE_VERSION}-linux-x64/bin/node").read()
+    node.parent.mkdir(parents=True, exist_ok=True)
+    # The entry point is published last; interrupted installs will be retried.
+    with tarfile.open(fileobj=io.BytesIO(pnpm_archive), mode="r:gz") as archive:
+        files = []
+        for member in archive.getmembers():
+            parts = member.name.split("/")
+            if member.isdir():
+                continue
+            if not member.isfile() or parts[0] != "package" or any(p in {"", ".", ".."} or ":" in p or "\\" in p for p in parts):
+                raise RuntimeError("前端工具压缩包含有不安全的路径。")
+            files.append((member, directory.joinpath("pnpm", *parts[1:])))
+        for member, target in sorted(files, key=lambda item: item[1].name == "pnpm.mjs"):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.extractfile(member).read())
+    node.write_bytes(binary)
+    if os.name != "nt":
+        node.chmod(0o755)
+    print("前端工具已就绪，保存在本项目 .cache/tools/web。", flush=True)
+
+
+def install_web_dependencies(force=False):
+    web = ROOT / "apps/web"
+    fingerprint = hashlib.sha256(b"".join((web / name).read_bytes()
+        for name in ("package.json", "pnpm-lock.yaml"))).hexdigest()
+    marker = web / "node_modules/.agentflow-dependencies"
+    if force or not marker.is_file() or marker.read_text() != fingerprint:
+        executable = pnpm()
+        print("正在安装或更新页面依赖…", flush=True)
+        run([executable, "install", "--frozen-lockfile"], cwd=web)
+        marker.write_text(fingerprint)
 
 def source_revision() -> str:
     configured = os.environ.get("AGENTFLOW_SOURCE_COMMIT_SHA")
@@ -415,7 +511,7 @@ def setup():
     install_foundry()
     install_contract_libraries()
     prepare_generated()
-    run([pnpm(), "install", "--frozen-lockfile"], cwd=ROOT / "apps/web")
+    install_web_dependencies(force=True)
     build()
 
 

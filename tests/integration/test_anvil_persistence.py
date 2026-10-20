@@ -155,6 +155,24 @@ def test_launcher_restarts_services_instead_of_exiting_after_opening_old_page(tm
     assert json.loads(local_demo.ENV.read_text())['ESCROW'] == 'saved-contract'
 
 
+def test_build_failure_preserves_running_services_and_launcher_ownership(tmp_path, monkeypatch):
+    local_launcher(monkeypatch, tmp_path)
+    atomic_json(local_demo.CONFIG, {'existing': True})
+    controller = local_demo.CACHE / 'demo-launcher/generation.json'
+    atomic_json(controller, {'generation': 'running-window'})
+    with patch.object(local_demo, 'build_updated_web', side_effect=RuntimeError('download failed')), \
+         patch.object(local_demo, 'stop_services') as stop, \
+         patch.object(local_demo, 'chain_up') as chain, \
+         patch.object(local_demo, 'ServiceCluster') as cluster:
+        with pytest.raises(RuntimeError, match='download failed'):
+            local_demo.run_demo_once()
+        stop.assert_not_called()
+        chain.assert_not_called()
+        cluster.assert_not_called()
+    assert json.loads(controller.read_text()) == {'generation': 'running-window'}
+    assert json.loads(local_demo.CONFIG.read_text()) == {'existing': True}
+
+
 def test_service_ownership_requires_exact_checkout_config_runtime_and_role(tmp_path, monkeypatch):
     local_launcher(monkeypatch, tmp_path / 'project with spaces')
     settings = {'directory': local_demo.CACHE / 'runtime', 'managedRoles': ['api', 'market']}

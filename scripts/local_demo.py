@@ -341,11 +341,13 @@ def stop_services(settings):
 
 def build_updated_web():
     output = ROOT / "apps/web/dist/index.html"
-    sources = [ROOT / "pnpm-lock.yaml", *list((ROOT / "apps/web/src").rglob("*")),
+    sources = [ROOT / "apps/web/pnpm-lock.yaml", ROOT / "apps/web/index.html",
+               *list((ROOT / "apps/web/src").rglob("*")),
                *list((ROOT / "apps/web").glob("*.json")), *list((ROOT / "apps/web").glob("*.ts"))]
     if output.exists() and all(p.stat().st_mtime <= output.stat().st_mtime for p in sources if p.is_file()):
         return
-    from manage import pnpm
+    from manage import install_web_dependencies, pnpm
+    install_web_dependencies()
     print("正在更新页面文件…", flush=True)
     subprocess.run([pnpm(), "--dir", str(ROOT / "apps/web"), "build"], cwd=ROOT, check=True)
 
@@ -368,13 +370,14 @@ def run_demo_once():
             # Hold this lock through service readiness, so simultaneous double-clicks
             # cannot both pass the probe and start competing clusters.
             with chain_manager().locked(CACHE / "demo-launcher", timeout=240):
+                # Failures here must leave the currently running services untouched.
+                build_updated_web()
                 atomic_json(controller, {"generation": generation})
                 if CONFIG.is_file():
                     print("正在检查并停止本项目的旧服务…", flush=True)
                     count = stop_services(settings_file(CONFIG))
                     if count:
                         print(f"已停止 {count} 个旧服务进程，准备载入当前代码。", flush=True)
-                build_updated_web()
                 print("正在载入本地链与已保存的项目…", flush=True)
                 rpc = chain_up()
                 chain_ready = True
