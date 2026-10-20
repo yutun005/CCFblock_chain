@@ -44,9 +44,20 @@ def accounts(count: int = 9) -> list:
 
 
 def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+    return free_ports(1)[0]
+
+
+def free_ports(count: int) -> list[int]:
+    sockets = []
+    try:
+        for _ in range(count):
+            sock = socket.socket()
+            sockets.append(sock)
+            sock.bind(("127.0.0.1", 0))
+        return [int(sock.getsockname()[1]) for sock in sockets]
+    finally:
+        for sock in sockets:
+            sock.close()
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -113,7 +124,7 @@ def build_settings(root: Path, rpc: str, token: str, escrow: str, keyset: list, 
     # The workspace material picker lists both built-in scenarios.
     runtime["scenarioInputDirectories"] = {"travel_planning": str(ROOT / "tests" / "fixtures" / "travel")}
     runtime["bind"] = "127.0.0.1"
-    ports = [free_port() for _ in range(3 + len(runtime["agents"]))]
+    ports = free_ports(3 + len(runtime["agents"]))
     runtime["api"] = f"http://127.0.0.1:{ports[0]}"
     runtime["market"] = f"http://127.0.0.1:{ports[1]}"
     runtime["validator"] = f"http://127.0.0.1:{ports[2]}"
@@ -218,6 +229,8 @@ def wait_job(client: httpx.Client, api: str, job_id: str, *, recovery: bool = Fa
     advanced = False
     while time.monotonic() - started < JOB_TIMEOUT:
         response = client.get(f"{api}/api/jobs/{job_id}", headers=request_headers())
+        if not response.is_success:
+            raise RuntimeError(f"Job status returned HTTP {response.status_code}: {response.text[:2000]}")
         response.raise_for_status()
         job = response.json()
         reviews = client.get(f"{api}/api/workspace/reviews/{job_id}", headers=request_headers())

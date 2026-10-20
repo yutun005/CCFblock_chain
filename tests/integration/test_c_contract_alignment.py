@@ -154,6 +154,29 @@ class CContractAlignmentTests(unittest.TestCase):
         self.assertEqual(response.json()["events"][0]["transactionHash"], event["transactionHash"])
         self.assertIn(f"/api/jobs/${{jobId}}/settlements", WEB)
 
+    def test_market_connection_errors_return_unavailable_without_breaking_authentication(self):
+        class FakeEngine:
+            def __init__(self, *args):
+                self.db = type("FakeDatabase", (), {"values": lambda self, bucket: []})()
+
+            async def agents(self):
+                raise failure
+
+        config = {"deployment": {}, "market": "http://127.0.0.1:8081",
+                  "validator": "http://127.0.0.1:8082", "token": "test-token", "signers": {}}
+        for error_type, message in [(httpx.ConnectError, "无法连接"), (httpx.ReadTimeout, "响应超时")]:
+            failure = error_type("private upstream detail", request=httpx.Request("GET", config["market"] + "/api/agents"))
+            with self.subTest(error=error_type.__name__), patch.object(app, "Engine", FakeEngine):
+                with TestClient(app.api_app(config, ROOT / ".cache" / "api-smoke-runtime")) as client:
+                    self.assertEqual(client.get("/api/agents").status_code, 401)
+                    headers = {"Authorization": "Bearer test-token"}
+                    response = client.get("/api/agents", headers=headers)
+                    self.assertEqual(response.status_code, 503)
+                    self.assertIn("服务市场" + message, response.json()["detail"])
+                    self.assertEqual(response.json()["code"], "UPSTREAM_UNAVAILABLE")
+                    self.assertNotIn("private upstream detail", response.text)
+                    self.assertEqual(client.get("/api/jobs", headers=headers).json(), [])
+
     def test_backend_uses_canonical_chain_methods(self):
         self.assertIn("functions.paymentToken().call()", APP)
         self.assertIn("functions.VERIFIER_ROLE().call()", APP)

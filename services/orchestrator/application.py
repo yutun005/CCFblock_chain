@@ -3865,6 +3865,17 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     from services.orchestrator.workspace import install
     workspace = install(app, engine, config, start)
 
+    @app.exception_handler(httpx.RequestError)
+    async def unavailable_service(_request, exc):
+        upstream = str(exc.request.url)
+        role = ("服务市场" if upstream.startswith(config["market"].rstrip("/") + "/")
+                else "验证服务" if upstream.startswith(config["validator"].rstrip("/") + "/") else "服务商")
+        problem = "响应超时" if isinstance(exc, httpx.TimeoutException) else "无法连接"
+        return JSONResponse(status_code=503, content={
+            "detail": f"{role}{problem}，请确认完整项目仍在运行，或重新启动项目后重试。",
+            "code": "UPSTREAM_UNAVAILABLE",
+        })
+
     @app.exception_handler(JobNotFunded)
     async def unfunded_response(request, exc):
         return JSONResponse(status_code=409, content={"detail": str(exc)})
@@ -4272,7 +4283,12 @@ class ServiceCluster:
     def close(self):
         for process in reversed(list(self.processes.values())):
             if process.poll() is None:
-                process.terminate()
+                if os.name == "nt":
+                    # venv python.exe may wrap another Python process on Windows.
+                    subprocess.run(["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+                                   capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+                else:
+                    process.terminate()
                 try:
                     process.wait(timeout=15)
                 except subprocess.TimeoutExpired:
