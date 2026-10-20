@@ -24,7 +24,7 @@ class Recipe(BaseModel):
     sourceVersion: str | None = None
     title: str = Field(default="我的项目", min_length=1, max_length=100)
     scenario: Literal["cross_org_analysis", "travel_planning"] = "cross_org_analysis"
-    materialIds: list[str] = Field(min_length=1, max_length=12)
+    materialIds: list[str] = Field(default_factory=list, max_length=12)
     outputs: list[str] = Field(min_length=1, max_length=5)
     tier: Literal["basic", "standard", "detailed"] = "standard"
     preference: Literal["lowest_price", "fastest", "reliability"] = "lowest_price"
@@ -432,7 +432,7 @@ class Workspace:
     def catalog(self):
         from services.orchestrator.application import scenario_inputs, unpack
 
-        for scenario in ("cross_org_analysis", "travel_planning"):
+        for scenario in ("cross_org_analysis",):
             for item in scenario_inputs(self.config, scenario):
                 self.material(scenario, item["name"], unpack(item))
         return [
@@ -456,9 +456,21 @@ class Workspace:
         if any(not m or m["scenario"] != recipe.scenario for m in materials):
             raise ValueError("所选材料不存在或不属于当前场景")
         inputs = [m["artifact"] for m in materials]
+        if recipe.scenario == "cross_org_analysis" and not inputs:
+            raise ValueError("销售分析需要用户提供销售数据，请选择或上传 CSV")
         if recipe.scenario == "travel_planning":
+            if not inputs:
+                from .travel import request_packet, source_info
+
+                if not recipe.travelRequest:
+                    raise ValueError("请先补齐目的地、日期、人数和旅行花费预算，无需上传旅游 JSON")
+                info = source_info()
+                return [request_packet(recipe.travelRequest)], [{
+                    "id": info["id"], "name": "Agent 查询：" + info["source"], "scenario": "travel_planning",
+                    "preview": {"request": recipe.travelRequest, "source": info["source"], "as_of": info["asOf"]},
+                }]
             if len(inputs) != 1:
-                raise ValueError("旅游规划每次选择一份完整资料快照")
+                raise ValueError("旅游补充资料每次最多选择一份，也可以不上传")
             data = artifact_json(unpack(inputs[0]))
             if recipe.travelRequest:
                 data["request"] = TravelRequest.model_validate(recipe.travelRequest).model_dump(mode="json")
@@ -994,6 +1006,32 @@ def install(app, engine, config, start):
     @app.post("/api/workspace/planning")
     async def planning(data: dict):
         return await workspace.plan_goal(data)
+
+    @app.get("/api/workspace/travel/source")
+    def travel_source():
+        from .travel import source_info
+
+        return source_info()
+
+    @app.post("/api/workspace/travel/prepare")
+    async def prepare_travel(data: dict):
+        from .travel import prepare
+
+        source = None
+        ids = data.get("materialIds") or []
+        if ids:
+            if len(ids) != 1:
+                raise ValueError("旅游补充资料最多选择一份")
+            material = engine.db.get("materials", ids[0])
+            if not material or material["scenario"] != "travel_planning":
+                raise ValueError("补充资料不存在或场景不符")
+            from .application import artifact_json, unpack
+
+            doc = artifact_json(unpack(material["artifact"]))
+            source = {"mode": "provided", "source": doc["source"], "notice": "用户补充资料，非实时检索或预订",
+                      "asOf": doc["as_of"], "destinations": sorted({p["destination"] for p in doc["attractions"]}),
+                      "availableFrom": doc["as_of"], "availableUntil": max(h["available_until"] for h in doc["hotels"])}
+        return await prepare(data, source=source)
 
     @app.post("/api/workspace/planning/{planning_id}/review")
     async def review_planning(planning_id: str, data: dict):

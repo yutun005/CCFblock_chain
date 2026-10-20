@@ -296,6 +296,14 @@ def render_report(spec, inputs, revision=None):
 def execute_product(spec, inputs, revision=None):
     from services.orchestrator.application import EXECUTORS, canonical, packet
 
+    if spec.skill in {"attraction_search", "hotel_search"}:
+        from .travel import search_inputs, require_candidates
+
+        resolved = search_inputs(inputs)
+        artifacts = EXECUTORS[spec.skill](resolved)
+        if resolved is not inputs:
+            require_candidates(spec.skill, artifacts)
+        return artifacts
     if spec.skill in REPORT_SKILLS:
         return render_report(spec, inputs, revision)
     if spec.skill == "statistical_analysis" and spec.options:
@@ -311,6 +319,14 @@ def execute_product(spec, inputs, revision=None):
 def verify_product(spec, inputs, artifacts, revision=None):
     from services.orchestrator.application import artifact_json, reference, unpack, verify_content
 
+    if spec.skill in {"attraction_search", "hotel_search"}:
+        from .travel import search_inputs, require_candidates
+
+        resolved = search_inputs(inputs)
+        checks = verify_content(spec.skill, resolved, artifacts)
+        if resolved is not inputs:
+            require_candidates(spec.skill, artifacts)
+        return checks
     if spec.skill not in REPORT_SKILLS and not (spec.skill == "statistical_analysis" and spec.options):
         return verify_content(spec.skill, inputs, artifacts)
     if spec.skill == "statistical_analysis":

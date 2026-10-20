@@ -161,6 +161,7 @@ def install(app, workspace):
 
         value = await graph(workspace)
         return [{"key": node["key"], "skill": node["id"], "title": node["name"], "requires": node["requires"],
+                 "outputType": node["outputType"], "inputType": node["inputType"],
                  "acceptance": node["acceptance"], "scenario": node["scenario"], "available": node["executable"]}
                 for node in value["nodes"] if node["adapterReady"]]
 
