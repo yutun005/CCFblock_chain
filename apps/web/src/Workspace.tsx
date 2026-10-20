@@ -306,6 +306,8 @@ export default function Workspace({
     [revisionAction, setRevisionAction] = useState("shorten"),
     [feedback, setFeedback] = useState("");
   const [planner, setPlanner] = useState<Row | null>(null);
+  const [travelIntent, setTravelIntent] = useState<Row | null>(null);
+  const [travelSource, setTravelSource] = useState<Row | null>(null);
   const [goalPlan, setGoalPlan] = useState<Row | null>(null);
   const [capabilities, setCapabilities] = useState<Row[]>([]);
   const [planDirty, setPlanDirty] = useState(false);
@@ -337,18 +339,20 @@ export default function Workspace({
     }
   }, []);
   const refresh = useCallback(async () => {
-    const [ms, ps, planningStatus, cs, ts] = await Promise.all([
+    const [ms, ps, planningStatus, cs, ts, source] = await Promise.all([
       api(prefix + "/materials"),
       api(prefix + "/projects"),
       api(prefix + "/planner"),
       api(prefix + "/capabilities"),
       api(prefix + "/templates"),
+      api(prefix + "/travel/source"),
     ]);
     setMaterials(ms);
     setProjects(ps);
     setPlanner(planningStatus);
     setCapabilities(cs);
     setTemplates(ts);
+    setTravelSource(source);
   }, [api]);
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
@@ -471,15 +475,19 @@ export default function Workspace({
     setPage("compare");
     setChosen(null);
   }
-  async function planGoal() {
+  async function planGoal(input = recipe) {
     const revision = recipeRevision.current;
     setGoalPlan(null);
     setOffers([]);
     setChosen(null);
     setRecipe((old) => ({ ...old, planningId: null }));
     const result = await api(prefix + "/planning", {
-      ...recipe,
-      title: recipe.title.trim() || (travel ? "旅游行程规划" : "销售数据分析"),
+      ...input,
+      title:
+        input.title.trim() ||
+        (input.scenario === "travel_planning"
+          ? "旅游行程规划"
+          : "销售数据分析"),
       planningMode: "llm",
       planningId: null,
     });
@@ -515,25 +523,34 @@ export default function Workspace({
     setPlanDirty(false);
     setNotice("任务方案已确认。可以查看费用与执行方案了。");
   }
-  async function adoptTemplate(item: Row) {
-    const sameScenario = recipe.scenario === item.scenario;
-    const next = {
-      ...recipe,
-      title: sameScenario && recipe.title.trim() ? recipe.title : item.name,
+  async function adoptTemplate(item: Row, base = recipe, prepared = false) {
+    const sameScenario = base.scenario === item.scenario;
+    let next = {
+      ...base,
+      title: sameScenario && base.title.trim() ? base.title : item.name,
       scenario: item.scenario,
       requirement:
-        sameScenario && recipe.requirement.trim()
-          ? recipe.requirement
+        sameScenario && base.requirement.trim()
+          ? base.requirement
           : item.description,
-      materialIds: sameScenario ? recipe.materialIds : [],
-      travelRequest: sameScenario ? recipe.travelRequest : null,
+      materialIds: sameScenario ? base.materialIds : [],
+      travelRequest: sameScenario ? base.travelRequest : null,
       planningMode: "template",
       planningId: null,
       ...(!sameScenario
         ? { projectId: null, sourceVersion: null, forceRedo: [] }
         : {}),
     };
-    if (!next.materialIds.length) {
+    if (next.scenario === "travel_planning" && !prepared) {
+      update(next);
+      setPendingTemplate(item);
+      setPage("editor");
+      setEditorView("request");
+      const ready = await prepareTravel(next);
+      if (!ready) return;
+      next = ready as typeof next;
+    }
+    if (next.scenario !== "travel_planning" && !next.materialIds.length) {
       update(next);
       setPendingTemplate(item);
       setPage("editor");
@@ -557,9 +574,41 @@ export default function Workspace({
       `已载入“${item.name}”。请核对是否满足本次目标，修改不会影响原模板。`,
     );
   }
+  async function prepareTravel(input: Row): Promise<Row | null> {
+    const revision = recipeRevision.current;
+    const result = await api(prefix + "/travel/prepare", {
+      goal: input.requirement,
+      answers: input.travelRequest || {},
+      materialIds: input.materialIds,
+      serviceBudget: input.budget,
+    });
+    if (revision !== recipeRevision.current) return null;
+    setTravelIntent(result);
+    const next = {
+      ...input,
+      travelRequest: result.request,
+      budget: result.serviceBudget || input.budget,
+    };
+    setRecipe(next);
+    if (result.status !== "ready") {
+      setNotice(
+        result.status === "needs_input"
+          ? "还需要下面几项出行信息，已识别的内容无需再填。"
+          : (result.issues || []).join("；"),
+      );
+      return null;
+    }
+    return next;
+  }
   async function preparePlan() {
     if (!recipe.requirement.trim()) throw new Error("请写下希望完成的任务。");
-    if (!recipe.materialIds.length) throw new Error("请先添加一份任务材料。");
+    if (travel) {
+      const next = await prepareTravel(recipe);
+      if (!next) return;
+      if (pendingTemplate) return adoptTemplate(pendingTemplate, next, true);
+      return planGoal(next);
+    }
+    if (!recipe.materialIds.length) throw new Error("请先添加一份销售数据。");
     if (pendingTemplate) return adoptTemplate(pendingTemplate);
     const revision = recipeRevision.current;
     const found = await api(
@@ -734,6 +783,7 @@ export default function Workspace({
                           planningMode: "llm",
                           title: "",
                         });
+                        setTravelIntent(null);
                         setPendingTemplate(null);
                       }}
                     >
@@ -750,10 +800,16 @@ export default function Workspace({
                     value={recipe.requirement}
                     required
                     maxLength={4000}
-                    onChange={(e) => update({ requirement: e.target.value })}
+                    onChange={(e) => {
+                      update({
+                        requirement: e.target.value,
+                        ...(travel ? { travelRequest: null } : {}),
+                      });
+                      setTravelIntent(null);
+                    }}
                     placeholder={
                       travel
-                        ? "例如：安排三天杭州旅行，两人出行，想去西湖和博物馆，住宿尽量靠近地铁。"
+                        ? "例如：2026年11月1日去杭州玩三天，两人出行，旅行预算2000元，喜欢历史文化，生成完整行程方案。"
                         : "例如：分析这批销售数据，按月份汇总，比较各月销售表现，给我一份带图表的报告。"
                     }
                   />
@@ -778,200 +834,325 @@ export default function Workspace({
                   <p className="field-help">
                     写清期望的结果和限制。你可以在下一页修改方案。
                   </p>
+                  {travel && (
+                    <div className="travel-intake">
+                      <p className="field-help">
+                        景点、住宿和交通资料由服务 Agent 获取，无需上传文件。
+                        当前使用演示资料，非实时检索或酒店实时报价。
+                        {travelSource?.destinations?.length
+                          ? `支持：${travelSource.destinations.join("、")}。`
+                          : ""}
+                      </p>
+                      {travelIntent && (
+                        <>
+                          {travelIntent.interpretation === "local_rules" && (
+                            <p className="field-help">
+                              尚未配置模型，当前识别常见出行条件并采用内置旅行模板。
+                            </p>
+                          )}
+                          <div className="request-brief">
+                            <strong>已识别的出行需求</strong>
+                            <p>
+                              {[
+                                recipe.travelRequest?.destination,
+                                recipe.travelRequest?.start_date,
+                                recipe.travelRequest?.days
+                                  ? `${recipe.travelRequest.days} 天`
+                                  : "",
+                                recipe.travelRequest?.travelers
+                                  ? `${recipe.travelRequest.travelers} 人`
+                                  : "",
+                                recipe.travelRequest?.budget_cents
+                                  ? `旅行预算 ${(recipe.travelRequest.budget_cents / 100).toFixed(2)} 元`
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "请补充出行条件"}
+                            </p>
+                          </div>
+                          {!!travelIntent.questions?.length && (
+                            <div
+                              className="compact-fields"
+                              aria-label="补充出行需求"
+                            >
+                              {travelIntent.questions.map((question: Row) => (
+                                <label key={question.field}>
+                                  {question.label}
+                                  <input
+                                    type={
+                                      question.field === "start_date"
+                                        ? "date"
+                                        : question.field === "destination"
+                                          ? "text"
+                                          : "number"
+                                    }
+                                    min={
+                                      question.field === "budget_cents"
+                                        ? "0.01"
+                                        : "1"
+                                    }
+                                    step={
+                                      question.field === "budget_cents"
+                                        ? "0.01"
+                                        : "1"
+                                    }
+                                    value={
+                                      question.field === "budget_cents"
+                                        ? recipe.travelRequest?.budget_cents
+                                          ? recipe.travelRequest.budget_cents /
+                                            100
+                                          : ""
+                                        : (recipe.travelRequest?.[
+                                            question.field
+                                          ] ?? "")
+                                    }
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const value = [
+                                        "days",
+                                        "travelers",
+                                        "budget_cents",
+                                      ].includes(question.field)
+                                        ? raw
+                                          ? Math.round(
+                                              Number(raw) *
+                                                (question.field ===
+                                                "budget_cents"
+                                                  ? 100
+                                                  : 1),
+                                            )
+                                          : null
+                                        : raw || null;
+                                      update({
+                                        travelRequest: {
+                                          ...recipe.travelRequest,
+                                          [question.field]: value,
+                                        },
+                                      });
+                                    }}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          {!!travelIntent.issues?.length && (
+                            <p role="alert">{travelIntent.issues.join("；")}</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="request-card">
-                  <div className="request-card-title">
-                    <FolderOpen size={19} />
-                    <h2>任务材料</h2>
-                    <span className="count-label">
-                      已选 {recipe.materialIds.length} 份
-                    </span>
-                  </div>
-                  <p className="field-help">
-                    {travel
-                      ? "选择一份目的地资料，或上传自己的景点与酒店资料。"
-                      : "添加要分析的销售数据，可选择多份一起分析。"}
-                  </p>
-                  <div className="material-list">
-                    {materials
-                      .filter((m) => m.scenario === recipe.scenario)
-                      .map((m) => (
-                        <label
-                          className={
-                            "material-option " +
-                            (recipe.materialIds.includes(m.id)
-                              ? "selected"
-                              : "")
-                          }
-                          key={m.id}
-                        >
-                          <input
-                            type={travel ? "radio" : "checkbox"}
-                            name={travel ? "travel-material" : undefined}
-                            checked={recipe.materialIds.includes(m.id)}
-                            onChange={(e) =>
-                              update({
-                                materialIds: e.target.checked
-                                  ? travel
-                                    ? [m.id]
-                                    : [...recipe.materialIds, m.id]
-                                  : recipe.materialIds.filter(
-                                      (id: string) => id !== m.id,
-                                    ),
-                                ...(travel && e.target.checked
-                                  ? { travelRequest: m.preview.request }
-                                  : {}),
-                              })
-                            }
-                          />
-                          <span>
-                            <strong>{m.name}</strong>
-                            <small>
-                              {travel
-                                ? `${m.preview.source || "目的地资料"}${m.preview.as_of ? " · " + m.preview.as_of : ""}`
-                                : `${m.preview.rows} 行销售数据`}
-                            </small>
-                          </span>
-                          {recipe.materialIds.includes(m.id) && (
-                            <Check size={17} aria-hidden="true" />
-                          )}
-                        </label>
-                      ))}
-                    {!materials.some((m) => m.scenario === recipe.scenario) && (
-                      <p className="empty-materials">
-                        还没有材料，请上传文件。
-                      </p>
-                    )}
-                  </div>
-                  <label className="upload-area">
-                    <FileUp size={22} />
-                    <span>
-                      <strong>上传{travel ? "旅游资料" : "销售数据"}</strong>
-                      <small>{travel ? "JSON" : "CSV"} 文件，最大 2 MB</small>
-                    </span>
-                    <input
-                      type="file"
-                      aria-label={travel ? "上传旅游资料" : "上传销售数据"}
-                      accept={travel ? ".json" : ".csv"}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const revision = recipeRevision.current;
-                        void run("upload", async () => {
-                          if (file.size > 2_000_000)
-                            throw new Error("文件不能超过 2 MB");
-                          const material = await api(prefix + "/materials", {
-                            name: file.name,
-                            scenario: recipe.scenario,
-                            content: await file.text(),
-                          });
-                          await refresh();
-                          if (revision !== recipeRevision.current) {
-                            setNotice(
-                              "文件已保存到材料列表，请选择需要使用的材料。",
-                            );
-                            return;
-                          }
-                          update({
-                            materialIds: travel
-                              ? [material.id]
-                              : [
-                                  ...new Set([
-                                    ...recipe.materialIds,
-                                    material.id,
-                                  ]),
-                                ],
-                            ...(travel
-                              ? { travelRequest: material.preview.request }
-                              : {}),
-                          });
-                        });
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                  <details className="format-help">
-                    <summary>文件格式要求</summary>
-                    <p>
+                  <details open={!travel}>
+                    <summary hidden={!travel}>补充已有资料（可选）</summary>
+                    <div className="request-card-title">
+                      <FolderOpen size={19} />
+                      <h2>{travel ? "补充资料" : "任务材料"}</h2>
+                      <span className="count-label">
+                        已选 {recipe.materialIds.length} 份
+                      </span>
+                    </div>
+                    <p className="field-help">
                       {travel
-                        ? "上传包含 request、attractions、hotels 的旅游 JSON 资料；目的地与出行条件可在下方调整。"
-                        : "CSV 需包含 organization、order_id、date、category、quantity、unit_price_cents 列。金额以分计；UTF-8 编码；类别为 book、food、tool；日期格式 YYYY-MM-DD，最多 20000 行。"}
+                        ? "已有资料可以自愿补充；不选择时由 Agent 查询平台演示资料库。"
+                        : "添加要分析的销售数据，可选择多份一起分析。"}
                     </p>
-                  </details>
-                  {travel && recipe.travelRequest && (
-                    <details>
-                      <summary>调整出行条件</summary>
-                      <div className="compact-fields">
-                        {[
-                          ["destination", "目的地", "text"],
-                          ["start_date", "出发日期", "date"],
-                          ["days", "出行天数", "number"],
-                          ["travelers", "出行人数", "number"],
-                          ["day_start", "每日开始", "time"],
-                          ["day_end", "每日结束", "time"],
-                        ].map(([key, label, type]) => (
-                          <label key={key}>
-                            {label}
+                    <div className="material-list">
+                      {materials
+                        .filter((m) => m.scenario === recipe.scenario)
+                        .map((m) => (
+                          <label
+                            className={
+                              "material-option " +
+                              (recipe.materialIds.includes(m.id)
+                                ? "selected"
+                                : "")
+                            }
+                            key={m.id}
+                          >
                             <input
-                              type={type}
-                              value={recipe.travelRequest[key]}
-                              min={type === "number" ? 1 : undefined}
-                              max={key === "days" ? 7 : undefined}
+                              type={travel ? "radio" : "checkbox"}
+                              name={travel ? "travel-material" : undefined}
+                              checked={recipe.materialIds.includes(m.id)}
                               onChange={(e) =>
                                 update({
-                                  travelRequest: {
-                                    ...recipe.travelRequest,
-                                    [key]:
-                                      type === "number"
-                                        ? Number(e.target.value)
-                                        : e.target.value,
-                                  },
+                                  materialIds: e.target.checked
+                                    ? travel
+                                      ? [m.id]
+                                      : [...recipe.materialIds, m.id]
+                                    : recipe.materialIds.filter(
+                                        (id: string) => id !== m.id,
+                                      ),
+                                  ...(travel && e.target.checked
+                                    ? { travelRequest: m.preview.request }
+                                    : {}),
                                 })
                               }
                             />
+                            <span>
+                              <strong>{m.name}</strong>
+                              <small>
+                                {travel
+                                  ? `${m.preview.source || "目的地资料"}${m.preview.as_of ? " · " + m.preview.as_of : ""}`
+                                  : `${m.preview.rows} 行销售数据`}
+                              </small>
+                            </span>
+                            {recipe.materialIds.includes(m.id) && (
+                              <Check size={17} aria-hidden="true" />
+                            )}
                           </label>
                         ))}
-                        <label>
-                          行程预算（元）
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={recipe.travelRequest.budget_cents / 100}
-                            onChange={(e) =>
-                              update({
-                                travelRequest: {
-                                  ...recipe.travelRequest,
-                                  budget_cents: Math.round(
-                                    Number(e.target.value) * 100,
-                                  ),
-                                },
-                              })
+                      {!materials.some(
+                        (m) => m.scenario === recipe.scenario,
+                      ) && (
+                        <p className="empty-materials">
+                          {travel
+                            ? "无需上传，可以直接按目标生成方案。"
+                            : "还没有材料，请上传文件。"}
+                        </p>
+                      )}
+                    </div>
+                    {travel && !!recipe.materialIds.length && (
+                      <button
+                        type="button"
+                        onClick={() => update({ materialIds: [] })}
+                      >
+                        取消补充资料，使用演示资料库
+                      </button>
+                    )}
+                    <label className="upload-area">
+                      <FileUp size={22} />
+                      <span>
+                        <strong>上传{travel ? "旅游资料" : "销售数据"}</strong>
+                        <small>{travel ? "JSON" : "CSV"} 文件，最大 2 MB</small>
+                      </span>
+                      <input
+                        type="file"
+                        aria-label={travel ? "上传旅游资料" : "上传销售数据"}
+                        accept={travel ? ".json" : ".csv"}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const revision = recipeRevision.current;
+                          void run("upload", async () => {
+                            if (file.size > 2_000_000)
+                              throw new Error("文件不能超过 2 MB");
+                            const material = await api(prefix + "/materials", {
+                              name: file.name,
+                              scenario: recipe.scenario,
+                              content: await file.text(),
+                            });
+                            await refresh();
+                            if (revision !== recipeRevision.current) {
+                              setNotice(
+                                "文件已保存到材料列表，请选择需要使用的材料。",
+                              );
+                              return;
                             }
-                          />
-                        </label>
-                        <label>
-                          兴趣偏好
-                          <input
-                            value={(recipe.travelRequest.interests || []).join(
-                              ",",
-                            )}
-                            onChange={(e) =>
-                              update({
-                                travelRequest: {
-                                  ...recipe.travelRequest,
-                                  interests: e.target.value
-                                    .split(/[,，]/)
-                                    .map((v) => v.trim())
-                                    .filter(Boolean),
-                                },
-                              })
-                            }
-                          />
-                        </label>
-                      </div>
+                            update({
+                              materialIds: travel
+                                ? [material.id]
+                                : [
+                                    ...new Set([
+                                      ...recipe.materialIds,
+                                      material.id,
+                                    ]),
+                                  ],
+                              ...(travel
+                                ? { travelRequest: material.preview.request }
+                                : {}),
+                            });
+                          });
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <details className="format-help">
+                      <summary>文件格式要求</summary>
+                      <p>
+                        {travel
+                          ? "上传包含 request、attractions、hotels 的旅游 JSON 资料；目的地与出行条件可在下方调整。"
+                          : "CSV 需包含 organization、order_id、date、category、quantity、unit_price_cents 列。金额以分计；UTF-8 编码；类别为 book、food、tool；日期格式 YYYY-MM-DD，最多 20000 行。"}
+                      </p>
                     </details>
-                  )}
+                    {travel &&
+                      recipe.travelRequest &&
+                      !!recipe.materialIds.length && (
+                        <details>
+                          <summary>调整出行条件</summary>
+                          <div className="compact-fields">
+                            {[
+                              ["destination", "目的地", "text"],
+                              ["start_date", "出发日期", "date"],
+                              ["days", "出行天数", "number"],
+                              ["travelers", "出行人数", "number"],
+                              ["day_start", "每日开始", "time"],
+                              ["day_end", "每日结束", "time"],
+                            ].map(([key, label, type]) => (
+                              <label key={key}>
+                                {label}
+                                <input
+                                  type={type}
+                                  value={recipe.travelRequest[key]}
+                                  min={type === "number" ? 1 : undefined}
+                                  max={key === "days" ? 7 : undefined}
+                                  onChange={(e) =>
+                                    update({
+                                      travelRequest: {
+                                        ...recipe.travelRequest,
+                                        [key]:
+                                          type === "number"
+                                            ? Number(e.target.value)
+                                            : e.target.value,
+                                      },
+                                    })
+                                  }
+                                />
+                              </label>
+                            ))}
+                            <label>
+                              行程预算（元）
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={recipe.travelRequest.budget_cents / 100}
+                                onChange={(e) =>
+                                  update({
+                                    travelRequest: {
+                                      ...recipe.travelRequest,
+                                      budget_cents: Math.round(
+                                        Number(e.target.value) * 100,
+                                      ),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              兴趣偏好
+                              <input
+                                value={(
+                                  recipe.travelRequest.interests || []
+                                ).join(",")}
+                                onChange={(e) =>
+                                  update({
+                                    travelRequest: {
+                                      ...recipe.travelRequest,
+                                      interests: e.target.value
+                                        .split(/[,，]/)
+                                        .map((v) => v.trim())
+                                        .filter(Boolean),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                        </details>
+                      )}
+                  </details>
                 </div>
               </fieldset>
             </section>
@@ -1075,7 +1256,9 @@ export default function Workspace({
                 </button>
                 {!planner?.configured && planner && (
                   <p className="field-help">
-                    可直接使用已有模板。按新目标生成方案需配置模型接口。
+                    {travel
+                      ? "可直接识别常见出行条件并使用内置旅行方案；接入模型后支持更灵活的目标理解。"
+                      : "可直接使用已有模板。按新目标生成方案需配置模型接口。"}
                   </p>
                 )}
                 {goalPlan && (

@@ -18,21 +18,13 @@ const labels: Record<string, string> = {
 
 export function PlanningGraph({
   tasks,
-  onChange,
-  disabled = false,
   selectedTask,
   onSelectTask,
 }: {
   tasks: Row[];
-  onChange?: (tasks: Row[]) => void;
-  disabled?: boolean;
   selectedTask?: string;
   onSelectTask?: (key: string) => void;
 }) {
-  const [source, setSource] = useState("");
-  const [target, setTarget] = useState("");
-  const [selectedEdge, setSelectedEdge] = useState("");
-  const [error, setError] = useState("");
   const fitGraph = useRef<(() => void) | null>(null);
   const layout = JSON.stringify(
     tasks.map((t) => [t.key, t.dependencies, t.title]),
@@ -41,53 +33,6 @@ export function PlanningGraph({
     const frame = requestAnimationFrame(() => fitGraph.current?.());
     return () => cancelAnimationFrame(frame);
   }, [layout]);
-  const editable = !!onChange && !disabled;
-  const title = (key: string) => tasks.find((t) => t.key === key)?.title || key;
-  const connect = (from: string, to: string) => {
-    if (!editable) return;
-    const parent = tasks.find((t) => t.key === from);
-    const child = tasks.find((t) => t.key === to);
-    if (!parent || !child) return;
-    if (from === to) {
-      setError("任务不能等待自己。");
-      return;
-    }
-    const pending = [from],
-      visited = new Set<string>();
-    while (pending.length) {
-      const key = pending.pop()!;
-      if (key === to) {
-        setError("这条连线会让任务互相等待，不能添加。");
-        return;
-      }
-      if (visited.has(key)) continue;
-      visited.add(key);
-      pending.push(...(tasks.find((t) => t.key === key)?.dependencies || []));
-    }
-    if (child.dependencies.includes(from)) {
-      setError("这条前后关系已经存在。");
-      return;
-    }
-    setError("");
-    onChange!(
-      tasks.map((t) =>
-        t.key === to ? { ...t, dependencies: [...t.dependencies, from] } : t,
-      ),
-    );
-  };
-  const remove = (ids: string[]) => {
-    if (!editable) return;
-    setError("");
-    setSelectedEdge("");
-    onChange!(
-      tasks.map((t) => ({
-        ...t,
-        dependencies: t.dependencies.filter(
-          (key: string) => !ids.includes(`${key}-${t.key}`),
-        ),
-      })),
-    );
-  };
   const levels: Record<string, number> = {};
   for (let pass = 0; pass < tasks.length; pass++)
     for (const task of tasks)
@@ -131,13 +76,9 @@ export function PlanningGraph({
       id: `${key}-${task.key}`,
       source: key,
       target: task.key,
-      ariaLabel: `${title(key)} → ${task.title}`,
-      selected: selectedEdge === `${key}-${task.key}`,
+      ariaLabel: `${tasks.find((t) => t.key === key)?.title || key} → ${task.title}`,
       markerEnd: { type: MarkerType.ArrowClosed, color: "#72b5ef" },
-      style: {
-        stroke: selectedEdge === `${key}-${task.key}` ? "#f5c86d" : "#72b5ef",
-        strokeWidth: selectedEdge === `${key}-${task.key}` ? 3 : 2,
-      },
+      style: { stroke: "#72b5ef", strokeWidth: 2 },
     })),
   );
   return (
@@ -154,98 +95,47 @@ export function PlanningGraph({
             };
           }}
           nodesDraggable={false}
-          nodesConnectable={editable}
-          elementsSelectable={editable}
-          onConnect={({ source: from, target: to }) => connect(from, to)}
-          onEdgeClick={(_, edge) => editable && setSelectedEdge(edge.id)}
+          nodesConnectable={false}
+          elementsSelectable={!!onSelectTask}
           onNodeClick={(_, node) => onSelectTask?.(node.id)}
-          onPaneClick={() => setSelectedEdge("")}
-          onEdgesDelete={(removed) => remove(removed.map((edge) => edge.id))}
-          deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
+          deleteKeyCode={null}
           minZoom={0.3}
         >
           <Background />
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
-      {onChange && (
-        <>
-          <p className="hint">
-            拖动节点圆点可以连线。点击节点编辑内容，点击连线可以删除。
-          </p>
-          {edges.some((edge) => edge.id === selectedEdge) && (
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => remove([selectedEdge])}
-            >
-              删除选中的连线
-            </button>
-          )}
-          {error && <p role="alert">{error}</p>}
-          <details className="dependency-editor">
-            <summary>调整前后关系</summary>
-            <fieldset disabled={disabled}>
-              <legend>图中的连线</legend>
-              {edges.map((edge) => (
-                <div className="dependency-row" key={edge.id}>
-                  <span>
-                    {title(edge.source)} → {title(edge.target)}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`删除连线：${title(edge.source)} → ${title(edge.target)}`}
-                    onClick={() => remove([edge.id])}
-                  >
-                    删除连线
-                  </button>
-                </div>
-              ))}
-              {!edges.length && <p>尚无前后关系。</p>}
-              <label>
-                先完成的任务
-                <select
-                  value={tasks.some((t) => t.key === source) ? source : ""}
-                  onChange={(e) => setSource(e.target.value)}
-                >
-                  <option value="">选择前置任务</option>
-                  {tasks.map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                随后执行的任务
-                <select
-                  value={tasks.some((t) => t.key === target) ? target : ""}
-                  onChange={(e) => setTarget(e.target.value)}
-                >
-                  <option value="">选择后续任务</option>
-                  {tasks.map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                disabled={
-                  !tasks.some((t) => t.key === source) ||
-                  !tasks.some((t) => t.key === target)
-                }
-                onClick={() => connect(source, target)}
-              >
-                添加连线
-              </button>
-            </fieldset>
-          </details>
-        </>
-      )}
     </>
   );
+}
+
+function tasksForOutputs(outputs: string[], tasks: Row[], skills: Row[]) {
+  const selected = new Map<string, Row>();
+  const visiting = new Set<string>();
+  const add = (key: string) => {
+    if (selected.has(key)) return;
+    if (visiting.has(key)) throw new Error("服务依赖存在循环，请检查服务定义");
+    const capability = skills.find((c) => c.key === key);
+    if (!capability) throw new Error("尚未接入该成果的执行服务，请调整目标");
+    visiting.add(key);
+    const dependencies = (capability.requires || []).map((type: string) => {
+      const parent = skills.find((c) => c.outputType === type);
+      if (!parent) throw new Error(`缺少 ${capability.title} 所需的前置服务`);
+      add(parent.key);
+      return parent.key;
+    });
+    visiting.delete(key);
+    const original = tasks.find((t) => t.key === key);
+    selected.set(key, {
+      key,
+      skill: capability.skill,
+      title: original?.title || capability.title,
+      reason: original?.reason || capability.acceptance || capability.title,
+      dependencies,
+    });
+  };
+  outputs.forEach((key) => add(key === "charts" ? "report" : key));
+  return Array.from(selected.values());
 }
 
 function GraphEditor({
@@ -264,6 +154,7 @@ function GraphEditor({
   readOnly?: boolean;
 }) {
   const [selectedKey, setSelectedKey] = useState("");
+  const [graphError, setGraphError] = useState("");
   const selected =
     value.tasks.find((t: Row) => t.key === selectedKey) || value.tasks[0];
   const skills = capabilities.filter((c) => c.scenario === scenario);
@@ -311,20 +202,29 @@ function GraphEditor({
       <fieldset className="deliverable-picker" disabled={disabled}>
         <legend>最终需要哪些成果</legend>
         <p className="hint">
-          勾选要收到的成果。生成成果所需的前置工作会保留在任务图中。
+          选择成果后，任务和连线会自动调整；仍被其他成果使用的步骤会保留。
         </p>
         {outputs.map((key) => (
           <label className="check-row" key={key}>
             <input
               type="checkbox"
               checked={value.outputs.includes(key)}
-              onChange={(e) =>
-                change({
-                  outputs: e.target.checked
-                    ? [...value.outputs, key]
-                    : value.outputs.filter((x: string) => x !== key),
-                })
-              }
+              onChange={(e) => {
+                const next = e.target.checked
+                  ? [...value.outputs, key]
+                  : value.outputs.filter((x: string) => x !== key);
+                try {
+                  const tasks = tasksForOutputs(next, value.tasks, skills);
+                  setGraphError("");
+                  change({
+                    outputs: next,
+                    tasks,
+                    tier: next.includes("report") ? value.tier : "standard",
+                  });
+                } catch (err) {
+                  setGraphError(String(err));
+                }
+              }}
             />
             {labels[key]}
           </label>
@@ -356,6 +256,7 @@ function GraphEditor({
           </label>
         )}
       </fieldset>
+      {graphError && <p role="alert">{graphError}</p>}
       <div className="graph-workbench">
         <section className="graph-canvas">
           <h3>
@@ -365,18 +266,18 @@ function GraphEditor({
           {!!value.tasks.length && (
             <PlanningGraph
               tasks={value.tasks}
-              disabled={disabled}
-              onChange={(tasks) => change({ tasks })}
               selectedTask={selected?.key}
               onSelectTask={setSelectedKey}
             />
           )}
           {!value.tasks.length && (
-            <p className="empty-materials">还没有任务，请添加需要的工作。</p>
+            <p className="empty-materials">
+              请选择需要交付的成果，任务图会自动生成。
+            </p>
           )}
         </section>
         <fieldset className="node-inspector" disabled={disabled}>
-          <legend>编辑任务</legend>
+          <legend>任务详情</legend>
           <div className="task-selectors">
             {value.tasks.map((task: Row, index: number) => (
               <button
@@ -420,57 +321,8 @@ function GraphEditor({
               <p className="hint">
                 验收：{skills.find((c) => c.skill === task.skill)?.acceptance}
               </p>
-              <button
-                type="button"
-                onClick={() =>
-                  change({
-                    tasks: value.tasks
-                      .filter((t: Row) => t.key !== task.key)
-                      .map((t: Row) => ({
-                        ...t,
-                        dependencies: t.dependencies.filter(
-                          (x: string) => x !== task.key,
-                        ),
-                      })),
-                  })
-                }
-              >
-                移除此步骤
-              </button>
             </section>
           ))}
-          <label>
-            添加子任务
-            <select
-              value=""
-              onChange={(e) => {
-                const c = skills.find((x) => x.skill === e.target.value);
-                if (c)
-                  change({
-                    tasks: [
-                      ...value.tasks,
-                      {
-                        key: c.key,
-                        skill: c.skill,
-                        title: c.title,
-                        reason: "为本次目标提供必要成果",
-                        dependencies: [],
-                      },
-                    ],
-                  });
-                if (c) setSelectedKey(c.key);
-              }}
-            >
-              <option value="">选择当前支持的服务能力</option>
-              {skills
-                .filter((c) => !value.tasks.some((t: Row) => t.key === c.key))
-                .map((c) => (
-                  <option value={c.skill} key={c.skill}>
-                    {c.title}
-                  </option>
-                ))}
-            </select>
-          </label>
         </fieldset>
       </div>
     </>
@@ -541,7 +393,12 @@ export function PlanReview({
       <button
         type="button"
         className="primary"
-        disabled={busy || (!dirty && !!plan.reviewedAt)}
+        disabled={
+          busy ||
+          !draft.outputs.length ||
+          !draft.tasks.length ||
+          (!dirty && !!plan.reviewedAt)
+        }
         onClick={() =>
           void run("review-plan", async () => {
             const result = await api(`${prefix}/planning/${plan.id}/review`, {

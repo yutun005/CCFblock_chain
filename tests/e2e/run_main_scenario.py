@@ -324,7 +324,18 @@ def run_dynamic_job(client, api, scenario, run_id):
     recipe = {"scenario": scenario, "materialIds": [m["id"] for m in materials[:1]], "outputs": ["report"],
               "budget": "100", "requirement": "根据材料完成分析和报告", "preference": "lowest_price",
               "planningMode": "template", "reviewSeconds": 60, "title": "dynamic-" + run_id}
-    draft = call("/api/workspace/templates/builtin-" + scenario + "/apply", recipe)
+    if scenario == "travel_planning":
+        vague = call("/api/workspace/travel/prepare", {"goal": "生成三日旅游方案"})
+        assert vague["status"] == "needs_input"
+        assert "days" not in vague["missing"]
+        goal = "2026年11月1日去杭州玩三天，两人出行，旅行预算2000元，偏好历史文化，生成完整行程方案"
+        intent = call("/api/workspace/travel/prepare", {"goal": goal, "serviceBudget": "100"})
+        assert intent["status"] == "ready" and not intent["questions"], intent
+        recipe.update(materialIds=[], requirement=goal, travelRequest=intent["request"], planningMode="llm")
+        draft = call("/api/workspace/planning", recipe)
+        assert draft["plan"]["input_hashes"], draft
+    else:
+        draft = call("/api/workspace/templates/builtin-" + scenario + "/apply", recipe)
     reviewed = call("/api/workspace/planning/" + draft["id"] + "/review",
                     {"recipe": draft["recipe"], "draft": draft["draft"]})
     comparison = call("/api/workspace/comparisons", reviewed["recipe"])
@@ -335,6 +346,21 @@ def run_dynamic_job(client, api, scenario, run_id):
     created = call("/api/workspace/confirm", {"proposalId": proposal["id"], "confirmationHash": proposal["confirmationHash"]})
     job = wait_job(client, api, created["jobId"])
     proof = validate_settlement(client, api, job, recovery=False, scenario=scenario)
+    if scenario == "travel_planning":
+        files = {ref["name"]: ref for delivery in proof["artifacts"] for ref in delivery["manifest"]["artifacts"]}
+        route = call(f"/api/jobs/{job['jobId']}/artifacts/{files['itinerary.json']['sha256']}")
+        assert len(route["days"]) == 3 and route["total_cents"] <= 200000
+        assert "演示" in route["source"]
+        for delivery in proof["artifacts"]:
+            manifest = delivery["manifest"]
+            names = {ref["name"] for ref in manifest["artifacts"]}
+            actual_inputs = {ref["name"] for ref in manifest["inputRefs"]}
+            if names & {"attractions.json", "hotels.json"}:
+                assert actual_inputs == {"travel-request.json"}
+            if "itinerary.json" in names:
+                assert actual_inputs == {"attractions.json", "hotels.json"}
+            if "travel-report.md" in names:
+                assert actual_inputs == {"itinerary.json"}
     tasks = job["tasks"]
     assert tasks[0]["checkpoint"]["selected"]["agentId"] == "clean-a"
     assert tasks[2]["checkpoint"]["selected"]["agentId"] == "clean-a"

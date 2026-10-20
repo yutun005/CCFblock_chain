@@ -22,8 +22,8 @@ CAPABILITIES = {
     "data_validation": ("validate", "检查销售数据质量", [], "原始数据异常记录可独立复算"),
     "statistical_analysis": ("statistics", "汇总销售数据", ["cleaned_dataset", "quality_report"], "按指定维度复算汇总值"),
     "report_generation": ("report", "生成销售报告或图表", ["statistics"], "报告、图表与统计一致；报告还需用户接受"),
-    "attraction_search": ("attractions", "从资料快照筛选景点", [], "景点满足目的地与兴趣筛选规则"),
-    "hotel_search": ("hotels", "从资料快照比较酒店", [], "住宿日期、人数、费用与资料一致"),
+    "attraction_search": ("attractions", "获取并筛选景点资料", [], "景点满足目的地与兴趣筛选规则"),
+    "hotel_search": ("hotels", "获取并比较住宿候选", [], "住宿日期、人数、费用与资料一致"),
     "route_planning": ("route", "安排每日行程", ["attractions", "hotels"], "独立核对行程时段、交通、天数和费用"),
     "travel_report": ("report", "生成可阅读的行程报告", ["itinerary"], "报告与行程一致且由用户接受"),
 }
@@ -149,6 +149,9 @@ async def record_draft(workspace, recipe, draft, *, mode, model="", reviewed=Fal
         if recipe.scenario != "travel_planning":
             raise ValueError("销售任务不能修改出行要求")
         updated["travelRequest"] = TravelRequest.model_validate(draft.travelRequest).model_dump(mode="json")
+        if (not recipe.materialIds and recipe.travelRequest
+                and updated["travelRequest"] != TravelRequest.model_validate(recipe.travelRequest).model_dump(mode="json")):
+            raise ValueError("已澄清的出行条件不能由规划模型修改，请回到需求入口调整并重新确认")
     if draft.serviceBudget is not None:
         if not 0 < units(draft.serviceBudget) <= units(recipe.budget):
             raise ValueError("模型提出的服务预算必须为正且不超过用户填写的上限")
@@ -229,9 +232,33 @@ async def plan_goal(workspace, data):
         raise ValueError("请先描述要完成的目标")
     if not units(recipe.budget):
         raise ValueError("服务预算须大于零")
+    if recipe.scenario == "travel_planning" and not recipe.materialIds and not recipe.travelRequest:
+        from .travel import prepare
+
+        intent = await prepare({"goal": recipe.requirement, "serviceBudget": recipe.budget})
+        if intent["status"] != "ready":
+            return {**intent, "mode": "travel_intake", "summary": "请补齐出行需求",
+                    "questions": intent.get("issues") or [q["label"] for q in intent["questions"]]}
+        recipe = recipe.model_copy(update={"travelRequest": intent["request"]})
     _, materials = workspace.inputs(recipe)
     config, secret, ready = configuration()
     if not ready:
+        if recipe.scenario == "travel_planning":
+            from .templates import builtins
+            from .travel import requested_outputs
+
+            template = next(t for t in builtins() if t["scenario"] == recipe.scenario)
+            outputs = requested_outputs(recipe.requirement)
+            tasks = {t["key"]: t for t in template["tasks"]}
+            wanted = set(outputs)
+            for _ in tasks:
+                wanted.update(d for k in list(wanted) for d in tasks[k]["dependencies"])
+            draft = GoalDraft(status="ready", summary="按已确认出行需求采用内置旅行方案",
+                              outputs=outputs, tasks=[t for k, t in tasks.items() if k in wanted],
+                              limitations=["使用内置任务模板；资料由服务 Agent 查询演示资料库，非实时数据。"])
+            return await record_draft(workspace, recipe, draft, mode="template_dag",
+                                      source={"templateId": template["id"], "revision": template["revision"],
+                                              "name": template["name"]})
         raise ValueError(status()["message"])
     policy = "travel-v1" if recipe.scenario == "travel_planning" else "sales-v1"
     from .catalog import graph
@@ -262,10 +289,11 @@ outputs 只含用户要求的最终交付，必要前置放在 tasks 中。销�
 charts 由 report_generation 提供，可只生成图表，不要求用户额外购买报告。没有要求的网页等增值格式不要添加，tier 默认 standard。
 明确说明每个节点为何需要。无法满足的必需能力、缺失材料或含糊条件必须返回 unsupported 或 needs_input 并写入 questions，不能遗漏后返回 ready。
 当前业务是确定性的可复算服务：销售支持组织季度、组织、商品类别、月份汇总，不支持预测、利润、同比环比或任意分析算法。
-旅游只支持资料快照内的目的地、日期、天数、人数、总预算、兴趣类别与每日时段；没有实时联网、预订、天气、无障碍或步行距离能力。
+旅游根节点输入是用户需求，景点与酒店 Agent 各自查询已指定版本的演示资料库（或用户自愿补充的资料），不得要求用户准备景点酒店清单。
+旅游支持资料库覆盖内的目的地、日期、天数、人数、旅行总预算、兴趣类别与每日时段；没有实时联网、预订、天气、无障碍或步行距离能力。
 若用户提供已有酒店、要求去掉路线必需的酒店输入等，当前没有导入此中间结果的能力，须说明缺口而不能假装支持或偷偷增加比价服务。
 销售目标“了解销售情况/分析销售数据”可解释为统计及文字报告；旅游目标“安排旅行/生成旅游方案”可解释为完整行程报告。
-只在目标明确要求时修改 groupBy、tier 或出行字段；出行修改返回完整 travelRequest，未指定字段保留已有资料值；不编造缺失信息。
+只在目标明确要求时修改 groupBy、tier 或出行字段；currentTravelRequest 是已澄清的需求，不重复询问或覆盖。未提供信息不能编造。
 任何无法用现有字段或能力表达的硬要求（例如严格交付截止时间、任意新增指标）都须 needs_input/unsupported，不能忽略后返回 ready。
 serviceBudget 仅在目标明确提供服务费预算时填写十进制字符串，不能超过 maximumServiceBudgetUSDC；旅游花费 budget_cents 与 Agent 服务费分开。
 金额、签名报价、具体执行者、截止时间和付款验证由系统后续配置，模型只提出工作分解，不能声称已执行或已验证。

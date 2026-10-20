@@ -167,6 +167,7 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
     const names = travel ? ["景点推荐", "酒店推荐", "每日行程", "完整报告"] : ["清洗后的数据", "质量检查结果", "统计结果", "完整报告"];
     const skills = travel ? ["attraction_search", "hotel_search", "route_planning", "travel_report"] : ["data_cleaning", "data_validation", "statistical_analysis", "report_generation"];
     const tasks = keys.map((key, i) => ({ key, title: names[i], skill: skills[i], reason: "为目标提供成果", dependencies: i === 2 ? keys.slice(0, 2) : i === 3 ? [keys[2]] : [] }));
+    const types = travel ? ["attractions", "hotels", "itinerary", "travel_report"] : ["cleaned_dataset", "quality_report", "statistics", "report"];
     const template = { id: `builtin-${scenario}`, name: "示例任务模板", description: "测试目标", scenario, builtin: true, revision: 1, tags: [], outputs: ["report"], tasks, tier: "standard", groupBy: "organization_quarter" };
     const reviewed: { outputs: string[]; tasks: typeof tasks }[] = [];
     const saved: Record<string, unknown>[] = [];
@@ -178,8 +179,9 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
       if (path === "/api/config") return route.fulfill({ json: { scenarios: [{ id: scenario, title: "任务场景" }], chainId: 31337, tokenSymbol: "TEST" } });
       if (path === "/api/workspace/planner") return route.fulfill({ json: { configured: false, message: "可复用模板" } });
       if (path === "/api/workspace/materials") return route.fulfill({ json: [{ id: "material-1", scenario, name: "测试材料", preview: { rows: 2, source: "本地", request: null } }] });
-      if (path === "/api/workspace/capabilities") return route.fulfill({ json: tasks.map((t) => ({ ...t, scenario, acceptance: "校验结果", available: true })) });
+      if (path === "/api/workspace/capabilities") return route.fulfill({ json: tasks.map((t, i) => ({ ...t, outputType: types[i], requires: i === 2 ? types.slice(0, 2) : i === 3 ? [types[2]] : [], scenario, acceptance: "校验结果", available: true })) });
       if (path === "/api/workspace/templates" && route.request().method() === "GET") return route.fulfill({ json: [template] });
+      if (path.endsWith("/travel/prepare")) return route.fulfill({ json: { status: "ready", request: { destination: "杭州", days: 3, travelers: 2, start_date: "2026-11-01", budget_cents: 200000 }, questions: [] } });
       if (path === `/api/workspace/templates/${template.id}/apply`) return route.fulfill({ json: {
         id: "draft-1", mode: "template_dag", status: "ready", draft: { ...template, status: "ready", summary: "测试目标" },
         recipe: { ...body, outputs: ["report"], planningId: "draft-1", planningMode: "template" },
@@ -198,7 +200,7 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
     await page.getByLabel("访问令牌").fill(token);
     await page.getByRole("button", { name: /连接工作区/ }).click();
     await page.getByRole("combobox", { name: "任务类型", exact: true }).selectOption(scenario);
-    await page.getByRole(travel ? "radio" : "checkbox", { name: /测试材料/ }).check();
+    if (!travel) await page.getByRole("checkbox", { name: /测试材料/ }).check();
     await page.getByLabel("任务目标", { exact: true }).fill("测试目标");
     await page.getByRole("button", { name: "模板库", exact: true }).click();
     await page.getByRole("button", { name: "查看 / 管理" }).click();
@@ -226,43 +228,25 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
     // Final-file selection must not delete required prerequisite tasks.
     await expect(review.locator(".react-flow__node")).toHaveCount(4);
     await expect(review.getByText("这一步要等待哪些任务", { exact: true })).toHaveCount(0);
-    await review.getByText("调整前后关系", { exact: true }).click();
-    await review.getByRole("button", { name: `删除连线：${names[0]} → ${names[2]}`, exact: true }).click();
-    await review.getByRole("combobox", { name: "先完成的任务", exact: true }).selectOption(keys[0]);
-    await review.getByRole("combobox", { name: "随后执行的任务", exact: true }).selectOption(keys[2]);
-    await review.getByRole("button", { name: "添加连线", exact: true }).click();
-    await expect(review.locator(`.react-flow__edge[data-id="${keys[0]}-${keys[2]}"]`)).toHaveCount(1);
-    await review.getByRole("button", { name: "添加连线", exact: true }).click();
-    await expect(review.getByRole("alert")).toContainText("已经存在");
-    await review.getByRole("combobox", { name: "先完成的任务", exact: true }).selectOption(keys[2]);
-    await review.getByRole("combobox", { name: "随后执行的任务", exact: true }).selectOption(keys[0]);
-    await review.getByRole("button", { name: "添加连线", exact: true }).click();
-    await expect(review.getByRole("alert")).toContainText("互相等待");
-    await expect(review.locator(`.react-flow__edge[data-id="${keys[2]}-${keys[0]}"]`)).toHaveCount(0);
-    await review.locator(".planning-graph").scrollIntoViewIfNeeded();
-    const point = await review.locator(`.react-flow__edge[data-id="${keys[0]}-${keys[2]}"] .react-flow__edge-interaction`).evaluate((element) => {
-      const path = element as SVGPathElement;
-      const position = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM()!);
-      return { x: position.x, y: position.y };
-    });
-    await page.mouse.click(point.x, point.y);
-    await review.getByRole("button", { name: "删除选中的连线", exact: true }).click();
-    await expect(review.locator(`.react-flow__edge[data-id="${keys[0]}-${keys[2]}"]`)).toHaveCount(0);
-    // Direct graph interaction edits the very same dependency data.
-    const from = review.locator(`[data-testid="rf__node-${keys[0]}"] .react-flow__handle-bottom`);
-    const to = review.locator(`[data-testid="rf__node-${keys[2]}"] .react-flow__handle-top`);
-    await from.scrollIntoViewIfNeeded();
-    const start = (await from.boundingBox())!, end = (await to.boundingBox())!;
-    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 12 });
-    await page.mouse.up();
-    await expect(review.getByRole("button", { name: `删除连线：${names[0]} → ${names[2]}`, exact: true })).toBeVisible();
+    await expect(review.getByRole("button", { name: "移除此步骤" })).toHaveCount(0);
+    await expect(review.getByRole("combobox", { name: "添加子任务" })).toHaveCount(0);
+    // Removing a final result removes only its now-unused work, immediately.
+    await outputs.getByRole("checkbox", { name: "完整报告", exact: true }).uncheck();
+    await expect(review.locator(".react-flow__node")).toHaveCount(1);
+    await expect(review.locator(".react-flow__edge")).toHaveCount(0);
+    await outputs.getByRole("checkbox", { name: names[2], exact: true }).check();
+    await expect(review.locator(".react-flow__node")).toHaveCount(3);
+    await expect(review.locator(".react-flow__edge")).toHaveCount(2);
+    await outputs.getByRole("checkbox", { name: "完整报告", exact: true }).check();
+    await expect(review.locator(".react-flow__node")).toHaveCount(4);
+    await expect(review.locator(".react-flow__edge")).toHaveCount(3);
+    // Dependency handles are intentionally read-only; task selection stays editable.
+    await expect(review.getByRole("button", { name: "删除连线" })).toHaveCount(0);
     await review.locator(".planning-graph").screenshot({ path: testInfo.outputPath("dependency-graph.png") });
     await review.getByRole("button", { name: "确认任务方案" }).click();
     await expect(page.locator(".plan-footer")).toContainText("任务方案已确认");
     await expect(page.getByRole("button", { name: "查看执行方案", exact: true })).toBeEnabled();
-    expect(reviewed[0].outputs).toEqual(["report", keys[0]]);
+    expect([...reviewed[0].outputs].sort()).toEqual(["report", keys[0], keys[2]].sort());
     expect([...reviewed[0].tasks[2].dependencies].sort()).toEqual(keys.slice(0, 2).sort());
     await review.getByText("保存到模板库，下次复用", { exact: true }).click();
     await review.getByRole("button", { name: "保存为新模板" }).click();
@@ -285,10 +269,10 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await outputs.screenshot({ path: testInfo.outputPath("mobile-deliverables.png") });
     }
-    await review.getByRole("button", { name: `编辑任务：${names[1]}`, exact: true }).click();
-    await review.locator(".task-editor").filter({ has: page.getByRole("heading", { name: names[1], exact: true }) }).getByRole("button", { name: "移除此步骤" }).click();
-    await expect(review.locator(".react-flow__node")).toHaveCount(3);
-    await expect(review.locator(`.react-flow__edge[data-id="${keys[1]}-${keys[2]}"]`)).toHaveCount(0);
+    await outputs.getByRole("checkbox", { name: "完整报告", exact: true }).uncheck();
+    await outputs.getByRole("checkbox", { name: names[2], exact: true }).uncheck();
+    await expect(review.locator(".react-flow__node")).toHaveCount(2);
+    await expect(review.locator(".react-flow__edge")).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 }
@@ -476,3 +460,72 @@ test("report previews hide fingerprints while download and acceptance keep origi
   await expect.poll(() => accepted).toMatchObject({ resultHash: digest, action: "accept" });
   expect(errors).toEqual([]);
 });
+
+for (const complete of [false, true]) {
+  test(`travel goal without upload: ${complete ? "complete request" : "only missing clarifications"}`, async ({ page }, testInfo) => {
+    const request = { destination: "杭州", start_date: "2026-11-01", days: 3, travelers: 2, budget_cents: 200000 };
+    const tasks = [
+      { key: "attractions", skill: "attraction_search", title: "获取景点", reason: "筛选景点", dependencies: [], outputType: "attractions", requires: [] },
+      { key: "hotels", skill: "hotel_search", title: "比较酒店", reason: "比较住宿", dependencies: [], outputType: "hotels", requires: [] },
+      { key: "route", skill: "route_planning", title: "安排路线", reason: "使用前置结果", dependencies: ["attractions", "hotels"], outputType: "itinerary", requires: ["attractions", "hotels"] },
+      { key: "report", skill: "travel_report", title: "生成报告", reason: "汇总行程", dependencies: ["route"], outputType: "report", requires: ["itinerary"] },
+    ];
+    let preparations = 0, plans = 0, uploads = 0;
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      const post = route.request().method() === "POST";
+      const body = post ? route.request().postDataJSON() : {};
+      if (path === "/api/config") return route.fulfill({ json: { scenarios: [], chainId: 31337, tokenSymbol: "USDC" } });
+      if (path.endsWith("/planner")) return route.fulfill({ json: { configured: false } });
+      if (path.endsWith("/travel/source")) return route.fulfill({ json: { destinations: ["杭州", "示例城"], mode: "demo" } });
+      if (path.endsWith("/materials")) { if (post) uploads++; return route.fulfill({ json: [] }); }
+      if (path.endsWith("/capabilities")) return route.fulfill({ json: tasks.map((t) => ({ ...t, scenario: "travel_planning", available: true })) });
+      if (path.endsWith("/travel/prepare")) {
+        preparations++;
+        expect(body.materialIds).toEqual([]);
+        expect(body.serviceBudget).toBe("100");
+        if (!complete && preparations === 1) return route.fulfill({ json: {
+          status: "needs_input", interpretation: "local_rules", request: { days: 3 },
+          questions: [{ field: "destination", label: "目的地" }, { field: "start_date", label: "出发日期" }, { field: "travelers", label: "出行人数" }, { field: "budget_cents", label: "旅行花费预算（元）" }],
+        } });
+        if (!complete) expect(body.answers).toMatchObject(request);
+        return route.fulfill({ json: { status: "ready", request, questions: [], interpretation: "local_rules" } });
+      }
+      if (path.endsWith("/planning")) {
+        plans++;
+        expect(body.materialIds).toEqual([]);
+        expect(body.travelRequest).toMatchObject(request);
+        expect(body.budget).toBe("100");
+        return route.fulfill({ json: { id: "travel-draft", status: "ready", mode: "template_dag",
+          draft: { status: "ready", summary: "旅行方案", outputs: ["report"], tasks },
+          recipe: { ...body, outputs: ["report"], planningId: "travel-draft", planningMode: "template" } } });
+      }
+      return route.fulfill({ json: [] });
+    });
+    await page.goto("/");
+    await page.getByLabel("访问令牌").fill(token);
+    await page.getByRole("button", { name: /连接工作区/ }).click();
+    await page.getByRole("combobox", { name: "任务类型", exact: true }).selectOption("travel_planning");
+    await expect(page.getByLabel("上传旅游资料", { exact: true })).not.toBeVisible();
+    await page.getByLabel("任务目标", { exact: true }).fill(complete ? "2026年11月1日去杭州玩三天，两人出行，旅行预算2000元，生成完整方案" : "生成三日旅游方案");
+    await page.getByRole("button", { name: "生成任务方案", exact: true }).click();
+    if (!complete) {
+      const questions = page.getByLabel("补充出行需求", { exact: true });
+      await expect(questions.locator("input")).toHaveCount(4);
+      await expect(questions.getByLabel("旅行天数", { exact: true })).toHaveCount(0);
+      expect(plans).toBe(0);
+      await questions.getByLabel("目的地", { exact: true }).fill("杭州");
+      await questions.getByLabel("出发日期", { exact: true }).fill("2026-11-01");
+      await questions.getByLabel("出行人数", { exact: true }).fill("2");
+      await questions.getByLabel("旅行花费预算（元）", { exact: true }).fill("2000");
+      await page.screenshot({ path: testInfo.outputPath("travel-clarification.png"), fullPage: true });
+      await page.getByRole("button", { name: "生成任务方案", exact: true }).click();
+    }
+    await expect(page.getByRole("heading", { name: "编辑任务方案", exact: true })).toBeVisible();
+    await expect(page.locator(".planning-result .react-flow__node")).toHaveCount(4);
+    await expect(page.locator(".planning-result .react-flow__edge")).toHaveCount(3);
+    expect(plans).toBe(1);
+    expect(preparations).toBe(complete ? 1 : 2);
+    expect(uploads).toBe(0);
+  });
+}
