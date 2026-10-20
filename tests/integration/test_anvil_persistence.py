@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import shutil
 import subprocess
+import sys
 import time
 from functools import partial
 from unittest.mock import patch
@@ -114,22 +115,100 @@ def test_running_demo_requires_matching_deployment_and_authentication(tmp_path, 
     assert all(p.read_bytes() == data for p,data in before.items())
 
 
-def test_repeated_launch_opens_existing_app_without_starting_or_stopping_services(tmp_path, monkeypatch):
+@pytest.mark.parametrize('superseded', [False, True])
+def test_launcher_restarts_services_instead_of_exiting_after_opening_old_page(tmp_path, monkeypatch, superseded):
     local_launcher(monkeypatch, tmp_path)
     monkeypatch.setenv('AGENTFLOW_OPEN_BROWSER', '1')
-    with patch.object(local_demo, 'running_demo', return_value='http://127.0.0.1:12345'), \
-         patch.object(local_demo, 'chain_up') as chain, \
-         patch.object(local_demo, 'available_service_ports') as ports, \
+    atomic_json(local_demo.CONFIG, {'runtime': {}})
+    atomic_json(local_demo.ENV, {'ESCROW': 'saved-contract'})
+    settings = {'directory': tmp_path / '.cache/runtime', 'chain': {'rpcEnv': 'RPC', 'escrowEnv': 'ESCROW'}}
+    commands = iter(['restart', 'stop'])
+    def command():
+        value = next(commands)
+        if value == 'stop' and superseded:
+            atomic_json(local_demo.CACHE / 'demo-launcher/generation.json', {'generation': 'new-controller'})
+        return value
+    with patch.object(local_demo, 'settings_file', return_value=settings), \
+         patch.object(local_demo, 'stop_services') as stop, \
+         patch.object(local_demo, 'build_updated_web'), \
+         patch.object(local_demo, 'load_environment'), \
+         patch.object(local_demo, 'validate_saved_deployment'), \
+         patch.object(local_demo, 'local_web3'), \
+         patch.object(local_demo, 'artifact', return_value={'abi': []}), \
+         patch.object(local_demo, 'sync_demo_merchants'), \
+         patch.object(local_demo, 'chain_up', return_value='http://127.0.0.1:18545') as chain, \
+         patch.object(local_demo, 'available_service_ports'), \
          patch.object(local_demo, 'ServiceCluster') as cluster, \
+         patch.object(local_demo.httpx, 'Client'), \
+         patch.object(local_demo, 'console_action', side_effect=command), \
          patch.object(local_demo.webbrowser, 'open') as browser, \
-         patch.object(AnvilManager, 'checkpoint') as checkpoint:
-        local_demo.run_demo()
+         patch.object(AnvilManager, 'checkpoint') as checkpoint, \
+         patch.object(AnvilManager, 'stop') as stop_chain:
+        cluster.return_value.__enter__.return_value.config = {'api': 'http://127.0.0.1:12345', 'token': 'test'}
         local_demo.run_demo()
         assert browser.call_count == 2
-        chain.assert_not_called()
-        ports.assert_not_called()
-        cluster.assert_not_called()
-        checkpoint.assert_not_called()
+        assert chain.call_count == 2
+        assert cluster.call_count == 2
+        assert stop.call_count == (3 if superseded else 4)
+        assert checkpoint.call_count == (1 if superseded else 2)
+        assert stop_chain.call_count == (0 if superseded else 1)
+    assert json.loads(local_demo.ENV.read_text())['ESCROW'] == 'saved-contract'
+
+
+def test_service_ownership_requires_exact_checkout_config_runtime_and_role(tmp_path, monkeypatch):
+    local_launcher(monkeypatch, tmp_path / 'project with spaces')
+    settings = {'directory': local_demo.CACHE / 'runtime', 'managedRoles': ['api', 'market']}
+    args = ['python', str(local_demo.ROOT / 'app.py'), '--config', str(local_demo.CONFIG),
+            '--runtime', str(settings['directory']), '--role', 'api']
+    assert local_demo.owns_service(args, settings)
+    for index, replacement in [(1, str(tmp_path / 'other/app.py')),
+                               (3, str(tmp_path / 'other/config.json')),
+                               (5, str(tmp_path / 'other/runtime')), (7, 'unmanaged')]:
+        changed = args.copy()
+        changed[index] = replacement
+        assert not local_demo.owns_service(changed, settings)
+
+
+def test_service_stop_ignores_recycled_pid(tmp_path, monkeypatch):
+    local_launcher(monkeypatch, tmp_path)
+    identities = iter([('python', 'old'), ('python', 'new'), ('python', 'new')])
+    with patch.object(local_demo, 'process_arguments', return_value=[(1234, [])]), \
+         patch.object(local_demo, 'owns_service', return_value=True), \
+         patch.object(local_demo, 'process_identity', side_effect=lambda _: next(identities)), \
+         patch.object(local_demo.subprocess, 'run') as terminate, \
+         patch.object(local_demo.os, 'kill') as kill:
+        local_demo.stop_services({})
+        terminate.assert_not_called()
+        kill.assert_not_called()
+
+
+def test_stopping_real_workers_preserves_other_runtime(tmp_path, monkeypatch):
+    local_launcher(monkeypatch, tmp_path / 'project with spaces')
+    local_demo.ROOT.mkdir()
+    (local_demo.ROOT / 'app.py').write_text('import time\ntime.sleep(60)\n', encoding='utf-8')
+    settings = {'directory': local_demo.CACHE / 'runtime', 'managedRoles': ['api']}
+    args = [str(local_demo.ROOT / 'app.py'), '--config', str(local_demo.CONFIG),
+            '--runtime', str(settings['directory']), '--role', 'api']
+    wrapped = ROOT / '.cache/venv/Scripts/python.exe'
+    executable = str(wrapped) if os.name == 'nt' and wrapped.exists() else sys.executable
+    options = {'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL,
+               'creationflags': subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0}
+    owned = subprocess.Popen([executable, *args], **options)
+    other_args = args.copy()
+    other_args[4] = str(local_demo.CACHE / 'other-runtime')
+    other = subprocess.Popen([sys.executable, *other_args], **options)
+    try:
+        # Wait for the Windows virtualenv wrapper to create its worker.
+        time.sleep(.5)
+        assert local_demo.stop_services(settings) >= 1
+        owned.wait(timeout=10)
+        assert other.poll() is None
+    finally:
+        if owned.poll() is None:
+            local_demo.stop_services(settings)
+            owned.wait(timeout=10)
+        other.terminate()
+        other.wait(timeout=10)
 
 
 @pytest.mark.skipif(not BINARY.exists(), reason='Run manage.py setup to install Anvil')

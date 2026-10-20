@@ -163,6 +163,7 @@ function App() {
   const [artifacts, setArtifacts] = useState<AnyRecord[]>([]),
     [ledger, setLedger] = useState<AnyRecord[]>([]);
   const [error, setError] = useState("");
+  const [connectionErrors, setConnectionErrors] = useState<string[]>([]);
   const [createError, setCreateError] = useState("");
   const [scenario, setScenario] = useState("cross_org_analysis"),
     [preview, setPreview] = useState<AnyRecord | null>(null),
@@ -193,6 +194,18 @@ function App() {
   }, []);
   const api = useCallback(
     async (path: string, body?: unknown) => {
+      const labels: Record<string, string> = {
+        "/api/config": "工作区配置",
+        "/api/jobs": "任务列表",
+        "/api/agents": "服务列表",
+        "/api/workspace/materials": "材料列表",
+        "/api/workspace/projects": "项目列表",
+        "/api/workspace/planner": "规划服务",
+        "/api/workspace/capabilities": "服务能力",
+        "/api/workspace/templates": "任务模板",
+        "/api/workspace/travel/source": "旅游资料",
+      };
+      const label = labels[path] || (path.startsWith("/api/jobs/") ? "任务数据" : "当前操作");
       const response = await fetch(path, {
         method: body === undefined ? "GET" : "POST",
         headers: {
@@ -200,11 +213,18 @@ function App() {
           "Content-Type": "application/json",
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }).catch(() => {
+        throw new Error("连接已断开，请确认项目启动窗口仍在运行，然后重试。");
       });
       if (!response.ok) {
         const text = await response.text();
         let detail = text;
         try { detail = JSON.parse(text).detail || text; } catch { /* plain text error */ }
+        if (response.status >= 500 && (!detail || /Internal Server Error|^\s*</i.test(detail))) {
+          detail = `${label}暂时不可用（HTTP ${response.status}），请重新启动项目后重试。`;
+        } else if (response.status === 404 && labels[path]) {
+          detail = `${label}接口不存在，请停止原启动窗口，再重新启动更新后的项目。`;
+        }
         throw new Error(
           response.status === 401 ? "访问令牌无效，请重新连接。" : detail,
         );
@@ -214,16 +234,27 @@ function App() {
     [token],
   );
   const refresh = useCallback(async () => {
-    const [c, js, as] = await Promise.all([
-      api("/api/config"),
-      api("/api/jobs"),
-      api("/api/agents"),
-    ]);
+    // Authentication must succeed, but an unavailable market must not block the workspace.
+    const c = await api("/api/config");
     setConfig(c);
-    setJobs(js.slice().reverse());
-    setAgents(as);
     setConnected(true);
-    if (!selectedJobRef.current && js.length) selectJob(js.at(-1).jobId);
+    const [jobsResult, agentsResult] = await Promise.allSettled([
+      api("/api/jobs"), api("/api/agents"),
+    ]);
+    const failures: string[] = [];
+    if (jobsResult.status === "fulfilled") {
+      const js = jobsResult.value;
+      setJobs(js.slice().reverse());
+      if (!selectedJobRef.current && js.length) selectJob(js.at(-1).jobId);
+    } else {
+      failures.push(jobsResult.reason instanceof Error ? jobsResult.reason.message : String(jobsResult.reason));
+    }
+    if (agentsResult.status === "fulfilled") setAgents(agentsResult.value);
+    else {
+      setAgents([]); // An unreachable registry must not leave stale merchants marked online.
+      failures.push(agentsResult.reason instanceof Error ? agentsResult.reason.message : String(agentsResult.reason));
+    }
+    setConnectionErrors(failures);
     if (jobId) {
       const [j, q, e, a, l] = await Promise.all([
         api("/api/jobs/" + jobId),
@@ -591,6 +622,12 @@ function App() {
           </div>
         </header>
         <main id="main">
+          {connectionErrors.length > 0 && (
+            <div className="error" role="alert">
+              {connectionErrors.join("；")}
+              <button onClick={() => void action("refresh", refresh)}>重试连接</button>
+            </div>
+          )}
           <div hidden={tab !== "workspace"}>
             <Workspace api={api} token={token} currentJob={jobId} onJob={selectJob} />
           </div>
