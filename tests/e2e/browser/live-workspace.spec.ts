@@ -60,7 +60,7 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   await expect(page.locator("table tbody tr").filter({ hasText: "TaskSettled" })).toHaveCount(settled.length);
   await expect(page.locator(`button.hash-button[title="${settled[0].transactionHash}"]`)).toBeVisible();
   await page.getByRole("button", { name: "成果与证据" }).click();
-  await expect(page.getByRole("heading", { name: "成果交付与内容承诺" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "成果文件", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "下载" }).first()).toBeVisible();
   expect(pageErrors).toEqual([]);
 
