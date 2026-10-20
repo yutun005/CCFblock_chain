@@ -18,7 +18,7 @@ from web3 import Web3
 from web3.exceptions import BadFunctionCallOutput, ContractLogicError
 from services.orchestrator.application import Database, ServiceCluster, artifact, configure_deployment, local_web3, settings_file
 from scripts.module_c import deploy as deploy_chain
-from scripts.anvil_state import AnvilManager, atomic_json, validate_state
+from scripts.anvil_state import AnvilManager, AnvilOwnershipError, atomic_json, validate_state
 
 CACHE = ROOT / ".cache"
 ENV = CACHE / "local-environment.json"
@@ -39,28 +39,48 @@ def chain_manager():
             except OSError:
                 probe.bind(("127.0.0.1", 0))
                 port = probe.getsockname()[1]
-    manager = AnvilManager(ROOT, port=port)
+    directory = ROOT / saved["stateDirectory"] if saved and saved.get("stateDirectory") else None
+    manager = AnvilManager(ROOT, port=port, directory=directory)
     if record and int(record["port"]) == port and not manager.record.exists():
         manager.record = legacy
     old_state = CACHE / "local-chain-state.json"
     if old_state.exists() and not any(p.exists() for p in (manager.state, manager.previous, manager.autosave)):
         atomic_json(manager.state, validate_state(json.loads(old_state.read_text(encoding="utf-8"))))
-    atomic_json(CHAIN_PORT, {"port": port})
     return manager
 
 
 def chain_up():
     manager = chain_manager()
-    manager.ensure_running()
-    return manager.w3.provider.endpoint_uri
+    # Serialize endpoint selection as well as startup; a second launcher must reuse
+    # the first launcher's restored chain instead of forking the same checkpoint.
+    with manager.locked(CACHE / "anvil-launcher"):
+        manager = chain_manager()
+        for attempt in range(3):
+            try:
+                manager.ensure_running()
+                break
+            except AnvilOwnershipError:
+                if attempt == 2:
+                    raise
+                if manager._load_path() is None and (ENV.exists() or CONFIG.exists()):
+                    raise RuntimeError("Local chain port is occupied and no saved checkpoint exists; existing project data has been preserved. Restore the project's chain checkpoint before restarting.")
+                with socket.socket() as probe:
+                    probe.bind(("127.0.0.1", 0))
+                    port = probe.getsockname()[1]
+                print(f"Port {manager.port} belongs to another service; restoring this project's chain on {port}.", flush=True)
+                manager = AnvilManager(ROOT, port=port, directory=manager.directory,
+                                       executable=manager.executable, interval=manager.interval)
+        atomic_json(CHAIN_PORT, {"port": manager.port,
+                    "stateDirectory": manager.directory.relative_to(ROOT).as_posix()})
+        return manager.w3.provider.endpoint_uri
 
 
-def validate_saved_deployment(settings):
+def validate_saved_deployment(settings, rpc=None):
     path = settings["directory"] / "deployment.json"
     if not path.exists():
         raise RuntimeError("Local deployment record is missing. Run python manage.py deploy; old application files are preserved.")
     deployment = json.loads(path.read_text(encoding="utf-8"))
-    w3 = local_web3(deployment["rpc"])
+    w3 = local_web3(rpc or deployment["rpc"])
     if w3.eth.chain_id != deployment["chainId"]:
         raise RuntimeError("Saved deployment belongs to a different chain; use the correct runtime configuration.")
     mismatches = [name for name in ("token", "escrow")
@@ -72,6 +92,9 @@ def validate_saved_deployment(settings):
             "If the earlier memory-only Anvil was lost before persistence was enabled, its state cannot be reconstructed. "
             "Restore an existing .cache/anvil checkpoint, or run python manage.py deploy to create a new backed-up demo. "
             "New persistent Anvil runs save and restore their chain automatically.")
+    if rpc and rpc != deployment["rpc"]:
+        deployment["rpc"] = rpc
+        atomic_json(path, deployment)
 
 
 def load_environment():
@@ -83,7 +106,9 @@ def load_environment():
 def available_service_ports():
     document = json.loads(CONFIG.read_text(encoding="utf-8"))
     runtime = document["runtime"]
-    busy_jobs = Database(Path(runtime["directory"]) / "platform.sqlite").values("jobs")
+    saved_jobs = Database(Path(runtime["directory"]) / "platform.sqlite").values("jobs")
+    history = json.dumps(saved_jobs)
+    moved = {}
     reservations = []
     try:
         for record, field in [(runtime, key) for key in ("api", "market", "validator")] + [(agent, "endpoint") for agent in runtime["agents"]]:
@@ -93,11 +118,19 @@ def available_service_ports():
             try:
                 probe.bind(("127.0.0.1", parsed.port))
             except OSError as exc:
-                if busy_jobs:
+                # Existing signed assignments retain their endpoints. Newly added
+                # merchants with no saved job references may choose a free port.
+                used_by_jobs = saved_jobs and (record is runtime or
+                    json.dumps(record["id"]) in history or json.dumps(record[field]) in history)
+                if used_by_jobs:
                     raise RuntimeError(f"Saved service port {parsed.port} is unavailable; stop the other application and retry. Existing project history has been preserved.") from exc
                 probe.bind(("127.0.0.1", 0))
+                old = record[field]
                 record[field] = f"http://127.0.0.1:{probe.getsockname()[1]}"
-        CONFIG.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+                moved[old] = record[field]
+        if "allowedAgentOrigins" in runtime:
+            runtime["allowedAgentOrigins"] = [moved.get(url, url) for url in runtime["allowedAgentOrigins"]]
+        atomic_json(CONFIG, document)
     finally:
         for probe in reservations:
             probe.close()
@@ -195,11 +228,11 @@ def main():
         deploy()
     load_environment()
     settings=settings_file(CONFIG)
+    validate_saved_deployment(settings, rpc=rpc)
     env = json.loads(ENV.read_text(encoding="utf-8"))
     env[settings["chain"]["rpcEnv"]] = rpc
-    ENV.write_text(json.dumps(env, indent=2), encoding="utf-8")
+    atomic_json(ENV, env)
     load_environment()
-    validate_saved_deployment(settings)
     try:
         contract = local_web3(rpc).eth.contract(address=env[settings["chain"]["escrowEnv"]], abi=artifact("TaskEscrow")["abi"])
         contract.functions.reviewMasks(bytes(32)).call()
