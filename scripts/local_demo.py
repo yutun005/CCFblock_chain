@@ -8,15 +8,18 @@ import signal
 import shutil
 import uuid
 import socket
+import webbrowser
+from contextlib import ExitStack
 from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from eth_account import Account
+import httpx
 from web3 import Web3
 from web3.exceptions import BadFunctionCallOutput, ContractLogicError
-from services.orchestrator.application import Database, ServiceCluster, artifact, configure_deployment, local_web3, settings_file
+from services.orchestrator.application import Database, ServiceCluster, artifact, check_services, configure_deployment, local_web3, service_protocol, settings_file
 from scripts.module_c import deploy as deploy_chain
 from scripts.anvil_state import AnvilManager, AnvilOwnershipError, atomic_json, validate_state
 
@@ -211,6 +214,93 @@ def stop_chain():
     chain_manager().stop()
 
 
+def running_demo():
+    """Reuse only a healthy, authenticated instance of the saved deployment."""
+    if not CONFIG.is_file() or not ENV.is_file():
+        return None
+    settings = settings_file(CONFIG)
+    path = settings["directory"] / "deployment.json"
+    if not path.is_file():
+        return None
+    deployment = json.loads(path.read_text(encoding="utf-8"))
+    values = json.loads(ENV.read_text(encoding="utf-8"))
+    token = values[settings["apiTokenEnv"]]
+    api = settings["api"]
+    try:
+        with httpx.Client(trust_env=False, timeout=3) as client:
+            response = client.get(api + "/health")
+            response.raise_for_status()
+            health = response.json()
+            if not isinstance(health, dict) or health.get("ok") is not True or health.get("protocol") != service_protocol(deployment):
+                return None
+            response = client.get(api + "/api/config", headers={"Authorization": "Bearer " + token})
+            response.raise_for_status()
+            public = response.json()
+            if any(str(public.get(field)) != str(deployment[field]) for field in ("chainId", "escrow", "token", "owner")):
+                return None
+    except (httpx.HTTPError, ValueError, AttributeError):
+        return None
+    try:
+        check_services({**settings, "deployment": deployment, "token": token})
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RuntimeError("本项目已运行，但有服务未就绪；请在原启动窗口停止后重新打开启动脚本。") from exc
+    return api
+
+
+def show_demo(api, existing=False):
+    if existing:
+        print("Project is already running; reusing existing services.", flush=True)
+    print("Open " + api + " ; token is in .cache/local-access.txt", flush=True)
+    if os.environ.get("AGENTFLOW_OPEN_BROWSER") == "1":
+        try:
+            webbrowser.open(api)
+        except OSError:
+            print("Open the address above in your browser.", flush=True)
+
+
+def run_demo():
+    started = False
+    try:
+        with ExitStack() as services:
+            # Hold this lock through service readiness, so simultaneous double-clicks
+            # cannot both pass the probe and start competing clusters.
+            with chain_manager().locked(CACHE / "demo-launcher", timeout=240):
+                existing = running_demo()
+                if existing:
+                    show_demo(existing, existing=True)
+                    return
+                rpc = chain_up()
+                if not ENV.is_file() or not CONFIG.is_file():
+                    deploy()
+                load_environment()
+                settings = settings_file(CONFIG)
+                validate_saved_deployment(settings, rpc=rpc)
+                env = json.loads(ENV.read_text(encoding="utf-8"))
+                env[settings["chain"]["rpcEnv"]] = rpc
+                atomic_json(ENV, env)
+                load_environment()
+                try:
+                    contract = local_web3(rpc).eth.contract(address=env[settings["chain"]["escrowEnv"]], abi=artifact("TaskEscrow")["abi"])
+                    contract.functions.reviewMasks(bytes(32)).call()
+                except (ValueError, BadFunctionCallOutput, ContractLogicError) as exc:
+                    raise RuntimeError("Existing contracts do not support reviewed tasks. Run python manage.py deploy to create a new backed-up demo; existing data has been preserved.") from exc
+                sync_demo_merchants()
+                available_service_ports()
+                cluster = services.enter_context(ServiceCluster(settings_file(CONFIG)))
+                started = True
+            show_demo(cluster.config["api"])
+            print("Ctrl+C stops services. Stop the isolated chain with python scripts/local_demo.py stop-chain.", flush=True)
+            while True:
+                if any(p.poll() is not None for p in cluster.processes.values()):
+                    raise RuntimeError("a managed service exited; see .cache/runtime/logs")
+                time.sleep(.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if started:
+            chain_manager().checkpoint()
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command",choices=["chain-up","deploy","dev","stop-chain","save-chain"])
@@ -223,36 +313,7 @@ def main():
         chain_up(); return
     if args.command=="deploy":
         deploy(); return
-    rpc = chain_up()
-    if not ENV.is_file() or not CONFIG.is_file():
-        deploy()
-    load_environment()
-    settings=settings_file(CONFIG)
-    validate_saved_deployment(settings, rpc=rpc)
-    env = json.loads(ENV.read_text(encoding="utf-8"))
-    env[settings["chain"]["rpcEnv"]] = rpc
-    atomic_json(ENV, env)
-    load_environment()
-    try:
-        contract = local_web3(rpc).eth.contract(address=env[settings["chain"]["escrowEnv"]], abi=artifact("TaskEscrow")["abi"])
-        contract.functions.reviewMasks(bytes(32)).call()
-    except (ValueError, BadFunctionCallOutput, ContractLogicError) as exc:
-        raise RuntimeError("Existing contracts do not support reviewed tasks. Run python manage.py deploy to create a new backed-up demo; existing data has been preserved.") from exc
-    sync_demo_merchants()
-    available_service_ports()
-    settings=settings_file(CONFIG)
-    try:
-        with ServiceCluster(settings) as cluster:
-            print("Open "+cluster.config["api"]+" ; token is in .cache/local-access.txt",flush=True)
-            print("Ctrl+C stops services. Stop the isolated chain with python scripts/local_demo.py stop-chain.",flush=True)
-            while True:
-                if any(p.poll() is not None for p in cluster.processes.values()):
-                    raise RuntimeError("a managed service exited; see .cache/runtime/logs")
-                time.sleep(.5)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        chain_manager().checkpoint()
+    run_demo()
 
 
 if __name__=="__main__":
