@@ -83,8 +83,79 @@ const initial = {
   reviewSeconds: 1800,
 };
 
+// Keep content fingerprints in the original files and API, out of user previews.
+const fingerprint = /sha[\s_-]?256|\b(?:0x)?[a-f0-9]{64}\b/i;
+function reportText(text: string) {
+  return text
+    .split("\n")
+    .filter((line) => !fingerprint.test(line))
+    .join("\n");
+}
+
+function previewData(value: unknown) {
+  return JSON.stringify(
+    value,
+    (key, item) =>
+      /hash|sha[\s_-]?256/i.test(key) ||
+      (typeof item === "string" && fingerprint.test(item))
+        ? undefined
+        : item,
+    2,
+  );
+}
+
+function previewFile(text: string, name: string) {
+  if (name.endsWith(".json")) {
+    try {
+      return previewData(JSON.parse(text));
+    } catch {
+      return reportText(text);
+    }
+  }
+  // CSV previews retain business columns when the source fingerprint is removed.
+  return text
+    .split("\n")
+    .map((line) => {
+      const fields = line.match(/(?:^|,)(?:"(?:[^"]|"")*"|[^,\r]*)/g) || [];
+      return fields
+        .map((field) => field.replace(/^,/, ""))
+        .filter((field) => !fingerprint.test(field))
+        .join(",");
+    })
+    .join("\n");
+}
+
+function previewMarkup(text: string, svg = false) {
+  const doc = new DOMParser().parseFromString(
+    text,
+    svg ? "image/svg+xml" : "text/html",
+  );
+  doc.querySelectorAll("table").forEach((table) => {
+    const rows = Array.from(table.querySelectorAll("tr"));
+    const columns = Array.from(rows[0]?.children || []).flatMap(
+      (cell, index) =>
+        fingerprint.test(cell.textContent || "") ? [index] : [],
+    );
+    rows.forEach((row) =>
+      columns
+        .slice()
+        .reverse()
+        .forEach((index) => row.children[index]?.remove()),
+    );
+  });
+  doc.querySelectorAll("pre").forEach((element) => {
+    element.textContent = reportText(element.textContent || "");
+  });
+  doc
+    .querySelectorAll("p, li, td, th, text, tspan, title, desc")
+    .forEach((element) => {
+      if (fingerprint.test(element.textContent || "")) element.remove();
+    });
+  return new XMLSerializer().serializeToString(doc);
+}
+
 function Report({ text }: { text: string }) {
-  const lines = text.split("\n"),
+  const lines = reportText(text).split("\n"),
     blocks: ReactNode[] = [];
   const cells = (line: string) =>
     line
@@ -168,7 +239,8 @@ function Draft({ value }: { value: Row | null }) {
             key={p.name}
             className="report-chart"
             src={
-              "data:image/svg+xml;charset=utf-8," + encodeURIComponent(p.text)
+              "data:image/svg+xml;charset=utf-8," +
+              encodeURIComponent(previewMarkup(p.text, true))
             }
             alt="销售额图表；对应数值可在下方关联数据查看"
           />
@@ -178,7 +250,11 @@ function Draft({ value }: { value: Row | null }) {
         .map((p: Row) => (
           <details key={p.name}>
             <summary>预览离线网页报告</summary>
-            <iframe title="离线网页报告" sandbox="" srcDoc={p.text} />
+            <iframe
+              title="离线网页报告"
+              sandbox=""
+              srcDoc={previewMarkup(p.text)}
+            />
           </details>
         ))}
       <details>
@@ -188,7 +264,7 @@ function Draft({ value }: { value: Row | null }) {
           .map((p: Row) => (
             <section key={p.name}>
               <h4>{p.name}</h4>
-              <pre>{p.text}</pre>
+              <pre>{previewFile(p.text, p.name)}</pre>
             </section>
           ))}
       </details>
@@ -1281,20 +1357,9 @@ export default function Workspace({
                   .join("、")}
               </p>
               <p>交付文件：{offers[0].proposal.deliverables.join("、")}</p>
-              {[...offers[0].proposal.work, ...offers[0].proposal.reused]
-                .filter((w: Row) => w.requiredBy?.length)
-                .map((w: Row) => (
-                  <p key={w.key}>
-                    必做前置：{w.title}，用于生成
-                    {w.requiredBy.map((key: string) => labels[key]).join("、")}
-                    。
-                  </p>
-                ))}
             </details>
           )}
-          {offers.length === 1 && (
-            <p role="status">当前只有一个不被其他组合全面超过的方案。</p>
-          )}
+          {offers.length === 1 && <p role="status">当前有 1 个可选方案。</p>}
           {unavailable.map((item, index) => (
             <p role="status" key={index}>
               {item.preferences
@@ -1320,7 +1385,6 @@ export default function Workspace({
                 }
               >
                 <h3>方案 {offer.rank}</h3>
-                <p>{offer.proposal.selectionReason}</p>
                 <>
                   <strong className="price">
                     {price(offer.proposal.estimatedPrice)} USDC
@@ -1332,16 +1396,6 @@ export default function Workspace({
                       {offer.proposal.pareto.estimatedSuccessPercent}%
                     </b>
                   </p>
-                  {offer.proposal.historySummary?.totalTasks > 0 && (
-                    <p>
-                      参考商家近期记录合计：成功{" "}
-                      {offer.proposal.historySummary.settled} 次，失败或失效{" "}
-                      {offer.proposal.historySummary.expired} 次。
-                      {offer.proposal.historySummary.coveredTasks}/
-                      {offer.proposal.historySummary.totalTasks}{" "}
-                      项工作有历史记录。
-                    </p>
-                  )}
                   {!!offer.proposal.work.length && (
                     <details>
                       <summary>查看各项服务估价</summary>
@@ -1411,13 +1465,6 @@ export default function Workspace({
                   {chosen.work.map((w: Row) => (
                     <p key={w.key}>
                       {w.title} · {price(w.estimatedPrice)} USDC
-                      <br />
-                      <small>
-                        {w.reason}
-                        {!!w.requiredBy?.length &&
-                          ` · 必做前置：用于${w.requiredBy.map((key: string) => labels[key]).join("、")}`}
-                        {w.requiresReview ? " · 需人工确认" : ""}
-                      </small>
                     </p>
                   ))}
                 </div>
@@ -1719,15 +1766,10 @@ export default function Workspace({
                 <details>
                   <summary>修改意见与用户决定（完整记录）</summary>
                   <pre>
-                    {JSON.stringify(
-                      {
-                        changes: review.changes,
-                        decisions: review.decisions,
-                        acceptedHash: review.acceptedHash,
-                      },
-                      null,
-                      2,
-                    )}
+                    {previewData({
+                      changes: review.changes,
+                      decisions: review.decisions,
+                    })}
                   </pre>
                 </details>
                 {canDecide && (

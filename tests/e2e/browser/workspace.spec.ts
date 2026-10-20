@@ -110,7 +110,12 @@ test("admin can connect, preview a plan, and start a collaboration job", async (
       return route.fulfill({ json: [] });
     }
     if (method === "GET" && path === `/api/jobs/${jobId}/artifacts`) {
-      return route.fulfill({ json: [] });
+      return route.fulfill({ json: [{
+        resultHash: planHash,
+        manifest: { taskId: 0, attempt: 0, artifacts: [
+          { name: "cleaned.csv", sha256: planHash, size: 24, media_type: "text/csv" },
+        ] },
+      }] });
     }
     if (method === "GET" && path === `/api/jobs/${jobId}/settlements`) {
       return route.fulfill({ json: { events: [] } });
@@ -147,6 +152,11 @@ test("admin can connect, preview a plan, and start a collaboration job", async (
     expectedPlanHash: planHash,
   });
   expect(createdBody?.requestId).toEqual(expect.any(String));
+  await page.getByRole("button", { name: "成果与证据", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "成果文件" })).toBeVisible();
+  await expect(page.getByText("cleaned.csv", { exact: true })).toBeVisible();
+  await expect(page.locator(".artifact-group code")).toHaveCount(0);
+  await expect(page.locator(`[title="${planHash}"]`)).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
 
@@ -321,7 +331,7 @@ for (const entry of ["model", "offline", "template", "search"] as const) {
         recipe = { ...body.recipe, planningId: "reviewed", outputs: body.draft.outputs };
         return route.fulfill({ json: { id: "reviewed", status: "ready", mode: "llm_dag", draft: body.draft, recipe, reviewedAt: 1 } });
       }
-      if (path.endsWith("/comparisons")) return route.fulfill({ json: { options: [{ rank: 1, proposal: { id: "proposal", confirmationHash: "bound-hash", recipe, estimatedPrice: "10", estimatedSeconds: 5, budget: "100", selectionReason: "费用优先", pareto: { estimatedSuccessPercent: "95.00" }, deliverables: ["cleaned.csv"], work: [{ key: "clean", title: "清洗数据", estimatedProvider: "clean-a", estimatedPrice: "10", estimatedSeconds: 5, history: { window: 0, source: "none" } }], reused: [], materials: [material] } }], unavailable: [] } });
+      if (path.endsWith("/comparisons")) return route.fulfill({ json: { options: [{ rank: 1, proposal: { id: "proposal", confirmationHash: "bound-hash", recipe, estimatedPrice: "10", estimatedSeconds: 5, budget: "100", selectionReason: "在当前预算与候选商家中，没有其他组合能在费用、耗时、成功率上都不差且至少一项更好。", historySummary: { totalTasks: 4, coveredTasks: 4, settled: 155, expired: 45 }, pareto: { estimatedSuccessPercent: "95.00" }, deliverables: ["cleaned.csv"], work: [{ key: "clean", title: "清洗数据", estimatedProvider: "clean-a", estimatedPrice: "10", estimatedSeconds: 5, reason: "新增工作", requiredBy: ["report"], requiresReview: true, history: { window: 0, source: "none" } }], reused: [], materials: [material] } }], unavailable: [] } });
       if (path.endsWith("/confirm")) { confirmCalls++; expect(body).toEqual({ proposalId: "proposal", confirmationHash: "bound-hash" }); return route.fulfill({ json: { versionId: "v1", noCharge: false } }); }
       if (path.endsWith("/versions/v1")) return route.fulfill({ json: { id: "v1", number: 1, recipe, status: "PREPARING", estimatedPrice: "10", materials: [material], deliverables: ["cleaned.csv"], reviews: [], files: [] } });
       return route.fulfill({ json: [] });
@@ -374,8 +384,14 @@ for (const entry of ["model", "offline", "template", "search"] as const) {
     await page.getByRole("button", { name: "确认任务方案", exact: true }).click();
     await page.getByRole("button", { name: "查看执行方案", exact: true }).click();
     await expect(page.getByRole("heading", { name: "选择执行方案", exact: true })).toBeVisible();
+    await expect(page.locator(".tier-grid")).not.toContainText("在当前预算与候选商家中");
+    await expect(page.locator(".tier-grid")).not.toContainText("参考商家近期记录合计");
+    await expect(page.locator(".tier-grid")).toContainText("10.00 USDC");
+    await expect(page.locator(".tier-grid")).toContainText("95.00%");
     expect(confirmCalls).toBe(0);
     await page.getByRole("button", { name: "选择此方案", exact: true }).click();
+    await expect(page.locator(".confirmation")).not.toContainText(/新增工作|必做前置|需人工确认/);
+    await expect(page.locator(".confirmation")).toContainText("清洗数据 · 10.00 USDC");
     await page.getByRole("button", { name: "确认方案并托管预算", exact: true }).click();
     await expect(page.getByRole("heading", { name: /版本 1/ })).toBeVisible();
     expect(confirmCalls).toBe(1);
@@ -384,3 +400,79 @@ for (const entry of ["model", "offline", "template", "search"] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+test("report previews hide fingerprints while download and acceptance keep original references", async ({ page }, testInfo) => {
+  const digest = "0x" + "cd".repeat(32);
+  const report = `# 业务报告\n总销售额：1500 元\n统计成果 SHA-256：${digest}\n统计来源：${digest}\n行程成果 SHA-256：${digest}\n原始资料 SHA-256：${digest}\n资料来源：用户上传的订单\n`;
+  const chart = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="80"><text x="10" y="20">销售额 1500 元</text><text x="10" y="60">来源：${digest}</text></svg>`;
+  const html = `<html><body><pre>${report}</pre>${chart}<table><tr><td>项目</td><td>数值（分）</td><td>来源 SHA-256</td></tr><tr><td>销售额</td><td>150000</td><td>${digest}</td></tr></table></body></html>`;
+  const review = {
+    id: "review-1", jobId: "review-job", status: "AWAITING_REVIEW", provider: "report-a",
+    deadline: Date.now() / 1000 + 3600, price: "10000000", changes: [],
+    decisions: [{ request: { action: "revise", resultHash: digest, feedback: "保留业务说明" } }],
+    drafts: [{ resultHash: digest, checks: ["source_numbers_and_hashes"] }],
+  };
+  const recipe = { title: "报告预览", scenario: "cross_org_analysis", outputs: ["report"], groupBy: "month" };
+  const version = {
+    id: "v-preview", projectId: "project-preview", number: 1, recipe, status: "ACTIVE",
+    estimatedPrice: "10", materials: [{ name: "销售数据.csv" }], deliverables: ["report.md"],
+    reviews: [review], files: [{ name: "report.md", sha256: digest }],
+  };
+  let accepted: Record<string, unknown> | undefined;
+  let downloaded = false;
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/config") return route.fulfill({ json: { scenarios: [], tokenSymbol: "USDC", chainId: 31337 } });
+    if (path.endsWith("/planner")) return route.fulfill({ json: { configured: false } });
+    if (path.endsWith("/projects")) return route.fulfill({ json: [{ id: version.projectId, title: recipe.title, versions: [{ ...version, createdAt: 1 }] }] });
+    if (path.endsWith(`/versions/${version.id}`)) return route.fulfill({ json: version });
+    if (path.endsWith(`/drafts/${digest}`)) return route.fulfill({ json: { files: [
+      { name: "report.md", text: report }, { name: "revenue.svg", text: chart }, { name: "report.html", text: html },
+      { name: "references.json", text: JSON.stringify({ source: digest, input_hash: digest, total_revenue_cents: 150000, nested: { sha256: digest, note: "订单资料" } }) },
+      { name: "source-comparison.csv", text: `项目,数值（分）,来源 SHA-256\r\n"销售额,合计",150000,${digest}\r\n` },
+    ] } });
+    if (path.endsWith(`/files/${digest}`)) {
+      downloaded = true;
+      return route.fulfill({ body: report, contentType: "text/markdown" });
+    }
+    if (path.endsWith("/reviews/review-1") && route.request().method() === "POST") {
+      accepted = route.request().postDataJSON();
+      review.status = "ACCEPTED";
+      return route.fulfill({ json: review });
+    }
+    if (path.endsWith("/reviews/review-job")) return route.fulfill({ json: [review] });
+    return route.fulfill({ json: [] });
+  });
+  await page.goto("/");
+  await page.getByLabel("访问令牌").fill(token);
+  await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "我的项目", exact: true }).click();
+  await page.getByRole("button", { name: "打开与下载", exact: true }).click();
+  await expect(page.locator(".report-body")).toContainText("总销售额：1500 元");
+  await expect(page.locator(".report-body")).toContainText("资料来源：用户上传的订单");
+  await expect(page.locator(".report-body")).not.toContainText(/SHA.?256|0xcdcd/i);
+  const svg = decodeURIComponent((await page.locator(".report-chart").getAttribute("src"))!.split(",").slice(1).join(","));
+  expect(svg).toContain("销售额 1500 元");
+  expect(svg).not.toContain(digest);
+  await page.getByText("预览离线网页报告", { exact: true }).click();
+  const frame = page.frameLocator('iframe[title="离线网页报告"]');
+  await expect(frame.locator("body")).toContainText("总销售额：1500 元");
+  await expect(frame.locator("body")).not.toContainText(/SHA.?256|0xcdcd/i);
+  await expect(frame.locator("tr").last().locator("td")).toHaveCount(2);
+  await page.getByText("关联数据、引用资料与版本记录", { exact: true }).click();
+  await page.getByText("修改意见与用户决定（完整记录）", { exact: true }).click();
+  await expect(page.locator(".project-workspace")).not.toContainText(/SHA.?256|0xcdcd|resultHash/i);
+  await expect(page.locator(".draft-preview")).toContainText('"销售额,合计",150000');
+  await expect(page.locator(".draft-preview")).toContainText('"total_revenue_cents": 150000');
+  await expect(page.getByText(/保留业务说明/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("report-without-fingerprints.png"), fullPage: true });
+  const downloadEvent = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载 v1-report.md", exact: true }).click();
+  expect((await downloadEvent).suggestedFilename()).toBe("v1-report.md");
+  expect(downloaded).toBe(true);
+  await page.getByRole("button", { name: "接受此版并结算", exact: true }).click();
+  await expect.poll(() => accepted).toMatchObject({ resultHash: digest, action: "accept" });
+  expect(errors).toEqual([]);
+});

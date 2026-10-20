@@ -1036,8 +1036,8 @@ function App() {
                   <section className="panel">
                     <div className="panel-heading">
                       <div>
-                        <h2>成果交付与内容承诺</h2>
-                        <p>文件哈希、输入谱系与验证策略可以沿任务逐项核对。</p>
+                        <h2>成果文件</h2>
+                        <p>查看各项任务的交付文件和结算状态，下载所需成果。</p>
                       </div>
                       <FileCheck2 />
                     </div>
@@ -1049,9 +1049,6 @@ function App() {
                               T{d.manifest.taskId + 1} · 轮次{" "}
                               {d.manifest.attempt + 1}
                             </span>
-                            <code title={d.resultHash}>
-                              {short(d.resultHash)}
-                            </code>
                             <Badge
                               value={
                                 job.tasks[d.manifest.taskId].onchain
@@ -1071,7 +1068,6 @@ function App() {
                                   {a.media_type}
                                 </small>
                               </div>
-                              <code title={a.sha256}>{short(a.sha256)}</code>
                               <button
                                 aria-label={"下载 " + a.name}
                                 onClick={() => void download(a)}
@@ -1092,7 +1088,7 @@ function App() {
                   <div className="trust-note">
                     <CircleHelp size={20} />
                     <p>
-                      签名和哈希证明身份与内容绑定。付款依赖授权验证者按固定规则履职；它们不能单独证明原始数据真实，也不能消除恶意授权验证者的风险。
+                      系统按约定规则检查成果，检查通过不代表原始资料一定真实。请结合材料来源核对报告。
                     </p>
                   </div>
                 </>
