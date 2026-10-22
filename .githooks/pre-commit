@@ -1,0 +1,6 @@
+#!/bin/sh
+# Inspect indexed blobs, so an unstaged cleanup cannot conceal a staged secret.
+if command -v python >/dev/null 2>&1; then
+    exec python scripts/check_public_source.py --staged
+fi
+exec python3 scripts/check_public_source.py --staged

@@ -11,6 +11,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.repository_files import source_files
+from scripts.check_public_source import inspect, local_secrets
 
 
 def run(include_evidence=False, evidence_dir=None):
@@ -28,20 +29,21 @@ def run(include_evidence=False, evidence_dir=None):
             if p.is_symlink() or p.suffix in {'.key', '.pem', '.sqlite', '.sqlite3'} or p.name.startswith('local-keys'):
                 raise RuntimeError(f'Refusing private/runtime evidence file: {p.name}')
             files.append((p, p.relative_to(evidence_root).as_posix()))
-    # Scan for actual local test keys, in addition to Git exclusions.
-    secrets = []
-    keys = ROOT / 'deployments/local-keys.json'
-    if keys.is_file():
-        secrets.extend(v.removeprefix('0x').encode() for v in json.loads(keys.read_text(encoding='utf-8')).values()
-                       if isinstance(v, str) and len(v.removeprefix('0x')) == 64)
+    # Refuse local API keys/access tokens as well as wallet keys, even if copied
+    # into an otherwise publishable source file or optional experiment evidence.
+    secrets = local_secrets(ROOT)
+    for path, relative in files:
+        problems = inspect(relative.removeprefix('src/'), path.read_bytes(), secrets)
+        if problems:
+            raise RuntimeError(f'Refusing sensitive package file: {relative}; rules: {", ".join(problems)}')
     destination = ROOT / 'submission/AgentFlow-Pay-unified.zip'
     destination.parent.mkdir(exist_ok=True)
     manifest = []
     with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for p, relative in files:
             content = p.read_bytes()
-            if any(key in content for key in secrets):
-                raise RuntimeError(f'Refusing private key in {relative}')
+            if inspect(relative.removeprefix('src/'), content, secrets):
+                raise RuntimeError(f'Refusing sensitive package file: {relative}')
             archive.writestr('submission/' + relative, content)
             manifest.append(hashlib.sha256(content).hexdigest() + '  ' + relative)
         notes = json.dumps({'scope': 'Unified A/B/C/D GitHub source; no duplicate files',

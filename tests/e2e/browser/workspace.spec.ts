@@ -134,6 +134,7 @@ test("admin can connect, preview a plan, and start a collaboration job", async (
   await page.goto("/");
   await page.getByLabel("访问令牌").fill(token);
   await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "执行与验收", exact: true }).click();
   await page.getByRole("button", { name: "协作任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: "协作任务", exact: true })).toBeVisible();
 
@@ -199,10 +200,11 @@ for (const scenario of ["travel_planning", "cross_org_analysis"]) {
     await page.goto("/");
     await page.getByLabel("访问令牌").fill(token);
     await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "执行与验收", exact: true }).click();
     await page.getByRole("combobox", { name: "任务类型", exact: true }).selectOption(scenario);
     if (!travel) await page.getByRole("checkbox", { name: /测试材料/ }).check();
     await page.getByLabel("任务目标", { exact: true }).fill("测试目标");
-    await page.getByRole("button", { name: "模板库", exact: true }).click();
+    await page.getByRole("navigation", { name: "项目操作" }).getByRole("button", { name: "模板库", exact: true }).click();
     await page.getByRole("button", { name: "查看 / 管理" }).click();
     const preview = page.getByLabel("模板内容预览");
     await expect(preview).toContainText("模板预览（只读）");
@@ -305,6 +307,17 @@ for (const entry of ["model", "offline", "template", "search"] as const) {
       }
       if (path.endsWith("/capabilities")) return route.fulfill({ json: [{ ...task, scenario: template.scenario, acceptance: "格式与清洗结果可复算" }] });
       if (path.endsWith("/templates")) return route.fulfill({ json: !url.searchParams.get("q") || entry === "search" ? [template] : [] });
+      if (path.endsWith("/planning/intake")) {
+        recipe = { ...body.recipe, outputs: ["clean"] };
+        return route.fulfill({ json: { id: "intake", status: "ready", recipe, specHash: "spec-hash",
+          spec: { status: "ready", summary: "清洗销售数据，交付数据文件", outputs: ["clean"], questions: [], limitations: [],
+            requirements: [{ id: "R1", text: "交付清洗数据", priority: "must", status: "supported", explanation: "清洗服务支持" }] } } });
+      }
+      if (path.endsWith("/planning/intake/intake/confirm")) {
+        expect(body.specHash).toBe("spec-hash");
+        return route.fulfill({ json: { id: "confirmed-intake", confirmedRecipe: recipe, recipe,
+          spec: { status: "ready", summary: "清洗销售数据，交付数据文件", outputs: ["clean"], questions: [], limitations: [], requirements: [] } } });
+      }
       if (path.endsWith("/planning") || path.endsWith("/apply")) {
         if (path.endsWith("/planning")) { planCalls++; expect(body.title).not.toBe(""); expect(body.planningMode).toBe("llm"); }
         else { applyCalls++; expect(body.requirement).toBeTruthy(); }
@@ -323,6 +336,7 @@ for (const entry of ["model", "offline", "template", "search"] as const) {
     await page.goto("/");
     await page.getByLabel("访问令牌").fill(token);
     await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "执行与验收", exact: true }).click();
     await expect(page.getByRole("heading", { name: "创建一个新任务" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "规划方式" })).toHaveCount(0);
     await expect(page.getByText("先查找可复用的任务模板")).toHaveCount(0);
@@ -336,7 +350,7 @@ for (const entry of ["model", "offline", "template", "search"] as const) {
     } else await page.getByLabel("任务目标", { exact: true }).fill("整理这些订单，清洗后给我数据文件");
     // Visiting another workspace tool must not erase the task being composed.
     await page.getByRole("button", { name: "协作任务", exact: true }).click();
-    await page.getByRole("button", { name: "项目与成果", exact: true }).click();
+    await page.getByRole("button", { name: "执行与验收", exact: true }).click();
     await expect(page.getByLabel("任务目标", { exact: true })).not.toHaveValue("");
     // Upload selects the material automatically; no separate confirmation or hidden CLI step.
     await page.getByLabel("上传销售数据", { exact: true }).setInputFiles({ name: material.name, mimeType: "text/csv", buffer: Buffer.from("organization,order_id,date,category,quantity,unit_price_cents\nA,1,2026-10-01,book,1,500") });
@@ -361,6 +375,11 @@ for (const entry of ["model", "offline", "template", "search"] as const) {
       await expect(page.getByRole("heading", { name: "有可复用的任务方案" })).toBeVisible();
       expect(applyCalls).toBe(0); expect(planCalls).toBe(0);
       await page.getByRole("button", { name: "使用并编辑", exact: true }).click();
+    }
+    if (entry === "model") {
+      await expect(page.getByRole("heading", { name: "理解需求与核对能力" })).toBeVisible();
+      expect(planCalls).toBe(0); expect(confirmCalls).toBe(0);
+      await page.getByRole("button", { name: "确认需求并生成任务图", exact: true }).click();
     }
     await expect(page.getByRole("heading", { name: "编辑任务方案", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "查看执行方案" })).toBeDisabled();
@@ -432,6 +451,7 @@ test("report previews hide fingerprints while download and acceptance keep origi
   await page.goto("/");
   await page.getByLabel("访问令牌").fill(token);
   await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "执行与验收", exact: true }).click();
   await page.getByRole("button", { name: "我的项目", exact: true }).click();
   await page.getByRole("button", { name: "打开与下载", exact: true }).click();
   await expect(page.locator(".report-body")).toContainText("总销售额：1500 元");
@@ -505,6 +525,7 @@ for (const complete of [false, true]) {
     await page.goto("/");
     await page.getByLabel("访问令牌").fill(token);
     await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "执行与验收", exact: true }).click();
     await page.getByRole("combobox", { name: "任务类型", exact: true }).selectOption("travel_planning");
     await expect(page.getByLabel("上传旅游资料", { exact: true })).not.toBeVisible();
     await page.getByLabel("任务目标", { exact: true }).fill(complete ? "2026年11月1日去杭州玩三天，两人出行，旅行预算2000元，生成完整方案" : "生成三日旅游方案");

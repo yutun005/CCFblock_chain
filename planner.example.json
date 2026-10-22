@@ -1,0 +1,9 @@
+{
+  "endpoint": "https://api.deepseek.com/chat/completions",
+  "model": "deepseek-chat",
+  "apiKey": "",
+  "responseFormat": "json_object",
+  "tokenParameter": "max_tokens",
+  "maxTokens": 8192,
+  "timeoutSeconds": 120
+}

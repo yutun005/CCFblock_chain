@@ -1,5 +1,6 @@
 """One local, persistent demonstration: chain -> deployment -> all managed services."""
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -12,7 +13,7 @@ import webbrowser
 import subprocess
 from contextlib import ExitStack
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -248,13 +249,25 @@ def running_demo():
     return api
 
 
+def browser_url(api):
+    """A build-specific URL cannot reuse a cached HTML document from an older build."""
+    index = ROOT / "apps/web/dist/index.html"
+    version = hashlib.sha256(index.read_bytes()).hexdigest()[:16] if index.is_file() else "unbuilt"
+    parsed = urlparse(api)
+    query = [(key, value) for key, value in parse_qsl(parsed.query) if key != "ui"]
+    query.append(("ui", version))
+    return urlunparse(parsed._replace(path=parsed.path or "/", query=urlencode(query)))
+
+
 def show_demo(api, existing=False):
     if existing:
         print("Project is already running; reusing existing services.", flush=True)
-    print("Open " + api + " ; token is in .cache/local-access.txt", flush=True)
+    url = browser_url(api)
+    print("Project: " + str(ROOT), flush=True)
+    print("Open " + url + " ; token is in .cache/local-access.txt", flush=True)
     if os.environ.get("AGENTFLOW_OPEN_BROWSER") == "1":
         try:
-            webbrowser.open(api)
+            webbrowser.open(url)
         except OSError:
             print("Open the address above in your browser.", flush=True)
 

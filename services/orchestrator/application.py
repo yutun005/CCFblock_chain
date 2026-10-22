@@ -4074,7 +4074,10 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
 
         @app.get("/")
         def index():
-            return FileResponse(web / "index.html")
+            return FileResponse(web / "index.html", headers={
+                "Cache-Control": "no-store, max-age=0, must-revalidate",
+                "Pragma": "no-cache", "Expires": "0",
+            })
 
     return app
 

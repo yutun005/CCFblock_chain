@@ -6,7 +6,12 @@ import {
   type ReactNode,
 } from "react";
 import { amount as money, price } from "./amount";
-import { PlanningGraph, PlanReview, TemplateLibrary } from "./TaskPlanning";
+import {
+  PlanningGraph,
+  PlanReview,
+  RequirementReview,
+  TemplateLibrary,
+} from "./TaskPlanning";
 import ServiceGraph, { evidenceLabels } from "./ServiceGraph";
 import {
   ArrowLeft,
@@ -309,6 +314,7 @@ export default function Workspace({
   const [travelIntent, setTravelIntent] = useState<Row | null>(null);
   const [travelSource, setTravelSource] = useState<Row | null>(null);
   const [goalPlan, setGoalPlan] = useState<Row | null>(null);
+  const [intake, setIntake] = useState<Row | null>(null);
   const [capabilities, setCapabilities] = useState<Row[]>([]);
   const [planDirty, setPlanDirty] = useState(false);
   const [editorView, setEditorView] = useState("request");
@@ -409,6 +415,7 @@ export default function Workspace({
         "planningMode",
       ].some((key) => key in patch) && !("planningId" in patch);
     if (invalidates) {
+      setIntake(null);
       setGoalPlan(null);
       setPlanDirty(false);
       setEditorView("request");
@@ -477,6 +484,70 @@ export default function Workspace({
   }
   async function planGoal(input = recipe) {
     const revision = recipeRevision.current;
+    const result = await api(prefix + "/planning/intake", {
+      recipe: {
+        ...input,
+        title:
+          input.title.trim() ||
+          (input.scenario === "travel_planning"
+            ? "旅游行程规划"
+            : "销售数据分析"),
+        planningMode: "llm",
+        planningId: null,
+      },
+    });
+    if (revision !== recipeRevision.current) {
+      setNotice("需求理解期间目标发生变化，请按当前设置重新提交。");
+      return;
+    }
+    setIntake(result);
+    setGoalPlan(null);
+    setPlanDirty(false);
+    setOffers([]);
+    setChosen(null);
+    setMatches(null);
+    setPendingTemplate(null);
+    setEditorView("intake");
+    setNotice(
+      result.status === "ready"
+        ? "请核对需求范围，确认后再拆成任务。"
+        : "请补充必要信息，或针对能力缺口调整要求。",
+    );
+  }
+  async function respondIntake(answers: Row, feedback: string) {
+    if (!intake) return;
+    const revision = recipeRevision.current;
+    const result = await api(prefix + "/planning/intake", {
+      recipe: intake.recipe,
+      previousId: intake.id,
+      answers,
+      feedback,
+    });
+    if (revision !== recipeRevision.current) return;
+    setIntake(result);
+    setGoalPlan(null);
+    setOffers([]);
+    setChosen(null);
+    setPlanDirty(false);
+    setNotice(
+      result.status === "ready"
+        ? "需求已更新，请核对后确认。"
+        : "已保留补充答案，请继续处理未明确的要求。",
+    );
+  }
+  async function confirmIntake() {
+    if (!intake) return;
+    const revision = recipeRevision.current;
+    const result = await api(`${prefix}/planning/intake/${intake.id}/confirm`, {
+      specHash: intake.specHash,
+    });
+    if (revision !== recipeRevision.current) return;
+    setIntake(result);
+    setRecipe(result.confirmedRecipe);
+    await generatePlan(result.confirmedRecipe, result.id);
+  }
+  async function generatePlan(input = recipe, intakeId?: string) {
+    const revision = recipeRevision.current;
     setGoalPlan(null);
     setOffers([]);
     setChosen(null);
@@ -490,6 +561,7 @@ export default function Workspace({
           : "销售数据分析"),
       planningMode: "llm",
       planningId: null,
+      ...(intakeId ? { intakeId } : {}),
     });
     if (recipeRevision.current !== revision) {
       setNotice("规划期间目标或选项发生变化，已保留您的修改，请重新规划。");
@@ -602,11 +674,12 @@ export default function Workspace({
   }
   async function preparePlan() {
     if (!recipe.requirement.trim()) throw new Error("请写下希望完成的任务。");
+    if (planner?.configured && !pendingTemplate) return planGoal();
     if (travel) {
       const next = await prepareTravel(recipe);
       if (!next) return;
       if (pendingTemplate) return adoptTemplate(pendingTemplate, next, true);
-      return planGoal(next);
+      return generatePlan(next);
     }
     if (!recipe.materialIds.length) throw new Error("请先添加一份销售数据。");
     if (pendingTemplate) return adoptTemplate(pendingTemplate);
@@ -743,17 +816,93 @@ export default function Workspace({
         <>
           <header className="request-heading">
             <div>
-              <span className="eyebrow">NEW TASK</span>
+              <span className="eyebrow">从需求到任务图</span>
               <h1 ref={heading} tabIndex={-1}>
                 {recipe.sourceVersion ? "继续这个项目" : "创建一个新任务"}
               </h1>
-              <p>告诉我们你想完成什么，确认方案后再开始执行。</p>
+              <p>先理解目标和限制，再核对能力、拆解任务。由你确认最终方案。</p>
             </div>
             <button type="button" onClick={() => setPage("templates")}>
               <LayoutTemplate size={17} />
               从模板开始
             </button>
           </header>
+          <ol className="goal-workflow" aria-label="需求到任务图流程">
+            <li aria-current="step">
+              <span>1</span>
+              <div>
+                <strong>描述需求</strong>
+                <small>目标、材料与预算</small>
+              </div>
+            </li>
+            <li>
+              <span>2</span>
+              <div>
+                <strong>澄清与确认</strong>
+                <small>补问必要信息，核对能力边界</small>
+              </div>
+            </li>
+            <li>
+              <span>3</span>
+              <div>
+                <strong>生成任务图</strong>
+                <small>模型拆解，程序校验并查漏</small>
+              </div>
+            </li>
+            <li>
+              <span>4</span>
+              <div>
+                <strong>最终确认</strong>
+                <small>核对需求落实后冻结 DAG</small>
+              </div>
+            </li>
+          </ol>
+          <section
+            className={`planner-connection ${planner?.configured ? "is-ready" : "needs-setup"}`}
+            aria-label="模型规划状态"
+          >
+            <div>
+              <h2>
+                {planner?.configured
+                  ? "模型需求规划已就绪"
+                  : "模型需求规划尚未启用"}
+              </h2>
+              <p>
+                {planner?.configured
+                  ? "提交后先整理需求与必要补问；确认需求后才生成任务图。"
+                  : "模型接口尚未配置完成。填写配置后可使用需求理解、补问和 DAG 规划；也可以明确选用已有模板。"}
+              </p>
+              {!planner?.configured && (
+                <details>
+                  <summary>怎样启用模型规划</summary>
+                  <p>
+                    打开项目根目录的 <code>planner.local.json</code>，填写{" "}
+                    <code>endpoint</code>（完整 Chat Completions 地址）、
+                    <code>model</code> 和 <code>apiKey</code>
+                    。保存后点击右侧“重新检查配置”。密钥保留在本机文件中。
+                  </p>
+                </details>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() =>
+                void run("check-planner", async () => {
+                  const result = await api(prefix + "/planner");
+                  setPlanner(result);
+                  setNotice(
+                    result.configured
+                      ? "模型配置已就绪，现在可以提交需求。"
+                      : result.message ||
+                          "模型配置仍未完成，请检查接口地址、模型名和 API Key。",
+                  );
+                })
+              }
+            >
+              重新检查配置
+            </button>
+          </section>
           <form
             className="request-layout"
             onSubmit={(event) => {
@@ -832,7 +981,7 @@ export default function Workspace({
                     </div>
                   )}
                   <p className="field-help">
-                    写清期望的结果和限制。你可以在下一页修改方案。
+                    写下最终要拿到的成果、必须满足的限制，以及不需要的内容。模型会先整理理解，有必要时向你补问。
                   </p>
                   {travel && (
                     <div className="travel-intake">
@@ -1261,6 +1410,11 @@ export default function Workspace({
                       : "可直接使用已有模板。按新目标生成方案需配置模型接口。"}
                   </p>
                 )}
+                {planner?.configured && (
+                  <p className="field-help">
+                    下一步先理解并澄清需求，不会直接执行或扣款。
+                  </p>
+                )}
                 {goalPlan && (
                   <button
                     type="button"
@@ -1408,6 +1562,16 @@ export default function Workspace({
             <ArrowLeft size={17} />
             编辑目标与材料
           </button>
+          {intake && (
+            <button
+              type="button"
+              className="text-action"
+              disabled={!!busy}
+              onClick={() => setEditorView("intake")}
+            >
+              返回需求澄清与调整
+            </button>
+          )}
           <header className="request-heading">
             <div>
               <h1 ref={heading} tabIndex={-1}>
@@ -1476,6 +1640,47 @@ export default function Workspace({
                 返回补充
               </button>
             </div>
+          )}
+        </section>
+      )}
+      {page === "editor" && editorView === "intake" && intake && (
+        <section className="plan-workbench">
+          <button
+            type="button"
+            className="text-action"
+            disabled={!!busy}
+            onClick={() => setEditorView("request")}
+          >
+            编辑目标与材料
+          </button>
+          <header className="request-heading">
+            <div>
+              <h1 ref={heading} tabIndex={-1}>
+                理解需求与核对能力
+              </h1>
+              <p>明确要交付什么、必须满足哪些条件，再形成任务图。</p>
+            </div>
+            <span className="subtle-badge">
+              服务预算 {price(recipe.budget)} USDC
+            </span>
+          </header>
+          <RequirementReview
+            key={intake.id}
+            intake={intake}
+            busy={!!busy}
+            onRespond={(answers, feedback) =>
+              run("clarify", () => respondIntake(answers, feedback))
+            }
+            onConfirm={() => run("generate-dag", confirmIntake)}
+          />
+          {goalPlan?.status === "ready" && (
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() => setEditorView("plan")}
+            >
+              返回已生成的任务图
+            </button>
           )}
         </section>
       )}

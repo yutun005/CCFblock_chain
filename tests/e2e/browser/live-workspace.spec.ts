@@ -14,6 +14,7 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   await page.goto(api!);
   await page.getByLabel("访问令牌").fill(token!);
   await page.getByRole("button", { name: /连接工作区/ }).click();
+  await page.getByRole("button", { name: "执行与验收", exact: true }).click();
   await page.getByRole("button", { name: "协作任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: "协作任务", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /查看计划并开始/ }).click();

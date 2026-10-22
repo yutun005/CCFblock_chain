@@ -27,9 +27,18 @@ __pycache__/
 *.key
 *.pem
 *.p12
+*.pfx
 *.keystore
 *.sqlite*
 *.log
+**/planner.local.json
+**/local-keys.json
+**/local-environment.json
+**/local-access.txt
+*.local.json.bak
+*.local.json.backup
+/.idea/
+/.vscode/
 
 # Reproducible experiment outputs and separate Release/competition material
 /experiments/raw/

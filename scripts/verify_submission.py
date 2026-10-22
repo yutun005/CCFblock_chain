@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from experiments.scripts.common import ROOT  # noqa: E402
+from scripts.check_public_source import inspect  # noqa: E402
 
 
 def run(archive_path, extract_to=None):
@@ -29,6 +30,9 @@ def run(archive_path, extract_to=None):
             assert not any(p.startswith(".env") and p != ".env.example" for p in parts)
             assert "local-keys.json" not in parts and not name.endswith(".key")
             assert not name.startswith("submission/src/infra/besu/generated/")
+            relative = name.removeprefix('submission/').removeprefix('src/')
+            if inspect(relative, archive.read(name), set()):
+                raise ValueError(f"sensitive archive entry: {name}")
         if extract_to:
             destination = Path(extract_to).resolve()
             if destination.exists() and any(destination.iterdir()):

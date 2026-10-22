@@ -996,6 +996,9 @@ def install(app, engine, config, start):
     from .catalog import install as install_catalog
 
     install_catalog(app, workspace)
+    from .designs import install as install_designs
+
+    install_designs(app, workspace)
 
     @app.get("/api/workspace/planner")
     def planner_status():
@@ -1006,6 +1009,20 @@ def install(app, engine, config, start):
     @app.post("/api/workspace/planning")
     async def planning(data: dict):
         return await workspace.plan_goal(data)
+
+    @app.post("/api/workspace/planning/intake")
+    async def requirement_intake(data: dict):
+        from .requirements import interpret
+
+        async with workspace.planning_lock:
+            return await interpret(workspace, data)
+
+    @app.post("/api/workspace/planning/intake/{intake_id}/confirm")
+    async def confirm_requirements(intake_id: str, data: dict):
+        from .requirements import confirm
+
+        async with workspace.planning_lock:
+            return await confirm(workspace, intake_id, data)
 
     @app.get("/api/workspace/travel/source")
     def travel_source():
