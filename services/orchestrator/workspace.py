@@ -36,6 +36,7 @@ class Recipe(BaseModel):
     planningId: str | None = Field(default=None, max_length=64)
     forceRedo: list[str] = Field(default_factory=list, max_length=4)
     reviewSeconds: int = Field(default=1800, ge=60, le=3300, strict=True)
+    coordination: bool = Field(default=False, strict=True, exclude_if=lambda v: not v)
 
     @field_validator("preference", mode="before")
     @classmethod
@@ -503,6 +504,9 @@ class Workspace:
         allowed = {p["id"] for p in node["providers"] if p["online"]} if node else set()
         agents = [agent for agent in await self.engine.agents()
                   if agent["agentId"] in allowed and agent["status"] == "ONLINE" and spec.skill in agent["skills"]]
+        from .coordination import enabled, supports
+        if enabled(spec):
+            agents = [agent for agent in agents if supports(agent)]
 
         async def estimate(agent):
             try:
@@ -639,6 +643,8 @@ class Workspace:
                 group_by=recipe.groupBy if spec.key == "statistics" else "organization_quarter",
                 review_seconds=recipe.reviewSeconds,
             ).model_dump()
+            if recipe.coordination and spec.skill in {"attraction_search", "hotel_search"}:
+                options["coordination"] = "travel-candidates-v1"
             semantic = {
                 "skill": spec.skill,
                 "options": {k: options[k] for k in ("tier", "outputs", "group_by")},
@@ -726,6 +732,21 @@ class Workspace:
             pools.append(available)
             row.update(candidates=available, requiresReview=needs_review(spec))
             work.append(row)
+        if recipe.coordination:
+            if recipe.scenario != "travel_planning" or not {"attractions", "hotels"} <= wanted:
+                raise ValueError("协调范围需要景点和酒店两项成果；单项交付请关闭协调")
+            active = [i for i, task in enumerate(tasks) if task.skill in {"attraction_search", "hotel_search"}]
+            if len(active) == 1:
+                index = active[0]
+                other = "hotels" if tasks[index].skill == "attraction_search" else "attractions"
+                fixed = nodes[other]["source"]
+                if not fixed:
+                    raise ValueError("协作另一方既未委派也无合法复用成果")
+                tasks[index] = tasks[index].model_copy(update={"options": {**tasks[index].options, "coordination_fixed": fixed}})
+                work[index]["coordinationMode"] = "使用已结算的固定成果，只购买本项工作，不要求原商家重新执行"
+            elif active:
+                for index in active:
+                    work[index]["coordinationMode"] = "两个独立钱包并行提交候选，最多一轮补充筛选，包含在原报价内"
         budget = units(recipe.budget)
         from .pareto import frontier, public as public_metrics
         if "pareto" not in cache:
@@ -819,6 +840,11 @@ class Workspace:
             if not previous and time.time() >= proposal["expiresAt"]:
                 raise ValueError("方案估价已过期，请重新比较方案")
             if not previous and proposal["plan"]:
+                from .execution_bridge import validate_source
+                validate_source(self, proposal.get("planning") or {})
+                current_inputs, _ = self.inputs(Recipe.model_validate(proposal["recipe"]))
+                if [p["sha256"] for p in current_inputs] != [p["sha256"] for p in proposal["inputs"]]:
+                    raise ValueError("材料已变化，请重新检查并确认")
                 from .catalog import assert_plan, corpus
                 if proposal.get("serviceGraphRevision") != corpus(self)["revision"]:
                     raise ValueError("服务库已变化，请重新比较方案后再确认付款")

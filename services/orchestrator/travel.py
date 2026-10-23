@@ -38,21 +38,27 @@ class Interpretation(BaseModel):
     unsupported: list[str] = Field(default_factory=list, max_length=8)
 
 
-def catalog():
+def catalog(identifier=CATALOG_ID):
     from .application import object_hash
 
     try:
-        value = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+        if identifier not in {CATALOG_ID, "coordination-demo-v1"}:
+            raise ValueError("未知旅游资料版本")
+        path = CATALOG_PATH if identifier == CATALOG_ID else CATALOG_PATH.with_name("coordination-demo-v1.json")
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ValueError("演示旅游资料库不可用，未创建任务；请检查资料文件或接入其他数据源") from exc
     return value, object_hash(value)
 
 
-def source_info():
-    value, digest = catalog()
-    return {"id": CATALOG_ID, "digest": digest, "mode": "demo", "notice": NOTICE,
+def source_info(identifier=CATALOG_ID):
+    value, digest = catalog(identifier)
+    destinations = {p["destination"] for p in value["attractions"]}
+    if identifier == CATALOG_ID:
+        destinations.add("协作演示城")
+    return {"id": identifier, "digest": digest, "mode": "demo", "notice": NOTICE,
             "source": value["source"], "asOf": value["as_of"],
-            "destinations": sorted({p["destination"] for p in value["attractions"]}),
+            "destinations": sorted(destinations),
             "availableFrom": value["available_from"], "availableUntil": value["available_until"]}
 
 
@@ -200,12 +206,13 @@ def request_packet(value):
     from .application import TravelRequest, canonical, packet
 
     request = TravelRequest.model_validate(value)
-    info = source_info()
+    identifier = "coordination-demo-v1" if request.destination == "协作演示城" else CATALOG_ID
+    info = source_info(identifier)
     problem = coverage(request, info)
     if problem:
         raise ValueError(problem)
     envelope = {"schemaVersion": 2, "request": request.model_dump(mode="json"),
-                "catalog": CATALOG_ID, "catalogHash": info["digest"]}
+                "catalog": identifier, "catalogHash": info["digest"]}
     return packet("travel-request.json", canonical(envelope), "application/json")
 
 
@@ -218,8 +225,8 @@ def search_inputs(inputs):
     query = artifact_json(unpack(inputs[0]))
     if set(query) != {"schemaVersion", "request", "catalog", "catalogHash"} or query["schemaVersion"] != 2:
         raise ValueError("无效的旅游检索请求")
-    data, digest = catalog()
-    if query["catalog"] != CATALOG_ID or query["catalogHash"] != digest:
+    data, digest = catalog(query["catalog"])
+    if query["catalogHash"] != digest:
         raise ValueError("旅游资料库版本与已确认方案不一致，不能用更新后的资料替换执行")
     doc = TravelInput.model_validate({
         "request": query["request"], "source": data["source"], "as_of": data["as_of"],

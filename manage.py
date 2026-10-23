@@ -55,11 +55,13 @@ def pnpm():
             return executable
         install_web_tools(directory)
     os.environ["PATH"] = str(node.parent) + os.pathsep + os.environ.get("PATH", "")
-    wrapper = directory / ("pnpm.cmd" if os.name == "nt" else "pnpm")
+    # The pnpm package already occupies directory/pnpm on every platform.
+    wrapper = directory / ("pnpm.cmd" if os.name == "nt" else "pnpm-run")
     if os.name == "nt":
         content = '@echo off\n"%~dp0node\\node.exe" "%~dp0pnpm\\bin\\pnpm.mjs" %*\n'
     else:
-        content = '#!/bin/sh\nexec "$(dirname "$0")/node/node" "$(dirname "$0")/pnpm/bin/pnpm.mjs" "$@"\n'
+        # Shell expansion works even when PATH contains only our bundled Node.
+        content = '#!/bin/sh\nexec "${0%/*}/node/node" "${0%/*}/pnpm/bin/pnpm.mjs" "$@"\n'
     wrapper.write_text(content, encoding="utf-8")
     if os.name != "nt":
         wrapper.chmod(0o755)

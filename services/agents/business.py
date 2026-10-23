@@ -20,7 +20,9 @@ class BusinessAgent(BaseAgent):
             if spec.skill != task.skill:
                 raise ValueError("DAG skill mismatch")
             from services.orchestrator.products import execute_product
-            artifacts = execute_product(spec, task.payload["inputs"], task.payload.get("revision"))
+            artifacts = task.payload.get("coordinated_artifacts")
+            if artifacts is None:
+                artifacts = execute_product(spec, task.payload["inputs"], task.payload.get("revision"))
             return {"manifest": {"jobId": task.job_id, "taskId": task.task_id, "attempt": task.attempt,
                                   "agentWallet": self.wallet, "requirementHash": task.requirement_hash,
                                   "inputRefs": [reference(x) for x in task.payload["inputs"]],

@@ -44,6 +44,7 @@ import "@xyflow/react/dist/style.css";
 import "./style.css";
 import Workspace from "./Workspace";
 import DesignWorkspace from "./DesignWorkspace";
+import { Collaboration } from "./ExecutionCheck";
 import { amount, price, tokenUnits } from "./amount";
 
 type AnyRecord = Record<string, any>;
@@ -684,6 +685,10 @@ function App() {
               mode={tab === "templates" ? "templates" : "chat"}
               onOpenChat={() => setTab("workspace")}
               onOpenTemplates={() => setTab("templates")}
+              onJob={(id) => {
+                selectJob(id);
+                setTab("overview");
+              }}
             />
           </div>
           <div hidden={tab !== "execution"}>
@@ -912,6 +917,7 @@ function App() {
                         </div>
                       </section>
                       <div className="detail-grid">
+                        <Collaboration api={api} jobId={job.jobId} />
                         <section className="panel">
                           <div className="panel-heading">
                             <div>

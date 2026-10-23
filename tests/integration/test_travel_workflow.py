@@ -105,7 +105,7 @@ def test_pinned_catalog_cannot_be_replaced_after_authorization(monkeypatch):
     original, _ = travel.catalog()
     changed = copy.deepcopy(original)
     changed["hotels"][0]["nightly_cents"] += 1
-    monkeypatch.setattr(travel, "catalog", lambda: (changed, app.object_hash(changed)))
+    monkeypatch.setattr(travel, "catalog", lambda identifier=travel.CATALOG_ID: (changed, app.object_hash(changed)))
     with pytest.raises(ValueError, match="版本"):
         travel.search_inputs([root])
 

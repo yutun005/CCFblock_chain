@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tarfile
 import tempfile
 from unittest.mock import patch
@@ -98,3 +99,24 @@ def test_web_tool_download_rejects_incomplete_or_modified_archive():
     with patch.object(manage.urllib.request, "urlopen", return_value=io.BytesIO(b"truncated")):
         with pytest.raises(RuntimeError, match="校验失败"):
             manage.verified_web_download("https://example.test/node.zip", "sha256", bytes(32))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="executes the POSIX launcher")
+def test_portable_pnpm_executes_with_spaces_and_without_system_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage, "CACHE", tmp_path / "project with spaces/.cache")
+    monkeypatch.delenv("AGENTFLOW_PNPM", raising=False)
+    monkeypatch.setenv("PATH", "")
+    directory = manage.CACHE / "tools/web"
+    node = directory / "node/node"
+    node.parent.mkdir(parents=True)
+    node.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    node.chmod(0o755)
+    entry = directory / "pnpm/bin/pnpm.mjs"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("// test entry")
+    with patch.object(manage.urllib.request, "urlopen", side_effect=AssertionError("offline")):
+        wrapper = manage.pnpm()
+        result = subprocess.run([wrapper, "--dir", "path with spaces", "build"],
+                                cwd=tmp_path, capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines() == [str(entry), "--dir", "path with spaces", "build"]
+    assert entry.is_file()

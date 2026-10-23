@@ -101,9 +101,12 @@ def binding(recipe):
     """Changing materials or requirements invalidates the interpretation; ranking need not re-call the model."""
     from .application import object_hash
 
-    return object_hash({key: getattr(recipe, key) for key in (
+    value = {key: getattr(recipe, key) for key in (
         "scenario", "materialIds", "outputs", "tier", "groupBy", "travelRequest", "requirement", "budget",
-    )})
+    )}
+    if recipe.coordination:
+        value["coordination"] = True
+    return object_hash(value)
 
 
 def checked_plan(draft, recipe, available, input_hashes):
@@ -367,6 +370,8 @@ def saved_plan(workspace, recipe):
     record = workspace.engine.db.get("planning_runs", recipe.planningId)
     if not record or record["status"] != "ready" or record.get("binding") != binding(recipe):
         raise ValueError("目标、材料或交付设置已变化，请重新选择模板或让主 Agent 规划")
+    from .execution_bridge import validate_source
+    validate_source(workspace, record)
     if not record.get("reviewedAt"):
         raise ValueError("请先检查子任务与预期是否一致，并确认任务图，再比较执行服务")
     if record.get("intakeId"):

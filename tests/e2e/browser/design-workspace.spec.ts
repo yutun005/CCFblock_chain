@@ -1,5 +1,40 @@
 import { expect, test } from '@playwright/test';
 
+test('execution scope gaps require opt-in; budget and graph edits invalidate the preview', async ({page}, testInfo) => {
+  await setup(page, false);
+  let checks=0, scopes=0;
+  await page.route('**/api/workspace/designs/design1/execution-check', route => {
+    checks++;
+    const body=route.request().postDataJSON();
+    expect(body.settings.budget).toBe(checks===1?'100':'80');
+    return route.fulfill({json:{id:`check${checks}`,status:'capability_gap',canConfirm:true,
+      issues:['尚无预测服务；可交付历史分析'],nodes:[{key:'statistics',title:'历史汇总',sourceKeys:['research'],scope:{supported:'按月份统计历史销售',validation:'按原始数据复算'},inputSources:['用户销售 CSV']}],
+      gaps:[{reason:'没有预测能力'}]}});
+  });
+  await page.route('**/api/workspace/designs/design1/execution-confirm', route => {
+    expect(route.request().postDataJSON()).toEqual({checkId:'check1',acceptPartial:true});scopes++;
+    return route.fulfill({json:{recipe:{outputs:['statistics'],groupBy:'month',budget:'100'}}});
+  });
+  await page.route('**/api/workspace/comparisons', route=>route.fulfill({json:{options:[],unavailable:[{reason:'当前服务繁忙，稍后重新估价'}]}}));
+  await page.getByRole('button',{name:'模板库',exact:true}).click();
+  await page.getByRole('button',{name:'按此模板生成 DAG'}).click();
+  await page.getByRole('button',{name:'检查执行条件',exact:true}).click();
+  await expect(page.getByText('尚无预测服务；可交付历史分析')).toBeVisible();
+  const scope=page.getByRole('button',{name:'确认本次执行范围，查看费用'});
+  await expect(scope).toBeDisabled();
+  await page.getByLabel(/我同意只执行上面支持的部分/).check();
+  await scope.click();
+  await expect(page.getByRole('alert')).toContainText('当前服务繁忙');expect(scopes).toBe(1);
+  await page.getByLabel('Agent 服务费上限（USDC）').fill('80');
+  await expect(scope).toHaveCount(0);
+  await page.getByRole('button',{name:'重新检查',exact:true}).click();
+  await expect(page.getByLabel(/我同意只执行上面支持的部分/)).not.toBeChecked();
+  await page.screenshot({path:testInfo.outputPath('execution-conditions.png'),fullPage:true});
+  await page.getByLabel('任务名称',{exact:true}).fill('改动后的工作');
+  await expect(page.getByRole('button',{name:'检查执行条件',exact:true})).toBeDisabled();
+  await expect(scope).toHaveCount(0);
+});
+
 async function setup(page: any, configured = true, taskCount = 2, wide = false) {
   let session: any = null;
   let saved: any = null;

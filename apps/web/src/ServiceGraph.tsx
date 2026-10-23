@@ -388,6 +388,13 @@ export default function ServiceGraph({
           <h3>{node.name}</h3>
           <p>{node.description}</p>
           <p>验收：{node.acceptance}</p>
+          {node.scope && (
+            <>
+              <p>范围：{node.scope.supported}</p>
+              <p>{node.scope.limits.join("；")}</p>
+              <p>协作：{node.scope.coordinationTerms}</p>
+            </>
+          )}
           <button disabled={busy} onClick={() => editService(node)}>
             修改服务资料
           </button>
@@ -408,7 +415,15 @@ export default function ServiceGraph({
               <article className="task-editor" key={p.id}>
                 <h4>{p.name}</h4>
                 <p>
-                  {p.online ? "在线" : "未在线注册"} · {p.id}
+                  {p.online
+                    ? p.busy
+                      ? "在线 · 正在履约"
+                      : "在线 · 可接单"
+                    : p.connected
+                      ? "离线"
+                      : "尚未接通"}{" "}
+                  · {p.id}
+                  {p.coordination && <span> · 支持候选交接</span>}
                 </p>
                 <p>
                   基础费用 {p.price ? `${price(p.price)} USDC` : "待报价"} ·{" "}

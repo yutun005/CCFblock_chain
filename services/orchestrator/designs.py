@@ -54,6 +54,7 @@ class DesignTask(Strict):
     outputs: list[Text] = Field(default_factory=list, max_length=12)
     acceptance: list[Text] = Field(default_factory=list, max_length=12)
     requirementIds: list[Key] = Field(default_factory=list, max_length=40)
+    capability: str | None = Field(default=None, max_length=64, exclude_if=lambda v: v is None)
 
 
 class Deliverable(Strict):
@@ -475,7 +476,7 @@ class Designs:
         req = {"id": "R1", "text": template["description"], "kind": "goal"}
         tasks = [{"key": t["key"], "title": t["title"], "description": t["reason"], "stageId": "workflow",
                   "dependencies": t["dependencies"], "inputs": ["已有材料"] if not t["dependencies"] else ["前置任务输出"],
-                  "outputs": [t["title"] + "成果"], "acceptance": ["交付约定成果并说明来源与处理方法"], "requirementIds": ["R1"]} for t in rows]
+                  "outputs": [t["title"] + "成果"], "acceptance": ["交付约定成果并说明来源与处理方法"], "requirementIds": ["R1"], "capability": t["skill"]} for t in rows]
         deliverables = [{"name": t["outputs"][0], "taskKey": t["key"]} for t in tasks if t["key"] not in children]
         return {"id": "service-" + template["id"], "revision": template["revision"], "name": template["name"],
                 "description": template["description"], "category": "已接入服务模板", "builtin": template["builtin"],
@@ -543,6 +544,8 @@ def starter_templates():
 
 def install(app, workspace):
     service = Designs(workspace)
+    from .execution_bridge import install as install_execution
+    install_execution(app, workspace, service)
 
     @app.get("/api/workspace/design-format")
     def response_format_version():

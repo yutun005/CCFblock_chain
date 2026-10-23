@@ -208,6 +208,7 @@ async def graph(workspace, query="", scenario=None, *, with_history=False):
     definitions = {s["id"]: dict(s) for s in document["services"]}
     merchants = {m["id"]: dict(m) for m in document["merchants"] if m["id"] not in document["removedMerchants"]}
     agents = {a["agentId"]: a for a in await workspace.engine.agents() if a["agentId"] not in document["removedMerchants"]}
+    occupied = await workspace.engine.busy_wallets("catalog", -1) if hasattr(workspace.engine, "busy_wallets") else set()
     for agent_id, agent in agents.items():
         merchants.setdefault(agent_id, {"id": agent_id, "name": agent_id, "offers": [], "source": "registry"})
         for skill in agent["skills"]:
@@ -229,6 +230,8 @@ async def graph(workspace, query="", scenario=None, *, with_history=False):
             online = bool(agent and agent["status"] == "ONLINE" and service_id in agent["skills"])
             providers.setdefault(service_id, []).append({"id": merchant["id"], "name": merchant["name"],
                 "online": online, "wallet": agent["wallet"] if agent else None,
+                "connected": bool(agent), "busy": bool(agent and agent["wallet"] in occupied),
+                "coordination": any("agentflow:travel-candidates-v1" in s.get("tags", []) for s in (agent or {}).get("card", {}).get("skills", []) if isinstance(s, dict)),
                 "price": offer["price"] if offer else None, "seconds": offer["seconds"] if offer else None,
                 "history": reliability(merchant, offer), "source": merchant.get("source", "registry")})
     histories = {}
@@ -243,7 +246,10 @@ async def graph(workspace, query="", scenario=None, *, with_history=False):
                 if verified and verified.get("evidence"):
                     row["history"] = reliability({}, None, verified)
     nodes = []
-    for service_id, rows in providers.items():
+    for service_id in definitions:
+        if service_id in document["removedServices"]:
+            continue
+        rows = providers.get(service_id, [])
         definition = definitions[service_id]
         if scenario and definition["scenario"] != scenario:
             continue
@@ -252,7 +258,9 @@ async def graph(workspace, query="", scenario=None, *, with_history=False):
                       "key": known[0] if known else service_id,
                       "acceptance": known[3] if known else "尚未接入执行和验收适配器，不能委派付款",
                       "executable": bool(known and any(p["online"] for p in rows)),
-                      "adapterReady": bool(known)})
+                      "adapterReady": bool(known),
+                      "availability": "not_integrated" if not known else "no_provider" if not any(p["connected"] for p in rows) else "busy" if any(p["online"] for p in rows) and all(p["busy"] for p in rows if p["online"]) else "online" if any(p["online"] for p in rows) else "offline",
+                      "scope": capability_scope(service_id)})
     edges = [{"source": source["id"], "target": target["id"], "type": source["outputType"]}
              for source in nodes for target in nodes if source["id"] != target["id"]
              and source["outputType"] and source["outputType"] in target["requires"]]
@@ -272,11 +280,30 @@ async def assert_plan(workspace, plan, graph_value=None):
     nodes = {node["id"]: node for node in value["nodes"]}
     for spec in plan.tasks:
         node = nodes.get(spec.skill)
-        if not node or not node["executable"]:
-            raise ValueError("服务已删除、离线或尚无执行适配器，请重新规划：" + spec.skill)
+        if not node or not node["adapterReady"]:
+            raise ValueError("能力已删除或尚未接通执行与验收：" + spec.skill)
+        if not node["providers"]:
+            raise ValueError("已有能力，但尚无接入提供者：" + spec.skill)
+        if not node["executable"]:
+            raise ValueError("服务暂时离线，请稍后重试：" + spec.skill)
         chosen = plan.execution_policy.preferred_agents.get(spec.key)
         if chosen and not any(p["online"] and p["wallet"] == chosen for p in node["providers"]):
             raise ValueError("所选商家已移除或不再提供该服务，请重新比较方案")
+
+
+def capability_scope(skill):
+    from .planning import CAPABILITIES
+    known = CAPABILITIES.get(skill)
+    travel = skill in {"attraction_search", "hotel_search", "route_planning", "travel_report"}
+    return {"supported": known[1] if known else "仅登记介绍，尚未接入执行器",
+            "limits": (["仅使用标注的演示资料", "不支持实时价格、预订、天气或真实地图"] if travel else
+                       ["仅处理符合格式的用户销售 CSV", "不支持预测、利润或因果分析"]),
+            "materials": "出游要求；旅游资料可选" if travel else "用户销售 CSV 或已验证的前置成果",
+            "validation": known[3] if known else "尚未接入",
+            "parameters": ({"days": "1–7", "travelers": "1–20", "currency": "人民币分", "interests": ["culture", "nature"], "dateRange": "按已冻结演示资料版本检查"} if travel else
+                           {"groupBy": ["month", "category", "organization", "organization_quarter"], "outputs": ["report", "charts"], "currency": "人民币分；无利润或预测字段"}),
+            "coordination": "travel-candidates-v1" if skill in {"attraction_search", "hotel_search"} else None,
+            "coordinationTerms": "候选一次，最多一轮补充筛选，包含在报价内" if skill in {"attraction_search", "hotel_search"} else "一次交付；报告沿用已有返工规则"}
 
 
 def install(app, workspace):

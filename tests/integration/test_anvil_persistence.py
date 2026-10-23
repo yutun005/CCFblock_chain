@@ -116,7 +116,8 @@ def test_running_demo_requires_matching_deployment_and_authentication(tmp_path, 
 
 
 @pytest.mark.parametrize('superseded', [False, True])
-def test_launcher_restarts_services_instead_of_exiting_after_opening_old_page(tmp_path, monkeypatch, superseded):
+@pytest.mark.parametrize('interrupt', [False, True])
+def test_launcher_restarts_services_instead_of_exiting_after_opening_old_page(tmp_path, monkeypatch, superseded, interrupt):
     local_launcher(monkeypatch, tmp_path)
     monkeypatch.setenv('AGENTFLOW_OPEN_BROWSER', '1')
     atomic_json(local_demo.CONFIG, {'runtime': {}})
@@ -127,6 +128,8 @@ def test_launcher_restarts_services_instead_of_exiting_after_opening_old_page(tm
         value = next(commands)
         if value == 'stop' and superseded:
             atomic_json(local_demo.CACHE / 'demo-launcher/generation.json', {'generation': 'new-controller'})
+        if value == 'stop' and interrupt:
+            raise KeyboardInterrupt
         return value
     with patch.object(local_demo, 'settings_file', return_value=settings), \
          patch.object(local_demo, 'stop_services') as stop, \

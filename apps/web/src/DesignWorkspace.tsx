@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { PlanningGraph } from "./TaskPlanning";
+import ExecutionCheck from "./ExecutionCheck";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -28,6 +29,7 @@ const lines = (value: string) =>
     .filter(Boolean);
 
 function GraphEditor({
+  api,
   graph,
   brief,
   outline,
@@ -35,6 +37,7 @@ function GraphEditor({
   onSave,
   onDirty,
 }: {
+  api: Api;
   graph: Row;
   brief: Row;
   outline: Row[];
@@ -45,6 +48,19 @@ function GraphEditor({
   const [value, setValue] = useState<Row>(graph);
   const [selected, setSelected] = useState(graph.tasks[0]?.key || "");
   const [dirty, setDirty] = useState(false);
+  const [capabilities, setCapabilities] = useState<Row[]>([]);
+  const [editError, setEditError] = useState("");
+  useEffect(() => {
+    let active = true;
+    api(prefix + "/service-graph")
+      .then((v) => {
+        if (active) setCapabilities(v.nodes || []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [api]);
   const task =
     value.tasks.find((node: Row) => node.key === selected) || value.tasks[0];
   const change = (next: Row) => {
@@ -60,6 +76,18 @@ function GraphEditor({
       ),
     });
   const remove = () => {
+    const dependent = value.tasks.filter((n: Row) =>
+      n.dependencies.includes(task.key),
+    );
+    if (dependent.length) {
+      setEditError(
+        "仍被这些任务依赖：" +
+          dependent.map((n: Row) => n.title).join("、") +
+          "。请先调整依赖，再删除。",
+      );
+      return;
+    }
+    setEditError("");
     change({
       ...value,
       tasks: value.tasks
@@ -99,6 +127,7 @@ function GraphEditor({
   };
   return (
     <section className="design-graph-editor" aria-label="开放任务图编辑器">
+      {editError && <p role="alert">{editError}</p>}
       <div className="design-section-heading">
         <h3>
           任务 DAG <span>{value.tasks.length} 项工作</span>
@@ -133,6 +162,24 @@ function GraphEditor({
       {task && (
         <fieldset className="design-node-form" disabled={disabled}>
           <legend>编辑任务：{task.title}</legend>
+          <label>
+            执行能力（可留空，由模型匹配）
+            <select
+              value={task.capability || ""}
+              onChange={(e) =>
+                patchTask({ capability: e.target.value || null })
+              }
+            >
+              <option value="">尚未关联执行能力</option>
+              {capabilities
+                .filter((n) => n.adapterReady)
+                .map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.title || n.name || n.id}
+                  </option>
+                ))}
+            </select>
+          </label>
           <label>
             任务名称
             <input
@@ -458,11 +505,13 @@ export default function DesignWorkspace({
   mode,
   onOpenChat,
   onOpenTemplates,
+  onJob,
 }: {
   api: Api;
   mode: "chat" | "templates";
   onOpenChat: () => void;
   onOpenTemplates: () => void;
+  onJob: (id: string) => void;
 }) {
   const [session, setSession] = useState<Row | null>(null);
   const [sessions, setSessions] = useState<Row[]>([]);
@@ -888,8 +937,15 @@ export default function DesignWorkspace({
                 </details>
                 {session.graph && (
                   <>
+                    <ExecutionCheck
+                      api={api}
+                      session={session}
+                      dirty={dirty}
+                      onJob={onJob}
+                    />
                     <div ref={graphAnchor}>
                       <GraphEditor
+                        api={api}
                         key={`${session.id}:${session.revision}`}
                         graph={session.graph}
                         brief={session.brief}
