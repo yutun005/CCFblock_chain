@@ -358,7 +358,7 @@ WireUint = Annotated[int, BeforeValidator(runtime_uint), Field(ge=0, le=MAX_UINT
 JobPhase = Literal["FUNDING", "ACTIVE", "INTERRUPTED", "SUCCEEDED", "PARTIAL_FAILED"]
 TaskPhase = Literal["BIDDING", "ASSIGNING", "RUNNING", "VERIFYING", "SETTLING", "SETTLED",
                     "RECOVERING", "REASSIGNING", "CANCELED", "AWAITING_REVIEW", "REWORKING", "ACCEPTED",
-                    "WAITING_AGENT", "WAITING_DEPENDENCIES"]
+                    "WAITING_AGENT", "WAITING_DEPENDENCIES", "WAITING_INPUT"]
 FaultCode = Literal["NO_VALID_QUOTE", "DEADLINE_EXCEEDED", "VALIDATION_REJECTED", "INVALID_DELIVERY",
                     "AGENT_REQUEST_FAILED", "VALIDATOR_REQUEST_FAILED", "MARKET_REQUEST_FAILED",
                     "CHAIN_REVERTED", "CHAIN_UNAVAILABLE", "UPSTREAM_UNAVAILABLE", "STOP_REQUESTED",
@@ -1542,7 +1542,6 @@ def hotel_search(inputs: list[dict]) -> list[dict]:
 
 
 def travel_candidates(inputs: list[dict]) -> tuple[dict, list[dict], list[dict]]:
-    inputs = [p for p in inputs if not p["name"].startswith("coordination-")]
     files = {x["name"]: artifact_json(unpack(x)) for x in inputs}
     if len(files) != len(inputs) or set(files) != {"attractions.json", "hotels.json"}:
         raise ValueError("route requires settled attractions and hotel results")
@@ -1727,8 +1726,6 @@ def validate_skills(plan: Plan) -> None:
             raise ValueError(f"“{task.title}”需要前置成果：{needed}。请补齐必要连线并移除不匹配的连线，再确认任务图。")
         if task.policy != SKILL_POLICIES[task.skill] or task.policy != SCENARIOS[plan.scenario]["policy"]:
             raise ValueError("unknown frozen policy")
-    from .coordination import validate_structure
-    validate_structure(plan)
 
 
 # ============================================================================
@@ -1742,8 +1739,8 @@ RULES = {"version": "sales-v1", "categories": ["book", "food", "tool"],
 
 
 # Frozen v1 identifiers from the e0d6700 release. Source formatting and additive
-# coordination support must not invalidate existing delegated or reusable work.
-# New coordination obligations are bound in TaskSpec.options/requirementHash.
+# execution support must not invalidate existing delegated or reusable work.
+# New execution obligations are bound in TaskSpec.options/requirementHash.
 POLICY_V1 = {
     "data_cleaning": "0x2b2fbdffa4d640747c583d965bb23102248ca59bd5775cace613bc9bdd7bd306",
     "data_validation": "0xb5bb7a015fb7ed5de650977190fb4ef98d27eb7b88ff1e061a7b0231bf7f6b1e",
@@ -2146,7 +2143,7 @@ class ServiceExecutor(AgentExecutor):
         await updater.start_work()
         self.active[context.task_id] = asyncio.current_task()
         try:
-            request = json.loads(context.get_user_input())
+            request = signed_from_wire(json.loads(context.get_user_input()))
             identity = request["idempotencyKey"]
             lock = self.locks.setdefault(identity, asyncio.Lock())
             async with lock:
@@ -2164,10 +2161,9 @@ class ServiceExecutor(AgentExecutor):
                               {"operation": request["operation"], "idempotencyKey": identity,
                                "taskId": context.task_id, "requestHash": digest})
             await updater.add_artifact(parts=[Part(text=canonical(to_wire(response)).decode(), media_type="application/json")],
-                                       name="agentflow-response", last_chunk=True)
-            phase = (request.get("revision") or {}).get("coordination", {}).get("phase")
-            if phase in {"candidate", "adjust"}:
-                await updater.requires_input(message=updater.new_agent_message(parts=[Part(text="候选已提交，等待主智能体核对共同要求；尚未正式交付或结算")]))
+                                       name="agentflow:" + identity, last_chunk=True)
+            if response.get("kind") == "needs_input":
+                await updater.requires_input(message=updater.new_agent_message(parts=[Part(text=response["inquiry"]["question"])]))
             else:
                 await updater.complete()
         except asyncio.CancelledError:
@@ -2186,10 +2182,15 @@ class ServiceExecutor(AgentExecutor):
             await TaskUpdater(event_queue, context.task_id, context.context_id).cancel()
 
     async def handle(self, request: dict) -> dict:
+        if request.get("operation") == "assist":
+            from .communication import answer_information
+            return await asyncio.to_thread(answer_information, self, request)
         validate_protocol("QuoteRequest" if request.get("operation") == "quote" else "ExecutionRequest", request)
         if request["operation"] == "quote":
             plan = Plan.model_validate(request["plan"])
             spec = plan.topological()[request["taskId"]]
+            if (spec.options or {}).get("coordination"):
+                raise ValueError("旧候选协调已停用，不再接受新的委派；请保留原记录并取消未完成工作")
             if spec.skill not in self.config["prices"]:
                 raise ValueError("skill not offered")
             state = await asyncio.to_thread(self.chain.task, request["jobId"], request["taskId"])
@@ -2223,13 +2224,12 @@ class ServiceExecutor(AgentExecutor):
             raise ValueError("execution request has no valid assignment to this wallet")
         if spec.skill not in self.config["prices"]:
             raise ValueError("skill not offered")
-        from .coordination import enabled, service_stage
-        coordinated_artifacts = None
-        if enabled(spec):
-            async with self.locks.setdefault(f"coord-work:{request['jobId']}:{request['taskId']}:{request['attempt']}", asyncio.Lock()):
-                coordinated_artifacts = await service_stage(self, request, state, spec)
-            if (request.get("revision") or {}).get("coordination", {}).get("phase") != "final":
-                return coordinated_artifacts
+        if (spec.options or {}).get("coordination"):
+            raise ValueError("旧酒店候选协调已停用；该委托不能降级执行，请取消或按原期限收尾")
+        from .communication import service_step, record_execution
+        waiting = await asyncio.to_thread(service_step, self, request, spec)
+        if waiting:
+            return waiting
         from services.agents.business import BusinessAgent
         from services.marketplace.models import TaskRequest as BRequest
         service = BusinessAgent(self.config["id"], self.config["id"], list(self.config["prices"]),
@@ -2238,11 +2238,12 @@ class ServiceExecutor(AgentExecutor):
                                        "verifying_contract":self.chain.escrow.address}, clock=lambda:self.chain.now)
         payload = {"contract":"agentflow-dag-v1", "plan":request["plan"], "inputs":request["inputs"],
                    "upstream_refs":request["upstreamRefs"], "idempotency_key":request["idempotencyKey"],
-                   "revision":request.get("revision"), "coordinated_artifacts": coordinated_artifacts}
+                   "revision":request.get("revision")}
         result = await asyncio.to_thread(service.handle, BRequest(request["jobId"], request["taskId"],
                                         request["attempt"], spec.skill, payload, state["config"]["requirementHash"]))
-        return b_result_delivery({"task_id":request["taskId"], "status":"completed", "artifact":result.as_dict()},
-                                  request["taskId"])
+        delivery = b_result_delivery({"task_id":request["taskId"], "status":"completed", "artifact":result.as_dict()}, request["taskId"])
+        record_execution(self, request, delivery, spec)
+        return delivery
 
 
 def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> FastAPI:
@@ -2253,7 +2254,7 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
                      version="1.0.0", capabilities=AgentCapabilities(streaming=False),
                      default_input_modes=["application/json"], default_output_modes=["application/json"],
                      skills=[AgentSkill(id=skill, name=skill, description="Deterministic " + SKILL_POLICIES[skill] + " executor",
-                                        tags=["agentflow", SKILL_POLICIES[skill]] + (["agentflow:travel-candidates-v1"] if skill in {"attraction_search", "hotel_search"} else [])) for skill in config["prices"]],
+                                        tags=["agentflow", SKILL_POLICIES[skill], "agentflow:execution-dialogue-v1"]) for skill in config["prices"]],
                      supported_interfaces=[AgentInterface(protocol_binding="JSONRPC", protocol_version="1.0",
                                                            url=config["endpoint"] + "/a2a/jsonrpc")])
     executor = ServiceExecutor(config, chain, db)
@@ -2416,69 +2417,65 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
 
 
 async def a2a_call(endpoint: str, payload: dict, token: str, timeout: float = 15, task_id: str | None = None) -> dict:
-    quoting = payload.get("operation") == "quote"
-    phase = (payload.get("revision") or {}).get("coordination", {}).get("phase")
-    candidate = phase in {"candidate", "adjust"}
-    validate_protocol("QuoteRequest" if quoting else "ExecutionRequest", payload)
+    quoting, assisting = payload.get("operation") == "quote", payload.get("operation") == "assist"
+    if not assisting:
+        validate_protocol("QuoteRequest" if quoting else "ExecutionRequest", payload)
     async with httpx.AsyncClient(trust_env=False, timeout=timeout, headers={"Authorization": "Bearer " + token}) as http:
         client = await ClientFactory(ClientConfig(streaming=False, httpx_client=http)).create_from_url(endpoint)
-        message = Message(message_id=payload["idempotencyKey"], role=Role.ROLE_USER,
+        identity = payload["idempotencyKey"]
+        message = Message(message_id=identity, role=Role.ROLE_USER, context_id=payload["jobId"],
                           parts=[Part(text=canonical(to_wire(payload)).decode(), media_type="application/json")])
-        if phase:
-            message.context_id = payload["jobId"]
-            if not task_id:
-                from a2a.types import ListTasksRequest
-                # Recover a response lost before its Task id reached the caller.
-                page = ""
-                for _ in range(5):
-                    listed = await client.list_tasks(ListTasksRequest(context_id=payload["jobId"], page_size=100,
-                                                       page_token=page, include_artifacts=True, history_length=30))
-                    found = next((t for t in listed.tasks if any(m.message_id == payload["idempotencyKey"] for m in t.history)), None)
-                    if found:
-                        task_id = found.id
-                        break
-                    page = listed.next_page_token
-                    if not page:
-                        break
+
+        def extract(task):
+            for artifact in reversed(task.artifacts):
+                if artifact.name == "agentflow:" + identity:
+                    value = signed_from_wire(json.loads(artifact.parts[0].text))
+                    if task.status.state not in {TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_INPUT_REQUIRED}:
+                        return None
+                    if value.get("kind") == "needs_input":
+                        if value.get("messageKey") != identity:
+                            raise ValueError("补充信息请求状态或消息标识不符")
+                    elif not assisting:
+                        validate_protocol("QuoteReply" if quoting else "ServiceDelivery", value)
+                    return {"a2aTaskId": task.id, "response": value}
+            return None
+
+        from a2a.types import GetTaskRequest, ListTasksRequest
+        if not quoting and not task_id:
+            page = ""
+            for _ in range(5):
+                listed = await client.list_tasks(ListTasksRequest(context_id=payload["jobId"], page_size=100,
+                    page_token=page, include_artifacts=True, history_length=30))
+                found = next((t for t in listed.tasks if any(m.message_id == identity for m in t.history)), None)
+                if found:
+                    task_id = found.id
+                    break
+                page = listed.next_page_token
+                if not page:
+                    break
         if task_id:
-            from a2a.types import GetTaskRequest
             previous = await client.get_task(GetTaskRequest(id=task_id))
             until = time.monotonic() + timeout
             while previous.status.state in {TaskState.TASK_STATE_SUBMITTED, TaskState.TASK_STATE_WORKING}:
                 if time.monotonic() >= until:
-                    raise httpx.ReadTimeout("协作任务仍在执行，保留原任务并查询恢复")
+                    raise httpx.ReadTimeout("原执行仍在进行，保留任务等待恢复")
                 await asyncio.sleep(.2)
                 previous = await client.get_task(GetTaskRequest(id=task_id))
-            if previous.artifacts:
-                for artifact in reversed(previous.artifacts):
-                    cached = signed_from_wire(json.loads(artifact.parts[0].text))
-                    if cached.get("messageKey") == payload["idempotencyKey"]:
-                        return {"a2aTaskId": previous.id, "response": cached}
-                response = signed_from_wire(json.loads(previous.artifacts[-1].parts[0].text))
-                if (previous.status.state == TaskState.TASK_STATE_COMPLETED and not candidate and "result" in response
-                        and any(m.message_id == payload["idempotencyKey"] for m in previous.history)):
-                    return {"a2aTaskId": previous.id, "response": response}
-            if phase == "final" and previous.status.state == TaskState.TASK_STATE_COMPLETED:
-                # New agreement, new linked protocol task; never reopen a terminal task.
-                message.context_id = previous.context_id
-            elif previous.status.state not in {TaskState.TASK_STATE_INPUT_REQUIRED, TaskState.TASK_STATE_WORKING}:
-                raise ValueError("原协议任务已终结，不能重新打开")
-            else:
-                message.task_id = task_id
+            cached = extract(previous)
+            if cached:
+                return cached
+            if previous.status.state != TaskState.TASK_STATE_INPUT_REQUIRED:
+                raise ValueError("原协议任务已终结，不能重新打开或替换交付")
+            message.task_id = task_id
         async for event in client.send_message(SendMessageRequest(message=message)):
             if event.HasField("task"):
                 task = event.task
                 if task.status.state == TaskState.TASK_STATE_FAILED:
                     raise ValueError("A2A agent failed: " + " ".join(p.text for p in task.status.message.parts))
-                if task.status.state != (TaskState.TASK_STATE_INPUT_REQUIRED if candidate else TaskState.TASK_STATE_COMPLETED) or not task.artifacts:
-                    raise ValueError("A2A response was not a completed task with artifacts")
-                response = signed_from_wire(json.loads(task.artifacts[-1].parts[0].text))
-                if not candidate:
-                    validate_protocol("QuoteReply" if quoting else "ServiceDelivery", response)
-                elif response.get("messageKey") != payload["idempotencyKey"]:
-                    raise ValueError("协作答复不属于本次消息")
-                return {"a2aTaskId": task.id, "response": response}
-        raise ValueError("A2A response contains no task")
+                result = extract(task)
+                if result:
+                    return result
+        raise ValueError("A2A response contains no terminal response or information request")
 
 
 # ============================================================================
@@ -2829,9 +2826,21 @@ def validate_delivery(chain: Chain, request: dict, validator_key: str) -> dict:
     if signer != task["payee"]:
         raise ValueError("result signer is not assigned payee")
     from services.orchestrator.products import verify_product
-    from .coordination import enabled, validate_formal
-    checks = (validate_formal(chain, request) if enabled(context["spec"]) else
-              verify_product(context["spec"], inputs, delivery["artifacts"], request.get("revision")))
+    from .communication import missing_information, validate_answer
+    need = missing_information(context["spec"], inputs)
+    evidence = next((p for p in delivery["artifacts"] if p["name"] == "execution-explanation.json"), None)
+    if need:
+        if evidence is None:
+            raise ValueError("缺少执行问题的真实答复，不能跳过补充信息直接结算")
+        conversation = artifact_json(unpack(evidence))
+        inquiry = conversation["inquiry"]
+        if (inquiry["jobId"] != request["jobId"] or inquiry["taskId"] != request["taskId"]
+                or inquiry["topic"] != need["topic"]):
+            raise ValueError("补充说明不属于本次交付")
+        validate_answer(chain, Plan.model_validate(request["plan"]), inquiry, conversation["response"])
+    elif evidence is not None:
+        raise ValueError("无需补充说明的交付包含无关通信证据")
+    checks = verify_product(context["spec"], inputs, delivery["artifacts"], request.get("revision"))
     attestation = {"jobId": result["jobId"], "taskId": result["taskId"], "attempt": result["attempt"],
                    "resultHash": result["resultHash"], "validationPolicyId": context["policy"], "verdict": True,
                    "validUntil": min(chain.now + 60, task["deadline"]), "attestationNonce": secrets.randbits(128)}
@@ -2973,6 +2982,9 @@ class Market:
             try:
                 if agent["wallet"] in excluded:
                     raise ValueError("failed earlier attempt for this task")
+                from .communication import enabled, supports
+                if enabled(spec) and not supports(agent, spec.skill):
+                    raise ValueError("service does not implement the authorized execution dialogue")
                 payload = {k: request[k] for k in ("jobId", "taskId", "attempt", "plan")}
                 payload.update(operation="quote", idempotencyKey=request["idempotencyKey"] + ":" + agent["agentId"])
                 if self.transport == "b-http-v1":
@@ -3211,6 +3223,9 @@ class Engine:
         binding = next((a for a in agents if a.get("agentId") == selected["agentId"]), None)
         if not binding:
             raise ValueError("selected agent has no registered wallet binding")
+        from .communication import enabled, supports
+        if enabled(spec) and not supports(binding, spec.skill):
+            raise ValueError("所选商家没有接通本次委托要求的执行沟通")
         challenge = binding.get("challenge")
         if not isinstance(challenge, dict) or not binding.get("signature"):
             raise ValueError("B must supply metadata.binding wallet proof before delegation")
@@ -3298,12 +3313,11 @@ class Engine:
         endpoint = self.agent_origin(endpoint)
         timeout = max(1, state["deadline"] - self.chain.now + 1)
         if self.service_transport == "a2a-v1":
-            task_id = None
-            if (payload.get("revision") or {}).get("coordination"):
-                prefix = f"coordinate:{payload['jobId']}:{payload['taskId']}:{payload['attempt']}:"
-                prior = self.db.get("collaboration_calls", prefix + "adjust") or self.db.get("collaboration_calls", prefix + "candidate")
-                task_id = prior["a2aTaskId"] if prior else None
-            return await a2a_call(endpoint, payload, self.token, timeout=timeout, task_id=task_id)
+            from .communication import enabled, execute_with_messages
+            spec = Plan.model_validate(payload["plan"]).topological()[payload["taskId"]]
+            if enabled(spec):
+                return await execute_with_messages(self, endpoint, payload, state)
+            return await a2a_call(endpoint, payload, self.token, timeout=timeout)
         response = await self.post(endpoint + "/tasks/send", b_task_request(payload, state), timeout=timeout)
         return {"a2aTaskId": "b-http:" + payload["idempotencyKey"],
                 "response": b_result_delivery(response, payload["taskId"])}
@@ -3528,21 +3542,6 @@ class Engine:
                             ready.append((i, spec))
                     if plan.execution_policy.scheduling == "sequential":
                         ready = [] if workers else ready[:1]
-                    from .coordination import group_indices, run_group
-                    group = group_indices(plan)
-                    if group and any(i in group for i, _ in ready) and not any(i in workers for i in group):
-                        if any(states[i]["state"] == 3 for i in group):
-                            for i in group:
-                                if states[i]["state"] == 0:
-                                    await self.submit(job_id, "cancelTask", [job_id, i])
-                                    self.checkpoint(job_id, i, "CANCELED", reason="COORDINATION_PEER_CANCELED")
-                        if (all(states[i]["state"] in {1, 2} or any(r == i for r, _ in ready) for i in group)
-                                or (any(states[i]["state"] == 3 for i in group) and any(states[i]["state"] == 1 for i in group))):
-                            worker = asyncio.create_task(run_group(self, job_id, group, plan))
-                            for i in group:
-                                if states[i]["state"] not in {2, 3}:
-                                    workers[i] = worker
-                        ready = [(i, spec) for i, spec in ready if i not in group]
                     for i, spec in ready:
                         workers[i] = asyncio.create_task(self.execute_node(job_id, i, spec))
                     if workers:
@@ -3630,11 +3629,6 @@ class Engine:
                                key=lambda q: Market.candidate_order(q, plan.execution_policy, spec.key))
                 selected = None
                 for candidate in valid:
-                    from .coordination import enabled, supports
-                    if enabled(spec):
-                        provider = next((a for a in await self.agents() if a["agentId"] == candidate["agentId"]), {})
-                        if not supports(provider):
-                            continue
                     if candidate["wallet"] in occupied:
                         waiting = True
                         continue
@@ -3670,7 +3664,7 @@ class Engine:
             await asyncio.sleep(1)
         return None
 
-    async def execute_node(self, job_id: str, task_id: int, spec, *, coordination_prepare=False):
+    async def execute_node(self, job_id: str, task_id: int, spec):
         job = self.db.get("jobs", job_id)
         state = await asyncio.to_thread(self.chain.task, job_id, task_id)
         attempt = state["attempt"]
@@ -3691,12 +3685,6 @@ class Engine:
             await self.expire(job_id, task_id, state, "deadline_elapsed")
             return
         execution_key = f"execute:{job_id}:{task_id}:{attempt}"
-        from .coordination import enabled, execution_key as coordinated_key
-        if enabled(spec):
-            agreement = self.db.get("coordination_agreements", f"{job_id}:{task_id}:{attempt}")
-            if not agreement:
-                raise ValueError("尚未完成候选共同检查，不能正式交付")
-            execution_key = coordinated_key(job_id, task_id, attempt, agreement)
         delivery = self.db.get("deliveries", execution_key)
         indexed = {t.key: i for i, t in enumerate(Plan.model_validate(job["plan"]).topological())}
         upstream, upstream_refs = [], []
@@ -3715,8 +3703,6 @@ class Engine:
         inputs = ([p for d in upstream for p in d["artifacts"]] + reused_inputs) if spec.dependencies or reused else job["inputs"]
         payload = {"operation": "execute", "idempotencyKey": execution_key, "jobId": job_id, "taskId": task_id,
                    "attempt": attempt, "plan": job["plan"], "inputs": inputs, "upstreamRefs": upstream_refs}
-        if enabled(spec):
-            payload["revision"] = {"coordination": {"phase": "final", "agreement": agreement}}
         phase = "agent"
         try:
             if delivery is None:
@@ -3750,8 +3736,6 @@ class Engine:
             if not verification["passed"]:
                 raise WorkflowFault(RuntimeFault(code="VALIDATION_REJECTED", phase="validator", action="await_expiry",
                                                  message="VALIDATION_FAILED: " + verification["reason"]))
-            if coordination_prepare:
-                return
             if needs_review(spec):
                 reviewed = await review_delivery(self, job_id, task_id, spec, state, selected, payload, upstream, reused, delivery, verification)
                 if reviewed is None:
@@ -3777,7 +3761,7 @@ class Engine:
                     self.db.put("reviews", review["id"], review)
                     self.checkpoint(job_id, task_id, "CANCELED", reason="REVIEW_DEADLINE")
                     return
-                if self.chain.funding_deadline(0) > current["deadline"]:
+                if self.chain.now > current["deadline"]:
                     await self.expire(job_id, task_id, current, str(exc), fault)
                     return
                 await asyncio.sleep(0.5)
@@ -3968,6 +3952,8 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     protect(app, config["token"])
     from services.orchestrator.workspace import install
     workspace = install(app, engine, config, start)
+    from .communication import install as install_communication
+    install_communication(app, engine)
 
     @app.exception_handler(httpx.RequestError)
     async def unavailable_service(_request, exc):
@@ -4126,11 +4112,6 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     def quotes(job_id: str):
         require_job(job_id)
         return [q for q in engine.db.values("quotes") if q["jobId"] == job_id]
-
-    @app.get("/api/jobs/{job_id}/collaboration")
-    def collaboration(job_id: str):
-        require_job(job_id)
-        return sorted([r for r in engine.db.values("collaboration") if r["jobId"] == job_id], key=lambda r: r["at"])
 
     @app.get("/api/jobs/{job_id}/settlements")
     def settlements(job_id: str):

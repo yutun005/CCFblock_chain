@@ -57,6 +57,7 @@ const statuses: Record<string, string> = {
   CANCELED: "已取消",
   BIDDING: "询价中",
   WAITING_AGENT: "等待商家空闲",
+  WAITING_INPUT: "等待服务补充信息",
   WAITING_DEPENDENCIES: "等待前置成果",
   ASSIGNING: "正在委派",
   RUNNING: "执行中",

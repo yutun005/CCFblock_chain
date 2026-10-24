@@ -231,7 +231,8 @@ async def graph(workspace, query="", scenario=None, *, with_history=False):
             providers.setdefault(service_id, []).append({"id": merchant["id"], "name": merchant["name"],
                 "online": online, "wallet": agent["wallet"] if agent else None,
                 "connected": bool(agent), "busy": bool(agent and agent["wallet"] in occupied),
-                "coordination": any("agentflow:travel-candidates-v1" in s.get("tags", []) for s in (agent or {}).get("card", {}).get("skills", []) if isinstance(s, dict)),
+                "executionMessages": any(s.get("id") == service_id and "agentflow:execution-dialogue-v1" in s.get("tags", [])
+                                         for s in (agent or {}).get("card", {}).get("skills", []) if isinstance(s, dict)),
                 "price": offer["price"] if offer else None, "seconds": offer["seconds"] if offer else None,
                 "history": reliability(merchant, offer), "source": merchant.get("source", "registry")})
     histories = {}
@@ -302,8 +303,7 @@ def capability_scope(skill):
             "validation": known[3] if known else "尚未接入",
             "parameters": ({"days": "1–7", "travelers": "1–20", "currency": "人民币分", "interests": ["culture", "nature"], "dateRange": "按已冻结演示资料版本检查"} if travel else
                            {"groupBy": ["month", "category", "organization", "organization_quarter"], "outputs": ["report", "charts"], "currency": "人民币分；无利润或预测字段"}),
-            "coordination": "travel-candidates-v1" if skill in {"attraction_search", "hotel_search"} else None,
-            "coordinationTerms": "候选一次，最多一轮补充筛选，包含在报价内" if skill in {"attraction_search", "hotel_search"} else "一次交付；报告沿用已有返工规则"}
+            "executionSupport": "实际成果与执行记录的有界查询；不追加工作、不改变预算"}
 
 
 def install(app, workspace):

@@ -658,7 +658,8 @@
               "REWORKING",
               "ACCEPTED",
               "WAITING_AGENT",
-              "WAITING_DEPENDENCIES"
+              "WAITING_DEPENDENCIES",
+              "WAITING_INPUT"
             ],
             "title": "Status",
             "type": "string"
@@ -1341,6 +1342,7 @@
               "ACCEPTED",
               "WAITING_AGENT",
               "WAITING_DEPENDENCIES",
+              "WAITING_INPUT",
               "assignTask_PENDING",
               "settleTask_PENDING",
               "JOB_FUNDED",
@@ -1629,6 +1631,25 @@
               "properties": {
                 "kind": {
                   "const": "WAITING_DEPENDENCIES"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/TaskCheckpoint"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "WAITING_INPUT"
                 }
               },
               "required": [
@@ -5854,7 +5875,6 @@
             "type": "string"
           },
           "maxItems": 12,
-          "minItems": 1,
           "title": "Materialids",
           "type": "array"
         },
@@ -5962,7 +5982,6 @@
         }
       },
       "required": [
-        "materialIds",
         "outputs"
       ],
       "title": "Recipe",

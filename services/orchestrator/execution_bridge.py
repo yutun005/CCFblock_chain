@@ -115,7 +115,7 @@ async def inspect_execution(workspace, designs, session_id, data):
     if not record.get("graph"):
         raise ValueError("请先生成或采用一份任务图")
     settings = data.get("settings", {})
-    allowed = {"materialIds", "budget", "groupBy", "outputs", "tier", "travelRequest", "preference", "reviewSeconds", "coordination"}
+    allowed = {"materialIds", "budget", "groupBy", "outputs", "tier", "travelRequest", "preference", "reviewSeconds"}
     if set(settings) - allowed:
         raise ValueError("未知执行设置")
     if not units(settings.get("budget", "100")):
@@ -162,8 +162,6 @@ async def inspect_execution(workspace, designs, session_id, data):
                     missing = [label for key, label in FIELDS.items() if key not in (recipe.travelRequest or {})]
                     if missing:
                         raise ValueError("请补充：" + "、".join(missing))
-                if recipe.coordination and not {"attraction_search", "hotel_search"} <= {t.skill for t in draft.tasks}:
-                    raise ValueError("双向候选协调需要景点和酒店两项工作；单项交付请关闭此选项")
                 inputs, _ = workspace.inputs(recipe)
                 check["inputHashes"] = [p["sha256"] for p in inputs]
             except ValueError as exc:

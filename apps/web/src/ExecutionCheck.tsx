@@ -32,8 +32,7 @@ export default function ExecutionCheck({
     [ids, setIds] = useState<string[]>([]);
   const [budget, setBudget] = useState("100"),
     [groupBy, setGroupBy] = useState("");
-  const [charts, setCharts] = useState(false),
-    [coordination, setCoordination] = useState(false);
+  const [charts, setCharts] = useState(false);
   const [travel, setTravel] = useState<Row>({}),
     [check, setCheck] = useState<Row | null>(null);
   const [options, setOptions] = useState<Row[]>([]),
@@ -59,21 +58,10 @@ export default function ExecutionCheck({
       setBusy(false);
     }
   }
-  const isTravel =
-    check?.recipe?.scenario === "travel_planning" ||
-    coordination ||
-    session.graph.tasks.some((t: Row) =>
-      [
-        "attraction_search",
-        "hotel_search",
-        "route_planning",
-        "travel_report",
-      ].includes(t.capability),
-    );
   const inspect = async () => {
     setOptions([]);
     setChosen(null);
-    const settings: Row = { materialIds: ids, budget, coordination };
+    const settings: Row = { materialIds: ids, budget };
     if (groupBy) settings.groupBy = groupBy;
     if (charts) settings.outputs = ["report", "charts"];
     if (Object.keys(travel).length) settings.travelRequest = travel;
@@ -147,17 +135,6 @@ export default function ExecutionCheck({
                 }}
               />
               本次明确需要报告与图表
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={coordination}
-                onChange={(e) => {
-                  setCoordination(e.target.checked);
-                  reset();
-                }}
-              />
-              景点与酒店协调候选（含最多一轮补充筛选）
             </label>
           </fieldset>
           <details open={check?.status === "needs_input"}>
@@ -241,27 +218,6 @@ export default function ExecutionCheck({
                   </label>
                 ))}
               </div>
-              {isTravel && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTravel({
-                      destination: "协作演示城",
-                      start_date: "2026-11-01",
-                      days: 2,
-                      travelers: 2,
-                      budget_cents: 40000,
-                      interests: ["culture"],
-                      day_start: "09:00",
-                      day_end: "18:00",
-                    });
-                    setCoordination(true);
-                    reset();
-                  }}
-                >
-                  使用两人两天、400 元的合成协作样例
-                </button>
-              )}
             </fieldset>
           </details>
           <button
@@ -384,7 +340,6 @@ export default function ExecutionCheck({
                 <p key={w.key}>
                   {w.title}：上限 {price(w.estimatedPrice)} USDC
                   {w.requiresReview ? "，需人工验收" : ""}
-                  {w.coordinationMode && <small> · {w.coordinationMode}</small>}
                 </p>
               ))}
               <button
@@ -435,40 +390,26 @@ export function Collaboration({ api, jobId }: { api: Api; jobId: string }) {
   }, [api, jobId]);
   if (!rows.length && !error) return null;
   return (
-    <section className="panel" aria-label="协作记录">
-      <h2>协作记录</h2>
+    <section className="panel" aria-label="执行沟通">
+      <h2>执行沟通</h2>
       {error && <p role="alert">{error}</p>}
       {rows.map((r, i) => (
         <article className="execution-node" key={i}>
           <strong>
             {(
               {
-                candidate: "候选已提交，尚未结算",
-                supplement_request: "请求补充筛选",
-                adjustment: "服务已重新筛选",
-                adopted: "共同检查通过",
-                waiting_providers: "等待协作商家",
-                unresolved: "协调未解决",
+                question: "服务提出执行问题",
+                answer: "相关服务已回复",
+                resumed: "收到信息，继续执行",
+                waiting: "等待服务回复",
+                unavailable: "无法取得所需信息",
+                timeout: "等待回复超时",
               } as Row
             )[r.kind] || r.kind}
           </strong>
           <p>{r.message}</p>
-          {r.candidate?.data?.hotels && (
-            <p>
-              住宿候选：
-              {r.candidate.data.hotels
-                .map(
-                  (h: Row) =>
-                    `${h.name}，${(h.total_cents / 100).toFixed(2)} 元`,
-                )
-                .join("、")}
-            </p>
-          )}
-          {r.hotel && (
-            <p>
-              最终采用 {r.hotel}，目录费用合计 {(r.totalCents / 100).toFixed(2)}{" "}
-              元
-            </p>
+          {r.fromTask !== undefined && r.toTask !== undefined && (
+            <small>工作 {r.fromTask + 1} → 工作 {r.toTask + 1}</small>
           )}
         </article>
       ))}

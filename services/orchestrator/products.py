@@ -19,6 +19,8 @@ class Terms(BaseModel):
     group_by: Literal["organization_quarter", "organization", "category", "month"] = "organization_quarter"
     review_seconds: int = Field(default=1800, ge=60, le=3300, strict=True)
     reused: list[dict] = Field(default_factory=list, max_length=15)
+    communication: Literal["execution-dialogue-v1"] | None = Field(default=None, exclude_if=lambda v: v is None)
+    # Decode historical orders only. The removed coordination workflow is never started.
     coordination: Literal["travel-candidates-v1"] | None = Field(default=None, exclude_if=lambda v: v is None)
     coordination_fixed: dict | None = Field(default=None, exclude_if=lambda v: v is None)
 
@@ -122,12 +124,18 @@ def render_report(spec, inputs, revision=None):
     )
 
     terms = Terms.model_validate(spec.options or {"outputs": ["report", "charts"]})
-    changes = Revision.model_validate(revision or {}).changes
+    revision = revision or {}
+    communication = revision.get("communication")
+    changes = Revision.model_validate({k: v for k, v in revision.items() if k != "communication"}).changes
     travel = spec.skill == "travel_report"
     artifacts = (travel_report if travel else report)(inputs)
     files = {x["name"]: unpack(x) for x in artifacts}
     name = "travel-report.md" if travel else "report.md"
     body = files[name].decode()
+    if communication:
+        from .communication import render_notes
+        body += "\n## 执行依据\n\n" + render_notes(communication["inquiry"]["topic"], communication["response"]["answer"]) + "\n"
+        files["execution-explanation.json"] = canonical(communication)
     if not travel:
         body = body.replace("## 季度统计", "## 统计结果")
     source = next(x for x in inputs if x["name"] == ("itinerary.json" if travel else "statistics.json"))
@@ -343,6 +351,9 @@ def verify_product(spec, inputs, artifacts, revision=None):
             int(r["quantity"]) * int(r["unit_price_cents"]) for r in rows
         ):
             raise ValueError("statistics row/revenue conservation failed")
+    support = next((p for p in artifacts if p["name"] == "execution-explanation.json"), None)
+    if support:
+        revision = {**(revision or {}), "communication": artifact_json(unpack(support))}
     expected = execute_product(spec, inputs, revision)
     if [reference(p) for p in artifacts] != [reference(p) for p in expected]:
         raise ValueError("deliverables do not match frozen scope, source data or requested revision")

@@ -392,7 +392,7 @@ export default function ServiceGraph({
             <>
               <p>范围：{node.scope.supported}</p>
               <p>{node.scope.limits.join("；")}</p>
-              <p>协作：{node.scope.coordinationTerms}</p>
+              <p>执行支持：{node.scope.executionSupport}</p>
             </>
           )}
           <button disabled={busy} onClick={() => editService(node)}>
@@ -423,7 +423,7 @@ export default function ServiceGraph({
                       ? "离线"
                       : "尚未接通"}{" "}
                   · {p.id}
-                  {p.coordination && <span> · 支持候选交接</span>}
+                  {p.executionMessages && <span> · 支持执行信息查询</span>}
                 </p>
                 <p>
                   基础费用 {p.price ? `${price(p.price)} USDC` : "待报价"} ·{" "}

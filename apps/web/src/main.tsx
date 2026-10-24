@@ -87,6 +87,7 @@ const states: Record<string, string> = {
   INTERRUPTED: "已中断",
   BIDDING: "询价中",
   WAITING_AGENT: "等待商家空闲",
+  WAITING_INPUT: "等待服务补充信息",
   WAITING_DEPENDENCIES: "等待前置成果",
   ASSIGNING: "委派确认中",
   RUNNING: "执行中",

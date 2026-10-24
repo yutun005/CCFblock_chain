@@ -104,8 +104,6 @@ def binding(recipe):
     value = {key: getattr(recipe, key) for key in (
         "scenario", "materialIds", "outputs", "tier", "groupBy", "travelRequest", "requirement", "budget",
     )}
-    if recipe.coordination:
-        value["coordination"] = True
     return object_hash(value)
 
 
