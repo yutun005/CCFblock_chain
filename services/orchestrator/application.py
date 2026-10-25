@@ -586,7 +586,7 @@ EVENT_PAYLOADS = {**dict.fromkeys(get_args(TaskPhase), TaskCheckpoint),
                   "JOB_FUNDED": FundedEvent, "STOP_REQUESTED": StopEvent, "QUOTES_RECEIVED": QuotesEvent,
                   "TX_CONFIRMED": ConfirmedEvent, "TX_REVERTED": RevertedEvent,
                   "SCHEDULER_ERROR": ErrorEvent, "WORKER_INTERRUPTED": WorkerEvent,
-                  "RECOVERY_ABORTED": RecoveryEvent, "A2A_COMPLETED": A2AEvent}
+                  "RECOVERY_ABORTED": RecoveryEvent, "A2A_COMPLETED": A2AEvent, "A2A_MESSAGE": A2AEvent}
 
 
 class AuditEvent(StrictModel):
@@ -704,6 +704,9 @@ class UpstreamReference(StrictModel):
     resultHash: HashRef
 
 
+from services.agents.session import Action as ExecutionAction, ExecutionInteraction, ExecutionEvent
+
+
 class ExecutionRequest(ProtocolTaskContext):
     operation: Literal["execute"]
     attempt: RoundIndex
@@ -711,6 +714,7 @@ class ExecutionRequest(ProtocolTaskContext):
     inputs: list[BinaryArtifact]
     upstreamRefs: list[UpstreamReference] = Field(max_length=15)
     revision: dict | None = None
+    interaction: ExecutionInteraction | None = None
 
     @model_validator(mode="after")
     def dependencies_match(self):
@@ -1039,7 +1043,8 @@ def ab_handoff_document() -> dict:
 PROTOCOL_MODELS = {model.__name__: model for model in (
     BAgentCard, BTaskRequest, BDAGPayload, BRFQRequest, BQuote, BResult,
     RFQRequest, RFQReply, QuoteRequest, QuoteReply, ExecutionRequest, ServiceDelivery,
-    VerificationRequest, VerificationReply, QuotePayload, ResultPayload, AttestationPayload)}
+    VerificationRequest, VerificationReply, QuotePayload, ResultPayload, AttestationPayload,
+    ExecutionAction, ExecutionInteraction, ExecutionEvent)}
 
 
 def validate_protocol(name: str, payload: dict) -> None:
@@ -1064,6 +1069,12 @@ def protocol_schema_document():
             "stopMode": "stop_future_delegation", "withdrawalScope": "job",
             "integerEncoding": "uint64/uint256 use canonical decimal strings on the wire; uint8/uint32 use integers",
             "abHandoff": ab_handoff_document(),
+            "executionSessions": {"version": "execution-session-v2", "cardTag": "agentflow:execution-session-v2",
+                "maxTurns": 48, "maxRequestsPerAttempt": 6, "maxCandidates": 3,
+                "requestSchema": "ExecutionRequest", "responseSchema": "ExecutionEvent",
+                "signing": "canonical JSON challenge signature; bind chain, escrow, job, plan, node, attempt, executionId and sequence",
+                "intermediatePayment": False, "peerScope": "same job, currently assigned node and active session",
+                "legacy": "execution-dialogue-v1 remains only for previously frozen orders"},
             "signedFields": {kind: [{"name": name, "type": typ} for name, typ in fields]
                              for kind, fields in FIELDS.items()},
             "schemas": {name: {"$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2126,8 +2137,9 @@ class SQLiteTaskStore(TaskStore):
 
 
 class ServiceExecutor(AgentExecutor):
-    def __init__(self, config: dict, chain: Chain, db: Database):
+    def __init__(self, config: dict, chain: Chain, db: Database, worker=None):
         self.config, self.chain, self.db = config, chain, db
+        self.worker = worker
         self.wallet = Account.from_key(config["key"]).address
         self.locks: dict[str, asyncio.Lock] = {}
         self.active: dict[str, asyncio.Task] = {}
@@ -2157,12 +2169,17 @@ class ServiceExecutor(AgentExecutor):
                     response = await self.handle(request)
                     self.db.put("responses", identity, {"requestHash": digest, "response": response,
                                                         "a2aTaskId": context.task_id})
-                self.db.event(request.get("jobId", "registration"), "A2A_COMPLETED",
+                self.db.event(request.get("jobId", "registration"), "A2A_MESSAGE" if response.get("kind") in {"execution_event", "needs_input"} else "A2A_COMPLETED",
                               {"operation": request["operation"], "idempotencyKey": identity,
                                "taskId": context.task_id, "requestHash": digest})
             await updater.add_artifact(parts=[Part(text=canonical(to_wire(response)).decode(), media_type="application/json")],
                                        name="agentflow:" + identity, last_chunk=True)
-            if response.get("kind") == "needs_input":
+            if response.get("kind") == "execution_event":
+                if response["action"]["kind"] in {"final", "failure"}:
+                    await updater.complete()
+                else:
+                    await updater.requires_input(message=updater.new_agent_message(parts=[Part(text=response["action"]["message"])]))
+            elif response.get("kind") == "needs_input":
                 await updater.requires_input(message=updater.new_agent_message(parts=[Part(text=response["inquiry"]["question"])]))
             else:
                 await updater.complete()
@@ -2226,13 +2243,23 @@ class ServiceExecutor(AgentExecutor):
             raise ValueError("skill not offered")
         if (spec.options or {}).get("coordination"):
             raise ValueError("旧酒店候选协调已停用；该委托不能降级执行，请取消或按原期限收尾")
+        from .sessions import enabled as session_enabled, service_turn
+        if session_enabled(spec):
+            return await service_turn(self, request, spec)
         from .communication import service_step, record_execution
         waiting = await asyncio.to_thread(service_step, self, request, spec)
         if waiting:
             return waiting
+        delivery = await self.produce_delivery(request, spec, state)
+        record_execution(self, request, delivery, spec)
+        return delivery
+
+    async def produce_delivery(self, request, spec, state, artifacts=None):
+        """Run this provider's business tool; no platform-side fabricated output."""
         from services.agents.business import BusinessAgent
         from services.marketplace.models import TaskRequest as BRequest
         service = BusinessAgent(self.config["id"], self.config["id"], list(self.config["prices"]),
+                               product_tool=(lambda *_: artifacts) if artifacts is not None else None,
                                private_key=int.from_bytes(Account.from_key(self.config["key"]).key, "big"),
                                domain={"name":"DASC", "version":"1", "chain_id":self.chain.chain_id,
                                        "verifying_contract":self.chain.escrow.address}, clock=lambda:self.chain.now)
@@ -2242,11 +2269,10 @@ class ServiceExecutor(AgentExecutor):
         result = await asyncio.to_thread(service.handle, BRequest(request["jobId"], request["taskId"],
                                         request["attempt"], spec.skill, payload, state["config"]["requirementHash"]))
         delivery = b_result_delivery({"task_id":request["taskId"], "status":"completed", "artifact":result.as_dict()}, request["taskId"])
-        record_execution(self, request, delivery, spec)
         return delivery
 
 
-def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> FastAPI:
+def agent_app(config: dict, deployment: dict, runtime: Path, token: str, *, worker=None) -> FastAPI:
     db = Database(runtime / "agents" / config["id"] / "agent.sqlite")
     chain = Chain(deployment["rpc"], runtime, deployment)
     wallet = Account.from_key(config["key"]).address
@@ -2254,10 +2280,10 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str) -> Fast
                      version="1.0.0", capabilities=AgentCapabilities(streaming=False),
                      default_input_modes=["application/json"], default_output_modes=["application/json"],
                      skills=[AgentSkill(id=skill, name=skill, description="Deterministic " + SKILL_POLICIES[skill] + " executor",
-                                        tags=["agentflow", SKILL_POLICIES[skill], "agentflow:execution-dialogue-v1"]) for skill in config["prices"]],
+                                        tags=["agentflow", SKILL_POLICIES[skill], "agentflow:execution-dialogue-v1", "agentflow:execution-session-v2"]) for skill in config["prices"]],
                      supported_interfaces=[AgentInterface(protocol_binding="JSONRPC", protocol_version="1.0",
                                                            url=config["endpoint"] + "/a2a/jsonrpc")])
-    executor = ServiceExecutor(config, chain, db)
+    executor = ServiceExecutor(config, chain, db, worker=worker)
     handler = DefaultRequestHandler(agent_executor=executor,
                                     task_store=SQLiteTaskStore(db), agent_card=card)
     async def maintain_registration():
@@ -2432,7 +2458,11 @@ async def a2a_call(endpoint: str, payload: dict, token: str, timeout: float = 15
                     value = signed_from_wire(json.loads(artifact.parts[0].text))
                     if task.status.state not in {TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_INPUT_REQUIRED}:
                         return None
-                    if value.get("kind") == "needs_input":
+                    if value.get("kind") == "execution_event":
+                        if not payload.get("interaction"):
+                            raise ValueError("服务在未约定执行会话的调用中返回了中间消息")
+                        validate_protocol("ExecutionEvent", value)
+                    elif value.get("kind") == "needs_input":
                         if value.get("messageKey") != identity:
                             raise ValueError("补充信息请求状态或消息标识不符")
                     elif not assisting:
@@ -2983,7 +3013,7 @@ class Market:
                 if agent["wallet"] in excluded:
                     raise ValueError("failed earlier attempt for this task")
                 from .communication import enabled, supports
-                if enabled(spec) and not supports(agent, spec.skill):
+                if (spec.options or {}).get("communication") and not supports(agent, spec.skill, spec.options["communication"]):
                     raise ValueError("service does not implement the authorized execution dialogue")
                 payload = {k: request[k] for k in ("jobId", "taskId", "attempt", "plan")}
                 payload.update(operation="quote", idempotencyKey=request["idempotencyKey"] + ":" + agent["agentId"])
@@ -3224,7 +3254,7 @@ class Engine:
         if not binding:
             raise ValueError("selected agent has no registered wallet binding")
         from .communication import enabled, supports
-        if enabled(spec) and not supports(binding, spec.skill):
+        if (spec.options or {}).get("communication") and not supports(binding, spec.skill, spec.options["communication"]):
             raise ValueError("所选商家没有接通本次委托要求的执行沟通")
         challenge = binding.get("challenge")
         if not isinstance(challenge, dict) or not binding.get("signature"):
@@ -3315,6 +3345,9 @@ class Engine:
         if self.service_transport == "a2a-v1":
             from .communication import enabled, execute_with_messages
             spec = Plan.model_validate(payload["plan"]).topological()[payload["taskId"]]
+            from .sessions import enabled as session_enabled, execute as execute_session
+            if session_enabled(spec):
+                return await execute_session(self, endpoint, payload, state)
             if enabled(spec):
                 return await execute_with_messages(self, endpoint, payload, state)
             return await a2a_call(endpoint, payload, self.token, timeout=timeout)
@@ -3954,6 +3987,8 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     workspace = install(app, engine, config, start)
     from .communication import install as install_communication
     install_communication(app, engine)
+    from .sessions import install as install_sessions
+    install_sessions(app, engine)
 
     @app.exception_handler(httpx.RequestError)
     async def unavailable_service(_request, exc):

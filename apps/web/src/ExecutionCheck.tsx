@@ -368,13 +368,20 @@ export default function ExecutionCheck({
 export function Collaboration({ api, jobId }: { api: Api; jobId: string }) {
   const [rows, setRows] = useState<Row[]>([]),
     [error, setError] = useState("");
+  const [questions, setQuestions] = useState<Row[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     async function poll() {
       try {
-        const value = await api(`/api/jobs/${jobId}/collaboration`);
+        const [value, pending] = await Promise.all([
+          api(`/api/jobs/${jobId}/collaboration`),
+          api(`/api/jobs/${jobId}/communication/requests`),
+        ]);
         if (alive) {
           setRows(value);
+          setQuestions(pending);
           setError("");
         }
       } catch (e) {
@@ -388,11 +395,53 @@ export function Collaboration({ api, jobId }: { api: Api; jobId: string }) {
       clearInterval(timer);
     };
   }, [api, jobId]);
-  if (!rows.length && !error) return null;
+  async function reply(id: string) {
+    setSending(id);
+    setError("");
+    try {
+      await api(`/api/jobs/${jobId}/communication/requests/${id}/reply`, {
+        message: answers[id].trim(),
+      });
+      setQuestions((current) => current.filter((q) => q.id !== id));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSending(null);
+    }
+  }
+  if (!rows.length && !questions.length && !error) return null;
   return (
     <section className="panel" aria-label="执行沟通">
       <h2>执行沟通</h2>
       {error && <p role="alert">{error}</p>}
+      {questions.map((q) => (
+        <form
+          key={q.id}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void reply(q.id);
+          }}
+        >
+          <label>
+            工作 {q.taskId + 1} 需要补充：{q.message}
+            <textarea
+              value={answers[q.id] || ""}
+              maxLength={4000}
+              onChange={(event) =>
+                setAnswers({ ...answers, [q.id]: event.target.value })
+              }
+              required
+              disabled={sending !== null}
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={sending !== null || !answers[q.id]?.trim()}
+          >
+            {sending === q.id ? "发送中…" : "发送补充说明"}
+          </button>
+        </form>
+      ))}
       {rows.map((r, i) => (
         <article className="execution-node" key={i}>
           <strong>
@@ -404,12 +453,26 @@ export function Collaboration({ api, jobId }: { api: Api; jobId: string }) {
                 waiting: "等待服务回复",
                 unavailable: "无法取得所需信息",
                 timeout: "等待回复超时",
+                progress: "执行进度",
+                request: "服务提出请求",
+                reply: "服务回复",
+                candidate: "中间成果",
+                candidate_accepted: "候选检查通过",
+                candidate_rejected: "候选需要修正",
+                final: "正式成果已提交，等待验收",
+                failure: "服务无法继续",
+                wait: "等待补充信息",
               } as Row
             )[r.kind] || r.kind}
           </strong>
           <p>{r.message}</p>
-          {r.fromTask !== undefined && r.toTask !== undefined && (
-            <small>工作 {r.fromTask + 1} → 工作 {r.toTask + 1}</small>
+          {typeof r.fromTask === "number" && typeof r.toTask === "number" && (
+            <small>
+              工作 {r.fromTask + 1} → 工作 {r.toTask + 1}
+            </small>
+          )}
+          {typeof r.fromTask === "number" && typeof r.toTask !== "number" && (
+            <small>工作 {r.fromTask + 1}</small>
           )}
         </article>
       ))}

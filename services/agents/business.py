@@ -13,6 +13,10 @@ def execute_registered_skill(skill, inputs):
 
 
 class BusinessAgent(BaseAgent):
+    def __init__(self, *args, product_tool=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.product_tool = product_tool
+
     def execute(self, task):
         if task.payload.get("contract") == "agentflow-dag-v1":
             from services.orchestrator.application import Plan, reference
@@ -21,7 +25,7 @@ class BusinessAgent(BaseAgent):
             if spec.skill != task.skill:
                 raise ValueError("DAG skill mismatch")
             from services.orchestrator.products import execute_product
-            artifacts = execute_product(spec, task.payload["inputs"], task.payload.get("revision"))
+            artifacts = (self.product_tool or execute_product)(spec, task.payload["inputs"], task.payload.get("revision"))
             return {"manifest": {"jobId": task.job_id, "taskId": task.task_id, "attempt": task.attempt,
                                   "agentWallet": self.wallet, "requirementHash": task.requirement_hash,
                                   "inputRefs": [reference(x) for x in task.payload["inputs"]],

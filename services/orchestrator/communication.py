@@ -17,8 +17,8 @@ def enabled(spec):
     return (spec.options or {}).get("communication") == VERSION
 
 
-def supports(agent, skill):
-    return any(s.get("id") == skill and "agentflow:" + VERSION in s.get("tags", [])
+def supports(agent, skill, version=VERSION):
+    return any(s.get("id") == skill and "agentflow:" + version in s.get("tags", [])
                for s in agent.get("card", {}).get("skills", []) if isinstance(s, dict))
 
 

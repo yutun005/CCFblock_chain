@@ -1353,7 +1353,8 @@
               "SCHEDULER_ERROR",
               "WORKER_INTERRUPTED",
               "RECOVERY_ABORTED",
-              "A2A_COMPLETED"
+              "A2A_COMPLETED",
+              "A2A_MESSAGE"
             ],
             "title": "Kind",
             "type": "string"
@@ -1872,6 +1873,25 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "A2A_MESSAGE"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/A2AEvent"
+                }
+              }
+            }
           }
         ]
       },
@@ -2249,6 +2269,19 @@
           "policyId": "0x302c1c82e416049314f33bed0de87d4dcf907d567aa211627024fe678ace0d9c"
         }
       }
+    },
+    "executionSessions": {
+      "version": "execution-session-v2",
+      "cardTag": "agentflow:execution-session-v2",
+      "maxTurns": 48,
+      "maxRequestsPerAttempt": 6,
+      "maxCandidates": 3,
+      "requestSchema": "ExecutionRequest",
+      "responseSchema": "ExecutionEvent",
+      "signing": "canonical JSON challenge signature; bind chain, escrow, job, plan, node, attempt, executionId and sequence",
+      "intermediatePayment": false,
+      "peerScope": "same job, currently assigned node and active session",
+      "legacy": "execution-dialogue-v1 remains only for previously frozen orders"
     },
     "signedFields": {
       "Quote": [
@@ -4092,6 +4125,51 @@
             "title": "BinaryArtifact",
             "type": "object"
           },
+          "ExecutionInteraction": {
+            "additionalProperties": false,
+            "properties": {
+              "executionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "title": "Executionid",
+                "type": "string"
+              },
+              "sequence": {
+                "exclusiveMaximum": 48,
+                "minimum": 0,
+                "title": "Sequence",
+                "type": "integer"
+              },
+              "feedback": {
+                "additionalProperties": true,
+                "title": "Feedback",
+                "type": "object"
+              },
+              "messages": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 96,
+                "title": "Messages",
+                "type": "array"
+              },
+              "signature": {
+                "pattern": "^0x[0-9a-fA-F]{130}$",
+                "title": "Signature",
+                "type": "string"
+              }
+            },
+            "required": [
+              "executionId",
+              "sequence",
+              "feedback",
+              "messages",
+              "signature"
+            ],
+            "title": "ExecutionInteraction",
+            "type": "object"
+          },
           "ExecutionPolicy": {
             "additionalProperties": false,
             "properties": {
@@ -4390,6 +4468,17 @@
             ],
             "default": null,
             "title": "Revision"
+          },
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ExecutionInteraction"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -5530,6 +5619,351 @@
           "attestationNonce"
         ],
         "title": "AttestationPayload",
+        "type": "object"
+      },
+      "Action": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "progress",
+              "request",
+              "reply",
+              "candidate",
+              "final",
+              "failure",
+              "wait"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "To"
+          },
+          "intent": {
+            "default": "information",
+            "enum": [
+              "information",
+              "adjustment"
+            ],
+            "title": "Intent",
+            "type": "string"
+          },
+          "replyTo": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Replyto"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "answered",
+                  "accepted",
+                  "declined"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Status"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delivery"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "Action",
+        "type": "object"
+      },
+      "ExecutionInteraction": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "executionId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Executionid",
+            "type": "string"
+          },
+          "sequence": {
+            "exclusiveMaximum": 48,
+            "minimum": 0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "feedback": {
+            "additionalProperties": true,
+            "title": "Feedback",
+            "type": "object"
+          },
+          "messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 96,
+            "title": "Messages",
+            "type": "array"
+          },
+          "signature": {
+            "pattern": "^0x[0-9a-fA-F]{130}$",
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "executionId",
+          "sequence",
+          "feedback",
+          "messages",
+          "signature"
+        ],
+        "title": "ExecutionInteraction",
+        "type": "object"
+      },
+      "ExecutionEvent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "Action": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "progress",
+                  "request",
+                  "reply",
+                  "candidate",
+                  "final",
+                  "failure",
+                  "wait"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "message": {
+                "maxLength": 4000,
+                "minLength": 1,
+                "title": "Message",
+                "type": "string"
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "To"
+              },
+              "intent": {
+                "default": "information",
+                "enum": [
+                  "information",
+                  "adjustment"
+                ],
+                "title": "Intent",
+                "type": "string"
+              },
+              "replyTo": {
+                "anyOf": [
+                  {
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Replyto"
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "answered",
+                      "accepted",
+                      "declined"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Status"
+              },
+              "data": {
+                "additionalProperties": true,
+                "title": "Data",
+                "type": "object"
+              },
+              "delivery": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Delivery"
+              }
+            },
+            "required": [
+              "kind",
+              "message"
+            ],
+            "title": "Action",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "execution_event",
+            "title": "Kind",
+            "type": "string"
+          },
+          "version": {
+            "const": "execution-session-v2",
+            "title": "Version",
+            "type": "string"
+          },
+          "jobId": {
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "title": "Jobid",
+            "type": "string"
+          },
+          "taskId": {
+            "maximum": 15,
+            "minimum": 0,
+            "title": "Taskid",
+            "type": "integer"
+          },
+          "attempt": {
+            "maximum": 255,
+            "minimum": 0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "planHash": {
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "title": "Planhash",
+            "type": "string"
+          },
+          "chain": {
+            "pattern": "^[1-9][0-9]*$",
+            "title": "Chain",
+            "type": "string"
+          },
+          "escrow": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "title": "Escrow",
+            "type": "string"
+          },
+          "executionId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Executionid",
+            "type": "string"
+          },
+          "sequence": {
+            "exclusiveMaximum": 48,
+            "minimum": 0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "wallet": {
+            "pattern": "^0x[0-9a-fA-F]{40}$",
+            "title": "Wallet",
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/$defs/Action"
+          },
+          "id": {
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "signature": {
+            "pattern": "^0x[0-9a-fA-F]{130}$",
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "version",
+          "jobId",
+          "taskId",
+          "attempt",
+          "planHash",
+          "chain",
+          "escrow",
+          "executionId",
+          "sequence",
+          "wallet",
+          "action",
+          "id",
+          "signature"
+        ],
+        "title": "ExecutionEvent",
         "type": "object"
       }
     }

@@ -504,8 +504,8 @@ class Workspace:
         agents = [agent for agent in await self.engine.agents()
                   if agent["agentId"] in allowed and agent["status"] == "ONLINE" and spec.skill in agent["skills"]]
         from .communication import enabled, supports
-        if enabled(spec):
-            agents = [agent for agent in agents if supports(agent, spec.skill)]
+        if (spec.options or {}).get("communication"):
+            agents = [agent for agent in agents if supports(agent, spec.skill, spec.options["communication"])]
 
         async def estimate(agent):
             try:
@@ -641,7 +641,7 @@ class Workspace:
                 else [],
                 group_by=recipe.groupBy if spec.key == "statistics" else "organization_quarter",
                 review_seconds=recipe.reviewSeconds,
-                communication="execution-dialogue-v1" if self.engine.service_transport == "a2a-v1" else None,
+                communication="execution-session-v2" if self.engine.service_transport == "a2a-v1" else None,
             ).model_dump()
             semantic = {
                 "skill": spec.skill,

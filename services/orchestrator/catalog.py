@@ -231,7 +231,7 @@ async def graph(workspace, query="", scenario=None, *, with_history=False):
             providers.setdefault(service_id, []).append({"id": merchant["id"], "name": merchant["name"],
                 "online": online, "wallet": agent["wallet"] if agent else None,
                 "connected": bool(agent), "busy": bool(agent and agent["wallet"] in occupied),
-                "executionMessages": any(s.get("id") == service_id and "agentflow:execution-dialogue-v1" in s.get("tags", [])
+                "executionMessages": any(s.get("id") == service_id and "agentflow:execution-session-v2" in s.get("tags", [])
                                          for s in (agent or {}).get("card", {}).get("skills", []) if isinstance(s, dict)),
                 "price": offer["price"] if offer else None, "seconds": offer["seconds"] if offer else None,
                 "history": reliability(merchant, offer), "source": merchant.get("source", "registry")})
@@ -303,7 +303,7 @@ def capability_scope(skill):
             "validation": known[3] if known else "尚未接入",
             "parameters": ({"days": "1–7", "travelers": "1–20", "currency": "人民币分", "interests": ["culture", "nature"], "dateRange": "按已冻结演示资料版本检查"} if travel else
                            {"groupBy": ["month", "category", "organization", "organization_quarter"], "outputs": ["report", "charts"], "currency": "人民币分；无利润或预测字段"}),
-            "executionSupport": "实际成果与执行记录的有界查询；不追加工作、不改变预算"}
+            "executionSupport": "执行中报告进度、提出阻塞、交接候选、接收调整并继续；支持同项目有效委派间消息"}
 
 
 def install(app, workspace):

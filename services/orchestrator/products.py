@@ -19,7 +19,7 @@ class Terms(BaseModel):
     group_by: Literal["organization_quarter", "organization", "category", "month"] = "organization_quarter"
     review_seconds: int = Field(default=1800, ge=60, le=3300, strict=True)
     reused: list[dict] = Field(default_factory=list, max_length=15)
-    communication: Literal["execution-dialogue-v1"] | None = Field(default=None, exclude_if=lambda v: v is None)
+    communication: Literal["execution-dialogue-v1", "execution-session-v2"] | None = Field(default=None, exclude_if=lambda v: v is None)
     # Decode historical orders only. The removed coordination workflow is never started.
     coordination: Literal["travel-candidates-v1"] | None = Field(default=None, exclude_if=lambda v: v is None)
     coordination_fixed: dict | None = Field(default=None, exclude_if=lambda v: v is None)
