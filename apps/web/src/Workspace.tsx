@@ -870,8 +870,8 @@ export default function Workspace({
               </h2>
               <p>
                 {planner?.configured
-                  ? "提交后先整理需求与必要补问；确认需求后才生成任务图。"
-                  : "模型接口尚未配置完成。填写配置后可使用需求理解、补问和 DAG 规划；也可以明确选用已有模板。"}
+                  ? "主智能体负责拆任务，子智能体用同一个模型执行各自工作，无需分别配置。"
+                  : "填写一次模型配置，主智能体与子智能体共同使用；未配置时仍可使用模板和内置业务工具。"}
               </p>
               {!planner?.configured && (
                 <details>
@@ -880,7 +880,7 @@ export default function Workspace({
                     打开项目根目录的 <code>planner.local.json</code>，填写{" "}
                     <code>endpoint</code>（完整 Chat Completions 地址）、
                     <code>model</code> 和 <code>apiKey</code>
-                    。保存后点击右侧“重新检查配置”。密钥保留在本机文件中。
+                    。保存后点击右侧“重新检查配置”，新执行会话自动使用这份配置。
                   </p>
                 </details>
               )}
@@ -894,7 +894,7 @@ export default function Workspace({
                   setPlanner(result);
                   setNotice(
                     result.configured
-                      ? "模型配置已就绪，现在可以提交需求。"
+                      ? "主智能体与子智能体的共用模型已配置，现在可以提交需求。"
                       : result.message ||
                           "模型配置仍未完成，请检查接口地址、模型名和 API Key。",
                   );

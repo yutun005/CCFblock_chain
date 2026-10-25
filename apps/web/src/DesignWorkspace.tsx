@@ -796,7 +796,7 @@ export default function DesignWorkspace({
                 <strong>模型尚未配置</strong>
                 <p>
                   填写项目根目录 planner.local.json 的接口地址、模型与 API
-                  Key，便可开始对话。模板可以直接使用。
+                  Key，即可让主智能体与子智能体共用同一模型，无需分别填写。模板可以直接使用。
                 </p>
                 <button
                   type="button"

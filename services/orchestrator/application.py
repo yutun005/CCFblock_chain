@@ -2276,10 +2276,10 @@ def agent_app(config: dict, deployment: dict, runtime: Path, token: str, *, work
     db = Database(runtime / "agents" / config["id"] / "agent.sqlite")
     chain = Chain(deployment["rpc"], runtime, deployment)
     wallet = Account.from_key(config["key"]).address
-    card = AgentCard(name=config["id"], description="Sales analysis service; independent wallet " + wallet,
+    card = AgentCard(name=config["id"], description="Business service with shared-model execution; independent wallet " + wallet,
                      version="1.0.0", capabilities=AgentCapabilities(streaming=False),
                      default_input_modes=["application/json"], default_output_modes=["application/json"],
-                     skills=[AgentSkill(id=skill, name=skill, description="Deterministic " + SKILL_POLICIES[skill] + " executor",
+                     skills=[AgentSkill(id=skill, name=skill, description="Model-driven service with verified tools: " + SKILL_POLICIES[skill],
                                         tags=["agentflow", SKILL_POLICIES[skill], "agentflow:execution-dialogue-v1", "agentflow:execution-session-v2"]) for skill in config["prices"]],
                      supported_interfaces=[AgentInterface(protocol_binding="JSONRPC", protocol_version="1.0",
                                                            url=config["endpoint"] + "/a2a/jsonrpc")])
@@ -4442,7 +4442,9 @@ class ServiceCluster:
                                 else {a["keyEnv"] for a in self.settings["agents"] if a["id"] == role})
                 for variable in signing_vars - allowed_keys:
                     child_env.pop(variable, None)
-                if role != "api":
+                # The managed execution agents use the same model configuration as planning.
+                # Only infrastructure roles have no reason to receive the model API credential.
+                if role not in {"api", *(a["id"] for a in self.settings["agents"])}:
                     from .planning import configuration
 
                     try:

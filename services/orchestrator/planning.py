@@ -67,11 +67,11 @@ def status():
     try:
         config, _, ready = configuration()
         return {"configured": ready, "model": config.model, "configFile": "planner.local.json",
-                "flowVersion": "requirements-dag-v1",
-                "message": "可调用已配置模型拆解新目标，也可直接复用模板。" if ready else "尚未配置模型；仍可搜索、采用和修改模板，新的目标拆解待接入模型后使用。"}
+                "flowVersion": "requirements-dag-v1", "serviceExecution": "shared-model" if ready else "builtin-tools",
+                "message": "主智能体与本项目子智能体共用此模型配置；无需分别填写。" if ready else "尚未配置模型；模板与内置业务工具仍可使用。配置一次后，主智能体与子智能体共用。"}
     except ValueError as exc:
         return {"configured": False, "model": "", "configFile": "planner.local.json",
-                "flowVersion": "requirements-dag-v1", "message": str(exc)}
+                "flowVersion": "requirements-dag-v1", "serviceExecution": "configuration-error", "message": str(exc)}
 
 
 class PlannedTask(BaseModel):
@@ -217,12 +217,13 @@ async def review_draft(workspace, planning_id, data):
                               intake=intake)
 
 
-async def completion(config, secret, messages):
+async def completion(config, secret, messages, *, purpose="planning"):
     body = {"model": config.model, "messages": messages, config.tokenParameter: config.maxTokens, "stream": False}
     if config.responseFormat == "json_object":
         body["response_format"] = {"type": "json_object"}
     headers = {"Authorization": "Bearer " + secret} if secret else {}
-    # Never execute model tools, follow redirects, or send wallet keys / actual material contents.
+    # Callers build scoped business context; credentials only go in the authorization header.
+    # Service workers interpret validated JSON decisions and run their own allowlisted tools.
     try:
         async with httpx.AsyncClient(trust_env=False, timeout=config.timeoutSeconds, follow_redirects=False) as client:
             async with client.stream("POST", config.endpoint, json=body, headers=headers) as response:
@@ -236,15 +237,15 @@ async def completion(config, secret, messages):
         answer = json.loads(payload)
         choice = answer["choices"][0]
         if choice.get("finish_reason") != "stop" or choice["message"].get("tool_calls") or choice["message"].get("refusal"):
-            raise ValueError("模型未返回完整规划（截断、拒绝或请求执行工具），请调整目标或配置")
+            raise ValueError("模型未返回完整内容（截断、拒绝或格式不符），请调整模型配置")
         content = choice["message"]["content"]
         if not isinstance(content, str) or len(content) > 40000:
-            raise ValueError("模型未返回有效的文本规划")
+            raise ValueError("模型未返回有效的文本内容")
         return content
     except httpx.TimeoutException:
-        raise ValueError("模型调用超时，未创建任务或托管资金，可重试") from None
+        raise ValueError("子智能体模型调用超时，本次未提交成果。" if purpose == "execution" else "模型调用超时，未创建任务或托管资金，可重试") from None
     except httpx.HTTPError:
-        raise ValueError("模型接口连接失败，未创建任务或托管资金") from None
+        raise ValueError("子智能体无法连接共用模型接口，本次未提交成果。" if purpose == "execution" else "模型接口连接失败，未创建任务或托管资金") from None
     except (KeyError, IndexError, TypeError, json.JSONDecodeError):
         raise ValueError("模型接口响应不符合 Chat Completions 格式") from None
 

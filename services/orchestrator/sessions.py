@@ -9,7 +9,8 @@ import asyncio
 import copy
 import time
 
-from services.agents.session import Action, BusinessWorker, Context
+from services.agents.session import Action, Context
+from services.agents.model_worker import SharedWorker
 from .communication import clock, signed
 
 VERSION = "execution-session-v2"
@@ -105,12 +106,17 @@ async def service_turn(executor, request, spec):
             return cached["response"]
         if record["next"] != seq or record["frozen"] != frozen or record.get("finished"):
             raise ValueError("不能跳过轮次、修改原输入或重新打开已结束会话")
-        worker = executor.worker or BusinessWorker()
+        worker = executor.worker or SharedWorker()
         context = Context(copy.deepcopy(request), spec, copy.deepcopy(interaction["feedback"]),
                           copy.deepcopy(interaction["messages"]), copy.deepcopy(record["state"]),
                           lambda: executor.produce_delivery(request, spec, state),
                           lambda artifacts: executor.produce_delivery(request, spec, state, artifacts=artifacts))
-        action, worker_state = await worker.advance(context)
+        try:
+            action, worker_state = await asyncio.wait_for(worker.advance(context),
+                timeout=max(.01, state["deadline"] - clock(executor.chain) - 5))
+        except asyncio.TimeoutError:
+            action = Action(kind="failure", message="本步骤执行时间已到，模型或工具未及时返回；本次未提交成果。")
+            worker_state = record["state"]
         action = Action.model_validate(action)
         if len(canonical(worker_state)) > 32_000_000:
             raise ValueError("服务执行状态超过允许大小")
@@ -330,7 +336,7 @@ async def _execute(engine, endpoint, payload, state):
         for retry in range(3):
             try:
                 call = await a2a_call(endpoint, wire, engine.token, task_id=record.get("a2aTaskId"),
-                                      timeout=max(1, min(20, state["deadline"] - clock(engine.chain) - 5)))
+                                      timeout=max(1, state["deadline"] - clock(engine.chain) - 4))
                 break
             except (httpx.HTTPError, A2AClientError):
                 if retry == 2:
