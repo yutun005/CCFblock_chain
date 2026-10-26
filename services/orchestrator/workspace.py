@@ -1145,6 +1145,32 @@ def install(app, engine, config, start):
     def reviews(job_id: str):
         return workspace.reviews(job_id)
 
+    @app.get("/api/workspace/jobs/{job_id}/tasks/{task_id}/outputs")
+    def task_outputs(job_id: str, task_id: int):
+        from .application import Plan, unpack
+        job = engine.db.get("jobs", job_id)
+        if not job or not 0 <= task_id < len(Plan.model_validate(job["plan"]).tasks):
+            raise HTTPException(404, "子任务不存在")
+        state = engine.chain.task(job_id, task_id)
+        ended = state["state"] == 3
+        deliveries = [d for d in engine.db.values("results")
+                      if d["manifest"]["jobId"] == job_id and d["manifest"]["taskId"] == task_id
+                      and (d["manifest"]["attempt"] == state["attempt"] or
+                           ended and d["manifest"]["attempt"] < state["attempt"])]
+        deliveries.sort(key=lambda d: d["manifest"]["attempt"])
+        stage = "submitted"
+        if not deliveries:
+            frames = [f for f in engine.db.values("execution_frames") if f["jobId"] == job_id
+                      and f["taskId"] == task_id and f["attempt"] == state["attempt"]
+                      and f["action"].get("delivery")]
+            frames.sort(key=lambda f: f["sequence"])
+            deliveries = [f["action"]["delivery"] for f in frames]
+            stage = "candidate"
+        return {"stage": "ended" if ended else stage, "files": [
+            {"name": p["name"], "media_type": p.get("media_type", "text/plain"),
+             "text": unpack(p).decode("utf-8-sig", errors="replace")}
+            for p in deliveries[-1]["artifacts"]] if deliveries else []}
+
     @app.post("/api/workspace/reviews/{review_id}")
     async def decide(review_id: str, data: dict):
         return await workspace.decide(review_id, data)

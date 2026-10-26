@@ -44,6 +44,7 @@ import "@xyflow/react/dist/style.css";
 import "./style.css";
 import Workspace from "./Workspace";
 import DesignWorkspace from "./DesignWorkspace";
+import { ReviewInbox } from "./Deliverables";
 import { Collaboration } from "./ExecutionCheck";
 import { amount, price, tokenUnits } from "./amount";
 
@@ -704,7 +705,7 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">AUTONOMOUS COLLABORATION</div>
+                  <div className="eyebrow">任务执行与交付</div>
                   <h1>{nav.find((n) => n[0] === tab)?.[1]}</h1>
                   <p>从服务发现到成果交付，追踪每个节点和每笔报酬。</p>
                 </div>
@@ -716,7 +717,7 @@ function App() {
               <div className="mode-note">
                 <LockKeyhole size={16} />
                 <span>
-                  任务依赖调度 · 独立成果验证 · A2A 服务协作 · 合约托管结算
+                  任务依赖调度 · 独立成果验证 · 智能体协作 · 合约托管结算
                 </span>
               </div>
               {error && (
@@ -833,6 +834,12 @@ function App() {
                   </div>
                   {tab === "overview" && (
                     <>
+                      <ReviewInbox
+                        key={`review-${job.jobId}`}
+                        api={api}
+                        jobId={job.jobId}
+                        onChange={refresh}
+                      />
                       <section className="panel">
                         <div className="panel-heading">
                           <div>
@@ -914,11 +921,16 @@ function App() {
                             <i className="legend-dot waiting" />
                             等待委派
                           </span>
-                          <span>点击节点查看报价与执行证据</span>
+                          <span>点击任务查看费用与执行状态</span>
                         </div>
                       </section>
+                      <Collaboration
+                        key={`collaboration-${job.jobId}`}
+                        api={api}
+                        jobId={job.jobId}
+                        tasks={job.tasks}
+                      />
                       <div className="detail-grid">
-                        <Collaboration api={api} jobId={job.jobId} />
                         <section className="panel">
                           <div className="panel-heading">
                             <div>
@@ -964,9 +976,15 @@ function App() {
                                 <div>
                                   <span>验收结果</span>
                                   <strong>
-                                    {currentTask.checkpoint.verification?.passed
-                                      ? "客观规则通过"
-                                      : "等待验证"}
+                                    {currentTask.checkpoint.status ===
+                                    "AWAITING_REVIEW"
+                                      ? "报告已生成，等待您验收"
+                                      : currentTask.onchain.state === 2
+                                        ? "验证通过并已结算"
+                                        : currentTask.checkpoint.verification
+                                              ?.passed
+                                          ? "系统检查通过"
+                                          : "尚未完成检查"}
                                   </strong>
                                 </div>
                               </div>
@@ -1048,11 +1066,23 @@ function App() {
                                             WORKER_INTERRUPTED: "执行已中断",
                                           } as Record<string, string>
                                         )[e.kind] ||
-                                        e.kind}
+                                        "任务状态更新"}
                                     </strong>
                                     <p>
-                                      {e.payload.operation ||
-                                        e.payload.reason ||
+                                      {(
+                                        {
+                                          create: "托管预算",
+                                          assign: "委派服务",
+                                          settle: "结算报酬",
+                                          finalize: "结束订单",
+                                          withdraw: "领取报酬",
+                                          refund: "退回余额",
+                                        } as AnyRecord
+                                      )[
+                                        String(e.payload.operation || "").split(
+                                          ":",
+                                        )[0]
+                                      ] ||
                                         ("taskId" in e.payload
                                           ? "任务 T" + (e.payload.taskId + 1)
                                           : "任务状态更新")}
@@ -1060,7 +1090,7 @@ function App() {
                                     <time>
                                       {new Date(
                                         e.created * 1000,
-                                      ).toLocaleTimeString()}
+                                      ).toLocaleTimeString("zh-CN")}
                                     </time>
                                   </div>
                                 </div>

@@ -1,3 +1,4 @@
+import { TaskOutput } from "./Deliverables";
 import { useEffect, useState } from "react";
 import { price } from "./amount";
 
@@ -452,7 +453,16 @@ export default function ExecutionCheck({
   );
 }
 
-export function Collaboration({ api, jobId }: { api: Api; jobId: string }) {
+export function Collaboration({
+  api,
+  jobId,
+  tasks,
+}: {
+  api: Api;
+  jobId: string;
+  tasks: Row[];
+}) {
+  const [openOutputs, setOpenOutputs] = useState<Record<number, boolean>>({});
   const [rows, setRows] = useState<Row[]>([]),
     [error, setError] = useState("");
   const [questions, setQuestions] = useState<Row[]>([]);
@@ -510,7 +520,8 @@ export function Collaboration({ api, jobId }: { api: Api; jobId: string }) {
           }}
         >
           <label>
-            工作 {q.taskId + 1} 需要补充：{q.message}
+            {tasks.find((t) => t.taskId === q.taskId)?.title || "当前任务"}
+            需要补充：{readableMessage(q.message)}
             <textarea
               value={answers[q.id] || ""}
               maxLength={4000}
@@ -529,40 +540,168 @@ export function Collaboration({ api, jobId }: { api: Api; jobId: string }) {
           </button>
         </form>
       ))}
-      {rows.map((r, i) => (
-        <article className="execution-node" key={i}>
-          <strong>
-            {(
-              {
-                question: "服务提出执行问题",
-                answer: "相关服务已回复",
-                resumed: "收到信息，继续执行",
-                waiting: "等待服务回复",
-                unavailable: "无法取得所需信息",
-                timeout: "等待回复超时",
-                progress: "执行进度",
-                request: "服务提出请求",
-                reply: "服务回复",
-                candidate: "中间成果",
-                candidate_accepted: "候选检查通过",
-                candidate_rejected: "候选需要修正",
-                final: "正式成果已提交，等待验收",
-                failure: "服务无法继续",
-                wait: "等待补充信息",
-              } as Row
-            )[r.kind] || r.kind}
-          </strong>
-          <p>{r.message}</p>
-          {typeof r.fromTask === "number" && typeof r.toTask === "number" && (
-            <small>
-              工作 {r.fromTask + 1} → 工作 {r.toTask + 1}
-            </small>
-          )}
-          {typeof r.fromTask === "number" && typeof r.toTask !== "number" && (
-            <small>工作 {r.fromTask + 1}</small>
-          )}
-        </article>
-      ))}
+      <div className="task-record-grid">
+        {tasks.map((task) => {
+          const records = rows.filter((r) => r.fromTask === task.taskId);
+          const latest = records.at(-1);
+          const status =
+            task.onchain.state === 2
+              ? "已完成并结算"
+              : task.onchain.state === 3
+                ? "已结束"
+                : task.checkpoint.status === "AWAITING_REVIEW"
+                  ? "报告等待您验收"
+                  : task.checkpoint.status === "REWORKING"
+                    ? "正在修改报告"
+                    : latest
+                      ? eventLabels[latest.kind] || "正在处理"
+                      : task.dependencies.length
+                        ? "等待前置任务"
+                        : "准备执行";
+          const hasResult =
+            records.some((r) => ["candidate", "final"].includes(r.kind)) ||
+            task.onchain.state === 2;
+          return (
+            <article className="task-record" key={task.key}>
+              <header>
+                <h3>{task.title}</h3>
+                <span
+                  className={
+                    "tag " + (task.onchain.state === 2 ? "text-good" : "")
+                  }
+                >
+                  {status}
+                </span>
+              </header>
+              <p className="task-summary">
+                {task.onchain.state === 2
+                  ? "成果已通过检查，可在下方查看。"
+                  : task.checkpoint.status === "AWAITING_REVIEW"
+                    ? "请在页面上方阅读报告，选择通过、修改或不通过。"
+                    : latest?.kind === "failure" ||
+                        latest?.kind === "candidate_rejected"
+                      ? readableMessage(latest.message)
+                      : hasResult
+                        ? "本步骤已生成成果，正在完成检查与交付。"
+                        : records.length
+                          ? "正在处理本步骤，进度会自动更新。"
+                          : "执行条件满足后自动委派。"}
+              </p>
+              {hasResult && (
+                <details
+                  onToggle={(e) => {
+                    const open = e.currentTarget.open;
+                    setOpenOutputs((old) => ({ ...old, [task.taskId]: open }));
+                  }}
+                >
+                  <summary>查看本步骤成果</summary>
+                  {openOutputs[task.taskId] && (
+                    <TaskOutput
+                      api={api}
+                      jobId={jobId}
+                      taskId={task.taskId}
+                      revision={`${records.length}:${task.checkpoint.status}`}
+                    />
+                  )}
+                </details>
+              )}
+              {!!records.length && (
+                <details className="task-history">
+                  <summary>查看处理过程 · {records.length} 条记录</summary>
+                  <ol>
+                    {records
+                      .filter(
+                        (r, i) =>
+                          i === 0 ||
+                          r.kind !== records[i - 1].kind ||
+                          r.message !== records[i - 1].message,
+                      )
+                      .map((r, i) => (
+                        <li key={i}>
+                          <div>
+                            <strong>{eventLabels[r.kind] || "处理记录"}</strong>
+                            {r.at && (
+                              <time>
+                                {new Date(r.at * 1000).toLocaleTimeString(
+                                  "zh-CN",
+                                )}
+                              </time>
+                            )}
+                          </div>
+                          <p>{readableMessage(r.message)}</p>
+                          {typeof r.toTask === "number" && (
+                            <small>
+                              发给：
+                              {tasks.find((t) => t.taskId === r.toTask)
+                                ?.title || "相关任务"}
+                            </small>
+                          )}
+                        </li>
+                      ))}
+                  </ol>
+                </details>
+              )}
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
+}
+
+const eventLabels: Record<string, string> = {
+  question: "需要补充说明",
+  answer: "已收到答复",
+  resumed: "继续处理",
+  waiting: "等待回复",
+  unavailable: "缺少所需资料",
+  timeout: "等待超时",
+  progress: "正在处理",
+  request: "提出协作请求",
+  reply: "已回复请求",
+  candidate: "成果已生成",
+  candidate_accepted: "成果检查通过",
+  candidate_rejected: "成果需要修正",
+  final: "成果已提交",
+  failure: "执行遇到问题",
+  wait: "等待补充说明",
+};
+function readableMessage(text: string) {
+  const labels: Record<string, string> = {
+    "attractions.json": "景点推荐",
+    "hotels.json": "住宿比较",
+    "itinerary.json": "每日行程",
+    "travel-report.md": "旅行方案",
+    "travel-references.json": "旅行资料来源",
+    "cleaned.csv": "清洗后的数据",
+    "cleaning.json": "数据清洗结果",
+    "validation.json": "数据质量检查",
+    "statistics.json": "销售统计",
+    "report.md": "分析报告",
+    "references.json": "资料来源",
+    "revision.json": "修改记录",
+    "revenue.svg": "销售图表",
+    culture: "历史文化",
+    route: "路线规划",
+    transfer: "交通衔接",
+    hotels: "住宿候选",
+  };
+  let value = text || "";
+  for (const [key, label] of Object.entries(labels))
+    value = value.replaceAll(key, label);
+  return value
+    .replace(/Day\s*(\d+)/gi, "第 $1 天")
+    .replace(
+      /(\d+)\s*分(?!钟)/g,
+      (_, n) => (Number(n) / 100).toFixed(2) + " 元",
+    )
+    .replace(
+      /候选检查通过，等待服务提交正式成果；尚未付款/g,
+      "成果检查通过，正在准备正式交付。",
+    )
+    .replace(
+      /已完成本步骤的业务工具计算，正在核对成果。/g,
+      "本步骤处理完成，正在检查成果。",
+    )
+    .replace(/\b(?:0x)?[a-fA-F0-9]{64}\b/g, "");
 }

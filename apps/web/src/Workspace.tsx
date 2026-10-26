@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { amount as money, price } from "./amount";
 import {
   PlanningGraph,
@@ -12,6 +6,7 @@ import {
   RequirementReview,
   TemplateLibrary,
 } from "./TaskPlanning";
+import { Draft, ReviewCard } from "./Deliverables";
 import ServiceGraph, { evidenceLabels } from "./ServiceGraph";
 import {
   ArrowLeft,
@@ -89,195 +84,6 @@ const initial = {
   reviewSeconds: 1800,
 };
 
-// Keep content fingerprints in the original files and API, out of user previews.
-const fingerprint = /sha[\s_-]?256|\b(?:0x)?[a-f0-9]{64}\b/i;
-function reportText(text: string) {
-  return text
-    .split("\n")
-    .filter((line) => !fingerprint.test(line))
-    .join("\n");
-}
-
-function previewData(value: unknown) {
-  return JSON.stringify(
-    value,
-    (key, item) =>
-      /hash|sha[\s_-]?256/i.test(key) ||
-      (typeof item === "string" && fingerprint.test(item))
-        ? undefined
-        : item,
-    2,
-  );
-}
-
-function previewFile(text: string, name: string) {
-  if (name.endsWith(".json")) {
-    try {
-      return previewData(JSON.parse(text));
-    } catch {
-      return reportText(text);
-    }
-  }
-  // CSV previews retain business columns when the source fingerprint is removed.
-  return text
-    .split("\n")
-    .map((line) => {
-      const fields = line.match(/(?:^|,)(?:"(?:[^"]|"")*"|[^,\r]*)/g) || [];
-      return fields
-        .map((field) => field.replace(/^,/, ""))
-        .filter((field) => !fingerprint.test(field))
-        .join(",");
-    })
-    .join("\n");
-}
-
-function previewMarkup(text: string, svg = false) {
-  const doc = new DOMParser().parseFromString(
-    text,
-    svg ? "image/svg+xml" : "text/html",
-  );
-  doc.querySelectorAll("table").forEach((table) => {
-    const rows = Array.from(table.querySelectorAll("tr"));
-    const columns = Array.from(rows[0]?.children || []).flatMap(
-      (cell, index) =>
-        fingerprint.test(cell.textContent || "") ? [index] : [],
-    );
-    rows.forEach((row) =>
-      columns
-        .slice()
-        .reverse()
-        .forEach((index) => row.children[index]?.remove()),
-    );
-  });
-  doc.querySelectorAll("pre").forEach((element) => {
-    element.textContent = reportText(element.textContent || "");
-  });
-  doc
-    .querySelectorAll("p, li, td, th, text, tspan, title, desc")
-    .forEach((element) => {
-      if (fingerprint.test(element.textContent || "")) element.remove();
-    });
-  return new XMLSerializer().serializeToString(doc);
-}
-
-function Report({ text }: { text: string }) {
-  const lines = reportText(text).split("\n"),
-    blocks: ReactNode[] = [];
-  const cells = (line: string) =>
-    line
-      .trim()
-      .replace(/^\||\|$/g, "")
-      .split("|")
-      .map((value) => value.trim());
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i],
-      key = i;
-    if (
-      line.trim().startsWith("|") &&
-      /^\s*\|?[\s:|-]+\|\s*$/.test(lines[i + 1] || "")
-    ) {
-      const header = cells(line),
-        rows: string[][] = [];
-      i += 2;
-      while (i < lines.length && lines[i].trim().startsWith("|"))
-        rows.push(cells(lines[i++]));
-      i--;
-      blocks.push(
-        <div className="report-table" key={key}>
-          <table>
-            <thead>
-              <tr>
-                {header.map((cell, n) => (
-                  <th key={n} scope="col">
-                    {cell}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, n) => (
-                <tr key={n}>
-                  {row.map((cell, m) => (
-                    <td key={m}>{cell}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>,
-      );
-    } else if (line.startsWith("# "))
-      blocks.push(<h2 key={key}>{line.slice(2)}</h2>);
-    else if (line.startsWith("## "))
-      blocks.push(<h3 key={key}>{line.slice(3)}</h3>);
-    else if (line.startsWith("### "))
-      blocks.push(<h4 key={key}>{line.slice(4)}</h4>);
-    else if (line && !line.startsWith("!["))
-      blocks.push(
-        <p key={key}>{line.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")}</p>,
-      );
-  }
-  return <div className="report-body">{blocks}</div>;
-}
-
-const checkLabels: Record<string, string> = {
-  signature: "执行者签名有效",
-  input_lineage: "输入来源一致",
-  frozen_deliverable_set: "约定文件齐全",
-  source_numbers_and_hashes: "数值与来源校验通过",
-  revision_changes: "修改要求已核验",
-  offline_html_no_external_assets: "离线报告无需外部资源",
-};
-
-function Draft({ value }: { value: Row | null }) {
-  if (!value) return <p role="status">正在读取报告…</p>;
-  return (
-    <div className="draft-preview">
-      {value.files
-        .filter((p: Row) => p.name.endsWith(".md"))
-        .map((p: Row) => (
-          <Report key={p.name} text={p.text} />
-        ))}
-      {value.files
-        .filter((p: Row) => p.name.endsWith(".svg"))
-        .map((p: Row) => (
-          <img
-            key={p.name}
-            className="report-chart"
-            src={
-              "data:image/svg+xml;charset=utf-8," +
-              encodeURIComponent(previewMarkup(p.text, true))
-            }
-            alt="销售额图表；对应数值可在下方关联数据查看"
-          />
-        ))}
-      {value.files
-        .filter((p: Row) => p.name.endsWith(".html"))
-        .map((p: Row) => (
-          <details key={p.name}>
-            <summary>预览离线网页报告</summary>
-            <iframe
-              title="离线网页报告"
-              sandbox=""
-              srcDoc={previewMarkup(p.text)}
-            />
-          </details>
-        ))}
-      <details>
-        <summary>关联数据、引用资料与版本记录</summary>
-        {[...value.files, ...(value.related || [])]
-          .filter((p: Row) => /\.(json|csv)$/.test(p.name))
-          .map((p: Row) => (
-            <section key={p.name}>
-              <h4>{p.name}</h4>
-              <pre>{previewFile(p.text, p.name)}</pre>
-            </section>
-          ))}
-      </details>
-    </div>
-  );
-}
-
 export default function Workspace({
   api,
   token,
@@ -305,12 +111,6 @@ export default function Workspace({
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState("");
-  const [selectedDraft, setSelectedDraft] = useState<Record<string, number>>(
-    {},
-  );
-  const [target, setTarget] = useState("结论与限制"),
-    [revisionAction, setRevisionAction] = useState("shorten"),
-    [feedback, setFeedback] = useState("");
   const [planner, setPlanner] = useState<Row | null>(null);
   const [travelIntent, setTravelIntent] = useState<Row | null>(null);
   const [travelSource, setTravelSource] = useState<Row | null>(null);
@@ -724,25 +524,6 @@ export default function Workspace({
     link.download = `v${value.number}-${file.name}`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-  async function decision(review: Row, action: string) {
-    await api(`${prefix}/reviews/${encodeURIComponent(review.id)}`, {
-      decisionId: crypto.randomUUID(),
-      resultHash: review.drafts.at(-1).resultHash,
-      action,
-      target,
-      feedback,
-      revisionAction,
-    });
-    setFeedback("");
-    setNotice(
-      action === "accept"
-        ? "已保存您接受的具体版本，正在验证并结算。"
-        : action === "reject"
-          ? "已拒绝当前报告；前置服务报酬保留，未使用余额进入退款。"
-          : "修改意见已发回原执行者。本次不额外收费，稍后会生成修改稿。",
-    );
-    setReviews(await api(`${prefix}/reviews/${review.jobId}`));
   }
   return (
     <section className="project-workspace" aria-label="项目与成果工作区">
@@ -2086,183 +1867,17 @@ export default function Workspace({
                 : "请从历史版本打开一个项目，或先创建任务方案。"}
             </p>
           )}
-          {reviews.map((review) => {
-            const index = selectedDraft[review.id] ?? review.drafts.length - 1;
-            const hash =
-              review.drafts[Math.min(index, review.drafts.length - 1)]
-                .resultHash;
-            const latest = index === review.drafts.length - 1;
-            const canDecide =
-              review.status === "AWAITING_REVIEW" &&
-              latest &&
-              Date.now() < review.deadline * 1000;
-            const isTravel =
-              version?.recipe.scenario === "travel_planning" ||
-              !!drafts[hash]?.files.some(
-                (f: Row) => f.name === "travel-report.md",
-              );
-            const targets = isTravel
-              ? ["需求与资料", "住宿", "每日行程", "费用", "限制与来源"]
-              : [
-                  "数据与质量",
-                  "统计结果",
-                  "结论与限制",
-                  "来源",
-                  ...(drafts[hash]?.files.some(
-                    (f: Row) => f.name === "revenue.svg",
-                  )
-                    ? ["revenue.svg"]
-                    : []),
-                ];
-            return (
-              <article className="workspace-panel" key={review.id}>
-                <h3>
-                  {statuses[review.status]} · {review.provider}
-                </h3>
-                <p>
-                  确认截止：{new Date(review.deadline * 1000).toLocaleString()}{" "}
-                  · 剩余免费返工 {2 - review.changes.length} 次 · 报告成交费{" "}
-                  {money(review.price)} USDC。
-                </p>
-                <label>
-                  查看草稿
-                  <select
-                    value={index}
-                    onChange={(e) =>
-                      setSelectedDraft((old) => ({
-                        ...old,
-                        [review.id]: Number(e.target.value),
-                      }))
-                    }
-                  >
-                    {review.drafts.map((d: Row, i: number) => (
-                      <option key={d.resultHash} value={i}>
-                        {i === 0 ? "初稿" : `第 ${i} 次修改稿`}
-                        {d.resultHash === review.acceptedHash
-                          ? " · 已接受"
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p>
-                  系统检查：
-                  {review.drafts[index].checks
-                    .map((check: string) => checkLabels[check] || check)
-                    .join(" · ")}
-                </p>
-                <Draft value={drafts[hash]} />
-                <details>
-                  <summary>修改意见与用户决定（完整记录）</summary>
-                  <pre>
-                    {previewData({
-                      changes: review.changes,
-                      decisions: review.decisions,
-                    })}
-                  </pre>
-                </details>
-                {canDecide && (
-                  <div className="review-controls">
-                    <h4>对当前最新版作出决定</h4>
-                    <div className="workspace-actions">
-                      <button
-                        className="primary"
-                        disabled={!!busy}
-                        onClick={() =>
-                          void run("accept", () => decision(review, "accept"))
-                        }
-                      >
-                        接受此版并结算
-                      </button>
-                      <button
-                        className="danger"
-                        disabled={!!busy}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              "拒绝并结束当前报告？已结算的前置工作费用会保留，未使用余额可退款。",
-                            )
-                          )
-                            void run("reject", () =>
-                              decision(review, "reject"),
-                            );
-                        }}
-                      >
-                        拒绝并结束
-                      </button>
-                    </div>
-                    {review.changes.length < 2 && (
-                      <fieldset>
-                        <legend>要求原执行者免费修改</legend>
-                        <label>
-                          具体位置
-                          <select
-                            value={targets.includes(target) ? target : ""}
-                            onChange={(e) => setTarget(e.target.value)}
-                          >
-                            <option value="" disabled>
-                              选择章节或图表
-                            </option>
-                            {targets.map((name) => (
-                              <option key={name}>{name}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          修改方式
-                          <select
-                            value={revisionAction}
-                            onChange={(e) => setRevisionAction(e.target.value)}
-                          >
-                            <option value="shorten">压缩重复说明</option>
-                            <option value="clarify">
-                              直接说明主要发现（销售结论）
-                            </option>
-                            <option value="costs">
-                              补充费用构成解释（行程费用）
-                            </option>
-                            <option value="chronological">
-                              按每日时间顺序展示（每日行程）
-                            </option>
-                            <option value="chart_labels">
-                              放大文字并提升图表对比度
-                            </option>
-                          </select>
-                        </label>
-                        <label>
-                          修改意见
-                          <textarea
-                            value={feedback}
-                            maxLength={1500}
-                            onChange={(e) => setFeedback(e.target.value)}
-                            placeholder="描述这个位置的问题；修改方式会实际调整选中的内容。"
-                          />
-                        </label>
-                        <button
-                          disabled={
-                            !!busy ||
-                            !feedback.trim() ||
-                            !targets.includes(target)
-                          }
-                          onClick={() =>
-                            void run("revise", () => decision(review, "revise"))
-                          }
-                        >
-                          提交修改意见（不加价）
-                        </button>
-                        <p className="hint">
-                          新材料、新指标、改变天数或另一语言的完整报告，请使用“基于此版本继续”。
-                        </p>
-                      </fieldset>
-                    )}
-                  </div>
-                )}
-                {!latest && (
-                  <p>正在查看历史草稿。请切回最新版后再接受或要求修改。</p>
-                )}
-              </article>
-            );
-          })}
+          {reviews.map((review) => (
+            <ReviewCard
+              key={review.id}
+              api={api}
+              review={review}
+              drafts={drafts}
+              onChange={async () =>
+                setReviews(await api(`${prefix}/reviews/${review.jobId}`))
+              }
+            />
+          ))}
         </section>
       )}
     </section>

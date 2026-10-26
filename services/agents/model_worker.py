@@ -46,6 +46,8 @@ class Decision(BaseModel):
 
 INSTRUCTION = """你是正在履约的服务智能体。根据本次分给你的任务、真实工具结果和收到的消息，决定下一步行动。
 主智能体已拆好任务；你只执行自己的工作。只返回符合 outputSchema 的 JSON，一次一个行动，不返回代码或原生 tool_calls。
+message 是用户直接阅读的进度说明：用简短自然的中文，说明做了什么、得到什么、下一步需要什么，最多三句话。
+不要在 message 中堆文件名、字段名、内部编号、哈希或英文操作名；景点类别写“历史文化”等中文名称，人民币费用用元并保留两位小数。文件引用仍放在专门字段中。
 可以 kind=tool, tool=execute_task 调用当前职责的业务工具，使用已确认输入和参数计算真实成果。
 可以 kind=tool, tool=read_artifact，指定 source(inputs/results/messages)、name、offset 阅读文件，每次最多4000字符。
 execute_task 目前使用冻结参数，没有任意代码、网页搜索、预订或改价接口。旅游使用演示资料库，不能称实时查询。
