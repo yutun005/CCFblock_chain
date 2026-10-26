@@ -269,9 +269,11 @@ async def completion(config, secret, messages, *, purpose="planning"):
         if choice["message"].get("refusal") or finish == "content_filter":
             raise ModelResponseError("模型拒绝了本次请求，请调整任务描述后重试。", retryable=False)
         if finish == "length":
-            raise ModelResponseError("模型输出达到长度上限，未返回完整方案；请精简说明并重新返回完整的任务节点、服务绑定及依赖。")
+            raise ModelResponseError("子智能体输出达到长度上限，请只返回一个简短完整的行动 JSON。" if purpose == "execution"
+                                     else "模型输出达到长度上限，未返回完整方案；请精简说明并重新返回完整的任务节点、服务绑定及依赖。")
         if choice["message"].get("tool_calls") or finish not in {None, "stop"}:
-            raise ModelResponseError("模型没有返回方案文本，请返回完整 JSON 对象。")
+            raise ModelResponseError("子智能体未返回行动文本，请返回单个行动 JSON，不使用原生 tool_calls。" if purpose == "execution"
+                                     else "模型没有返回方案文本，请返回完整 JSON 对象。")
         content = choice["message"]["content"]
         if not isinstance(content, str) or len(content) > 40000:
             raise ModelResponseError("模型未返回有效的文本内容")

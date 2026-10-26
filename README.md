@@ -102,6 +102,8 @@ Linux 如无 `python` 命令，使用 `python3`。上述命令直接取得 A 分
 
 新增接口统一位于 `/api/workspace/`：`planner`（配置状态）、`planning`（提出并校验任务图）、`planning/{id}`（规划记录）、`planning/{id}/review`（用户校验并冻结新副本）、`capabilities`（来自业务图）、`service-graph`（检索与图）、`service-corpus`（读取/追加更新）、`service-graph/{service|merchant}/{id}/delete`、`templates`（检索/创建）、`templates/{id}`（查看）及其 `apply`/`update`/`delete` 操作、`materials`、`parse`（手动模式关键词解析）、`comparisons`（共享估价后去重）、`proposals`（单方案）、`confirm`、`projects`、`versions/{id}`、`reviews/{jobId}`、`drafts/{resultHash}`；对 `reviews/{reviewId}` 提交 `accept`、`revise` 或 `reject`。确认方案需提供原预览的 `confirmationHash`；报告决定需提供最新 `resultHash` 和唯一 `decisionId`。全部沿用工作区认证令牌，仅面向当前单管理员工作区。模板更新和删除须提供当前 `revision`，过期操作返回 409；未确认的任务图无法生成报价。
 
+模型子任务完成业务计算后，可以直接引用工具生成的成果文件提交检查；通过检查才正式交付，报告仍需用户验收才结算。模型每轮只收到当前可用操作的格式，格式错误会带具体原因修正一次，不会因提交了真实文件名而拒绝成果，也不会用文字“完成”代替实际文件。下游任务读取已验证的上游成果，再生成最终报告。
+
 ## 通用规划后端
 
 模型返回先经过格式适配，再校验任务图。普通聊天只需回复内容，不要求重复整套需求和 DAG；生成任务图可只返回任务名称、编号及依赖，程序补齐可编辑的阶段和待完善字段。兼容常见 JSON 包装、代码块、节点/连线表示及字段别名；更新时省略的既有任务字段会保留。格式适配仅用于模型响应，手工编辑接口仍校验原有契约，循环和不存在的依赖不会被静默忽略。解析失败只记录字段位置及错误类型，不记录用户对话或密钥。
