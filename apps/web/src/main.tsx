@@ -174,7 +174,11 @@ function App() {
     [preview, setPreview] = useState<AnyRecord | null>(null),
     [previewError, setPreviewError] = useState("");
   const [busy, setBusy] = useState(""),
-    [tab, setTab] = useState("workspace"),
+    [tab, setTab] = useState(
+      new URLSearchParams(location.search).get("view") === "funds"
+        ? "funds"
+        : "workspace",
+    ),
     [selected, setSelected] = useState(0);
   const [createOpen, setCreateOpen] = useState(false),
     [budget, setBudget] = useState("100"),
@@ -187,6 +191,7 @@ function App() {
   const selectedJobRef = useRef(jobId);
   const flowRef = useRef<ReactFlowInstance | null>(null);
   const dagRef = useRef<HTMLDivElement>(null);
+  const settlementHeading = useRef<HTMLHeadingElement>(null);
   const selectJob = useCallback((id: string) => {
     selectedJobRef.current = id;
     setJobId(id);
@@ -197,6 +202,19 @@ function App() {
     setArtifacts([]);
     setLedger([]);
   }, []);
+  const openSettlement = useCallback(
+    (id: string) => {
+      if (selectedJobRef.current !== id) selectJob(id);
+      setTab("funds");
+    },
+    [selectJob],
+  );
+  useEffect(() => {
+    if (tab === "funds") {
+      settlementHeading.current?.scrollIntoView({ block: "start" });
+      settlementHeading.current?.focus({ preventScroll: true });
+    }
+  }, [tab, token]);
   const api = useCallback(
     async (path: string, body?: unknown) => {
       const labels: Record<string, string> = {
@@ -320,9 +338,11 @@ function App() {
     if (jobId) {
       const url = new URL(location.href);
       url.searchParams.set("job", jobId);
+      if (tab === "funds") url.searchParams.set("view", "funds");
+      else url.searchParams.delete("view");
       history.replaceState(null, "", url.pathname + url.search + url.hash);
     }
-  }, [jobId]);
+  }, [jobId, tab]);
   useEffect(() => {
     if (!jobId || !token) return;
     const controller = new AbortController();
@@ -699,6 +719,7 @@ function App() {
               token={token}
               currentJob={jobId}
               onJob={selectJob}
+              onSettlement={openSettlement}
             />
           </div>
           {!["workspace", "templates", "execution"].includes(tab) && (
@@ -706,8 +727,16 @@ function App() {
               <div className="page-heading">
                 <div>
                   <div className="eyebrow">任务执行与交付</div>
-                  <h1>{nav.find((n) => n[0] === tab)?.[1]}</h1>
-                  <p>从服务发现到成果交付，追踪每个节点和每笔报酬。</p>
+                  <h1 ref={settlementHeading} tabIndex={-1}>
+                    {tab === "funds"
+                      ? "任务结算"
+                      : nav.find((n) => n[0] === tab)?.[1]}
+                  </h1>
+                  <p>
+                    {tab === "funds"
+                      ? "查看本次任务的服务费用、付款进度与剩余预算退款。"
+                      : "从服务发现到成果交付，追踪每个节点和每笔报酬。"}
+                  </p>
                 </div>
                 <button className="primary" onClick={() => setTab("workspace")}>
                   <Plus size={18} />
@@ -812,7 +841,7 @@ function App() {
                     {[
                       ["托管预算", job.chain.deposit, Coins],
                       [
-                        "本任务已结算报酬",
+                        tab === "funds" ? "实际服务费" : "本任务已结算报酬",
                         BigInt(job.chain.agentCredits) +
                           BigInt(job.chain.withdrawn),
                         ShieldCheck,
@@ -839,6 +868,7 @@ function App() {
                         api={api}
                         jobId={job.jobId}
                         onChange={refresh}
+                        onSettlement={openSettlement}
                       />
                       <section className="panel">
                         <div className="panel-heading">
@@ -1101,16 +1131,31 @@ function App() {
                     </>
                   )}
                   {tab === "funds" && (
-                    <section className="panel">
+                    <section
+                      className="panel settlement-panel"
+                      aria-label="任务结算明细"
+                    >
                       <div className="panel-heading">
                         <div>
-                          <h2>逐任务结算账本</h2>
-                          <p>
-                            结算数据来自合约任务状态；报酬按当前任务领取，已提现、待提现和退款均有独立链上账目。
+                          <h2 aria-live="polite">
+                            {job.chain.finalized ? "结算完成" : "结算进行中"}
+                          </h2>
+                          <p aria-live="polite">
+                            {job.chain.finalized
+                              ? BigInt(job.chain.refundCredit) > 0n ||
+                                BigInt(job.chain.agentCredits) > 0n
+                                ? "服务费用已确认，可点击“领取报酬与退款”收取剩余预算。"
+                                : "本次任务的付款与退款已处理完毕。"
+                              : "已完成的服务费用会陆续入账，任务结束后确定退款金额。此页会自动更新。"}
                           </p>
                         </div>
                         <button
-                          disabled={!!busy || !job.chain.finalized}
+                          disabled={
+                            !!busy ||
+                            !job.chain.finalized ||
+                            (BigInt(job.chain.agentCredits) === 0n &&
+                              BigInt(job.chain.refundCredit) === 0n)
+                          }
                           className="primary"
                           onClick={() =>
                             void action("claims", () =>
@@ -1125,6 +1170,52 @@ function App() {
                           )}
                           领取报酬与退款
                         </button>
+                      </div>
+                      {!job.chain.finalized && job.lastError && (
+                        <p className="inline-error" role="alert">
+                          结算暂未完成：{job.lastError}
+                        </p>
+                      )}
+                      <div className="settlement-links">
+                        <button onClick={() => setTab("overview")}>
+                          查看报告与验收记录
+                        </button>
+                        <button onClick={() => setTab("evidence")}>
+                          下载成果文件
+                        </button>
+                        <button
+                          disabled={!!busy}
+                          onClick={() => void action("refresh", refresh)}
+                        >
+                          刷新结算
+                        </button>
+                      </div>
+                      <div className="table-wrap">
+                        <table aria-label="各项服务费用">
+                          <thead>
+                            <tr>
+                              <th>服务内容</th>
+                              <th>结算状态</th>
+                              <th>已结算费用</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {job.tasks.map((task) => (
+                              <tr key={task.taskId}>
+                                <td>{task.title}</td>
+                                <td>{taskStatus(task)}</td>
+                                <td>
+                                  {amount(
+                                    Number(task.onchain.state) === 2
+                                      ? task.onchain.acceptedPrice
+                                      : "0",
+                                  )}{" "}
+                                  代币
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                       <div className="ledger-balances">
                         <span>
@@ -1142,54 +1233,59 @@ function App() {
                           已提现 <strong>{amount(job.chain.withdrawn)}</strong>
                         </span>
                       </div>
-                      <div className="table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>链上事件</th>
-                              <th>任务</th>
-                              <th>金额 代币</th>
-                              <th>区块</th>
-                              <th>交易哈希</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {ledger.map((e, i) => (
-                              <tr key={i}>
-                                <td>{e.event}</td>
-                                <td>
-                                  {e.args.taskId !== undefined
-                                    ? "T" + (e.args.taskId + 1)
-                                    : "整单"}
-                                </td>
-                                <td>
-                                  {amount(
-                                    e.args.amount ??
-                                      e.args.price ??
-                                      e.args.deposit ??
-                                      e.args.refund,
-                                  )}
-                                </td>
-                                <td>#{e.blockNumber}</td>
-                                <td>
-                                  <button
-                                    className="hash-button"
-                                    onClick={() => void copy(e.transactionHash)}
-                                    title={e.transactionHash}
-                                  >
-                                    {short(e.transactionHash)}
-                                    {copied === e.transactionHash ? (
-                                      <Check size={14} />
-                                    ) : (
-                                      <Copy size={14} />
-                                    )}
-                                  </button>
-                                </td>
+                      <details className="settlement-transactions">
+                        <summary>查看链上交易记录</summary>
+                        <div className="table-wrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>链上事件</th>
+                                <th>任务</th>
+                                <th>金额 代币</th>
+                                <th>区块</th>
+                                <th>交易哈希</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody>
+                              {ledger.map((e, i) => (
+                                <tr key={i}>
+                                  <td>{e.event}</td>
+                                  <td>
+                                    {e.args.taskId !== undefined
+                                      ? "T" + (e.args.taskId + 1)
+                                      : "整单"}
+                                  </td>
+                                  <td>
+                                    {amount(
+                                      e.args.amount ??
+                                        e.args.price ??
+                                        e.args.deposit ??
+                                        e.args.refund,
+                                    )}
+                                  </td>
+                                  <td>#{e.blockNumber}</td>
+                                  <td>
+                                    <button
+                                      className="hash-button"
+                                      onClick={() =>
+                                        void copy(e.transactionHash)
+                                      }
+                                      title={e.transactionHash}
+                                    >
+                                      {short(e.transactionHash)}
+                                      {copied === e.transactionHash ? (
+                                        <Check size={14} />
+                                      ) : (
+                                        <Copy size={14} />
+                                      )}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
                       <p className="hint">
                         金额四舍五入显示两位小数；实际结算保留完整精度。Gas
                         使用对应链的原生币单独支付。

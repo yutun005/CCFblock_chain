@@ -473,12 +473,15 @@ export function ReviewCard({
   review,
   drafts,
   onChange,
+  onSettlement,
 }: {
   api: Api;
   review: Row;
   drafts: Record<string, Row>;
   onChange: () => Promise<unknown>;
+  onSettlement?: (jobId: string) => void;
 }) {
+  const [accepted, setAccepted] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [mode, setMode] = useState("");
   const [target, setTarget] = useState("");
@@ -495,6 +498,7 @@ export function ReviewCard({
     value = drafts[draft?.resultHash];
   const latest = index === review.drafts.length - 1;
   const canDecide =
+    !accepted &&
     !!value &&
     latest &&
     review.status === "AWAITING_REVIEW" &&
@@ -550,12 +554,20 @@ export function ReviewCard({
       setFeedback("");
       setNotice(
         action === "accept"
-          ? "已验收通过，正在结算本步骤报酬。"
+          ? "已验收通过。"
           : action === "reject"
             ? "已记录不通过，本报告不付款，未使用余额将按订单流程退款。"
             : "修改意见已发送。新稿生成后，请再次查看并验收。",
       );
-      await onChange();
+      if (action === "accept") {
+        setAccepted(true);
+        onSettlement?.(review.jobId);
+      }
+      await onChange().catch((e) => {
+        setError(
+          `验收意见已提交，刷新记录失败：${e instanceof Error ? e.message : String(e)}`,
+        );
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -583,6 +595,9 @@ export function ReviewCard({
         <p className="review-notice" role="status">
           {notice}
         </p>
+      )}
+      {(accepted || review.status === "ACCEPTED") && onSettlement && (
+        <button onClick={() => onSettlement(review.jobId)}>查看结算</button>
       )}
       {review.status === "AWAITING_REVIEW" && (
         <p className="review-instruction">
@@ -769,10 +784,12 @@ export function ReviewInbox({
   api,
   jobId,
   onChange,
+  onSettlement,
 }: {
   api: Api;
   jobId: string;
   onChange: () => Promise<unknown>;
+  onSettlement: (jobId: string) => void;
 }) {
   const [reviews, setReviews] = useState<Row[]>([]),
     [drafts, setDrafts] = useState<Record<string, Row>>({});
@@ -839,6 +856,7 @@ export function ReviewInbox({
           api={api}
           review={r}
           drafts={drafts}
+          onSettlement={onSettlement}
           onChange={async () => {
             await refreshRef.current();
             await onChange();

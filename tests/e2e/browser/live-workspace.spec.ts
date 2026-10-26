@@ -74,7 +74,7 @@ test("live workspace creates a settled job and shows its chain evidence", async 
     await expect(inbox.getByRole("heading", { name: "验收不通过", exact: true })).toBeVisible();
   } else {
     await activate("验收通过并结算");
-    await expect(inbox.getByRole("heading", { name: "验收通过", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "任务结算", exact: true })).toBeVisible();
   }
   await expect.poll(async () => {
     const status = await request.get(`${api}/api/jobs/${jobId}`, { headers });
@@ -83,7 +83,8 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   }, { timeout: 180_000, intervals: [500, 1_000, 2_000] }).toBe(decision === "reject" ? "PARTIAL_FAILED" : "SUCCEEDED");
 
   await page.setViewportSize({width:390,height:844});
-  await expect(inbox.locator(".report-body")).toBeVisible();
+  if (decision === "reject") await expect(inbox.locator(".report-body")).toBeVisible();
+  else await expect(page.getByRole("region", { name: "任务结算明细", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   await page.screenshot({path:output!.replace(/\.json$/, "-mobile.png"), fullPage:true});
   await page.setViewportSize({width:1280,height:720});
@@ -98,6 +99,7 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   expect(settled.every((event) => /^0x[0-9a-f]{64}$/i.test(event.transactionHash))).toBeTruthy();
 
   await page.getByRole("button", { name: "资金账本" }).click();
+  await page.getByText("查看链上交易记录", { exact: true }).click();
   await expect(page.getByRole("columnheader", { name: "交易哈希" })).toBeVisible();
   await expect(page.locator("table tbody tr").filter({ hasText: "TaskSettled" })).toHaveCount(settled.length);
   await expect(page.locator(`button.hash-button[title="${settled[0].transactionHash}"]`)).toBeVisible();

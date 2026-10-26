@@ -89,11 +89,13 @@ export default function Workspace({
   token,
   currentJob,
   onJob,
+  onSettlement,
 }: {
   api: Api;
   token: string;
   currentJob: string;
   onJob: (id: string) => void;
+  onSettlement: (jobId: string) => void;
 }) {
   const [page, setPage] = useState("editor"),
     [recipe, setRecipe] = useState<Row>(initial);
@@ -1873,6 +1875,7 @@ export default function Workspace({
               api={api}
               review={review}
               drafts={drafts}
+              onSettlement={onSettlement}
               onChange={async () =>
                 setReviews(await api(`${prefix}/reviews/${review.jobId}`))
               }

@@ -808,6 +808,25 @@ tbody tr:hover {
   font-size: 11px;
   color: #9fb5c8;
 }
+.settlement-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 24px 24px;
+}
+.settlement-panel > .ledger-balances {
+  padding-top: 24px;
+}
+.settlement-panel > .inline-error {
+  margin: 0 24px 20px;
+}
+.settlement-transactions {
+  border-top: 1px solid var(--line);
+}
+.settlement-transactions > summary {
+  padding: 20px 24px;
+  cursor: pointer;
+}
 .ledger-balances strong {
   margin-left: 8px;
   font-size: 14px;
