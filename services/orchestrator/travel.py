@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 CATALOG_ID = "demo-travel-v1"
@@ -23,13 +23,22 @@ FIELDS = {
 class TravelDetails(BaseModel):
     model_config = ConfigDict(extra="forbid")
     destination: str | None = Field(default=None, min_length=1, max_length=100)
-    start_date: str | None = None
+    start_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="出发日期 YYYY-MM-DD")
     days: int | None = Field(default=None, ge=1, le=7, strict=True)
     travelers: int | None = Field(default=None, ge=1, le=20, strict=True)
     budget_cents: int | None = Field(default=None, gt=0, strict=True)
     interests: list[str] | None = Field(default=None, max_length=20)
-    day_start: str | None = None
-    day_end: str | None = None
+    day_start: str | None = Field(default=None, pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+                                  description="每日开始活动的时刻 HH:MM，例如09:00；不是出发日期，用户未指定则省略")
+    day_end: str | None = Field(default=None, pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+                                description="每日结束活动的时刻 HH:MM，例如18:00；不是结束日期，用户未指定则省略")
+
+    @field_validator("start_date")
+    @classmethod
+    def valid_date(cls, value):
+        if value is not None:
+            date.fromisoformat(value)
+        return value
 
 
 class Interpretation(BaseModel):

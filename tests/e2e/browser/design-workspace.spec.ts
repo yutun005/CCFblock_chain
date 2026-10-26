@@ -18,6 +18,7 @@ test('execution scope gaps require opt-in; budget and graph edits invalidate the
   await page.route('**/api/workspace/comparisons', route=>route.fulfill({json:{options:[],unavailable:[{reason:'当前服务繁忙，稍后重新估价'}]}}));
   await page.getByRole('button',{name:'模板库',exact:true}).click();
   await page.getByRole('button',{name:'按此模板生成 DAG'}).click();
+  await page.getByRole('button',{name:'确认这版任务图',exact:true}).click();
   await page.getByRole('button',{name:'检查执行条件',exact:true}).click();
   await expect(page.getByText('尚无预测服务；可交付历史分析')).toBeVisible();
   const scope=page.getByRole('button',{name:'确认本次执行范围，查看费用'});

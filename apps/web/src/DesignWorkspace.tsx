@@ -526,6 +526,7 @@ export default function DesignWorkspace({
   const [version, setVersion] = useState<Row | null>(null);
   const tail = useRef<HTMLDivElement>(null);
   const graphAnchor = useRef<HTMLDivElement>(null);
+  const executionAnchor = useRef<HTMLDivElement>(null);
   const openedGraph = useRef("");
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
@@ -596,6 +597,14 @@ export default function DesignWorkspace({
       ...extra,
     });
     await adopt(result);
+    if (action === "confirm") {
+      requestAnimationFrame(() =>
+        executionAnchor.current?.scrollIntoView({
+          block: "start",
+          behavior: "smooth",
+        }),
+      );
+    }
   };
   const download = (value: Row) => {
     const blob = new Blob(
@@ -937,12 +946,6 @@ export default function DesignWorkspace({
                 </details>
                 {session.graph && (
                   <>
-                    <ExecutionCheck
-                      api={api}
-                      session={session}
-                      dirty={dirty}
-                      onJob={onJob}
-                    />
                     <div ref={graphAnchor}>
                       <GraphEditor
                         api={api}
@@ -1099,6 +1102,14 @@ export default function DesignWorkspace({
                         </button>
                       </details>
                     </section>
+                    <div ref={executionAnchor}>
+                      <ExecutionCheck
+                        api={api}
+                        session={session}
+                        dirty={dirty}
+                        onJob={onJob}
+                      />
+                    </div>
                   </>
                 )}
                 {!!session.versions.length && (

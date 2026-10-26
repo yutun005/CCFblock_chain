@@ -36,12 +36,23 @@ def decode_response(content):
 
 
 def contract(name):
+    from .travel import TravelDetails
     task = {"type": "object", "properties": {
         "key": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"},
+        "capability": {"type": ["string", "null"], "description": "匹配 serviceCatalog 的 id；未接入的业务为 null"},
         **{key: {"type": "array", "items": {"type": "string"}} for key in
            ("dependencies", "inputs", "outputs", "acceptance", "requirementIds")}}, "required": ["title"]}
     graph = {"type": "object", "properties": {"title": {"type": "string"}, "summary": {"type": "string"},
-        "tasks": {"type": "array", "minItems": 1, "maxItems": 64, "items": task}}, "required": ["tasks"]}
+        "tasks": {"type": "array", "minItems": 1, "maxItems": 64, "items": task},
+        "deliverables": {"type": "array", "items": {"type": "object", "properties": {
+            "name": {"type": "string"}, "taskKey": {"type": "string"}}, "required": ["name", "taskKey"]}},
+        "execution": {"type": "object", "description": "仅提取用户已给条件，未知项省略", "properties": {
+            "scenario": {"enum": ["travel_planning", "cross_org_analysis"]},
+            "travelRequest": TravelDetails.model_json_schema(),
+            "serviceBudget": {"type": "string", "pattern": "^\\d+(?:\\.\\d{1,6})?$", "description": "纯数字字符串，例如100，不能附加USDC字样；Agent服务费与旅行预算分开"},
+            "groupBy": {"enum": ["month", "category", "organization", "organization_quarter"]},
+            "outputs": {"type": "array", "items": {"enum": ["clean", "validate", "statistics", "report", "charts", "attractions", "hotels", "route"]}, "description": "与最终交付一致；销售要图表时包含 report 和 charts"},
+            "tier": {"enum": ["standard", "detailed"]}}}}, "required": ["tasks"]}
     return {"title": name, "type": "object", "properties": {
         "reply": {"type": "string"}, "graph": {"anyOf": [graph, {"type": "null"}]},
         "questions": {"type": "array", "items": {"type": "string"}},
@@ -172,6 +183,8 @@ def adapt(name, raw, context):
                           "inputs": strings(row.get("inputs")), "outputs": strings(pick(row, "outputs", "deliverables", default=[])),
                           "acceptance": strings(pick(row, "acceptance", "acceptanceCriteria", "acceptance_criteria", default=[])),
                           "requirementIds": [req_map.get(value, key(value, "R")) for value in references(pick(row, "requirementIds", "requirement_ids", default=[]))]})
+            if "capability" in row:
+                tasks[-1]["capability"] = row["capability"]
         for task in tasks:
             if sum(item["title"] == task["title"] for item in tasks) == 1:
                 node_map.setdefault(str(task["title"]), task["key"])
@@ -194,9 +207,12 @@ def adapt(name, raw, context):
             if task and name_value not in task["outputs"]:
                 task["outputs"].append(name_value)
             final.append({"name": name_value, "taskKey": task_key})
+        execution = graph.get("execution", previous.get("execution"))
         graph = {"title": pick(graph, "title", "name", default=previous.get("title") or str(brief["objective"])[:120]),
                  "summary": pick(graph, "summary", "description", default=previous.get("summary") or brief["objective"]),
                  "tasks": tasks, "deliverables": final, "limitations": strings(graph.get("limitations", previous.get("limitations")))}
+        if execution is not None:
+            graph["execution"] = execution
     elif graph is not None:
         raise ValueError("任务图结构无法读取")
     questions = strings(pick(raw, "questions", "followUpQuestions", default=[]))

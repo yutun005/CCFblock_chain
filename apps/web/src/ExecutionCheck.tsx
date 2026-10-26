@@ -44,6 +44,16 @@ export default function ExecutionCheck({
     setChosen(null);
     setPartial(false);
   };
+  const supplied = JSON.stringify(session.graph?.execution || {});
+  useEffect(() => {
+    const known = JSON.parse(supplied);
+    setBudget(known.serviceBudget || "100");
+    setGroupBy(known.groupBy || "");
+    setTravel(known.travelRequest || {});
+    setIds([]);
+    setCharts(known.outputs?.includes("charts") || false);
+    setOpen(false);
+  }, [session.id, supplied]);
   useEffect(() => {
     reset();
   }, [session.revision, session.id, dirty]);
@@ -61,10 +71,16 @@ export default function ExecutionCheck({
   const inspect = async () => {
     setOptions([]);
     setChosen(null);
-    const settings: Row = { materialIds: ids, budget };
-    if (groupBy) settings.groupBy = groupBy;
-    if (charts) settings.outputs = ["report", "charts"];
-    if (Object.keys(travel).length) settings.travelRequest = travel;
+    const settings: Row = {
+      materialIds: scenario === "cross_org_analysis" ? ids : [],
+      budget,
+    };
+    if (scenario === "cross_org_analysis") {
+      if (groupBy) settings.groupBy = groupBy;
+      if (charts) settings.outputs = ["report", "charts"];
+    }
+    if (scenario === "travel_planning" && Object.keys(travel).length)
+      settings.travelRequest = travel;
     const result = await api(`${base}/designs/${session.id}/execution-check`, {
       expectedRevision: session.revision,
       settings,
@@ -73,13 +89,38 @@ export default function ExecutionCheck({
     setPartial(false);
     if (result.recipe?.travelRequest) setTravel(result.recipe.travelRequest);
   };
+  const scenario =
+    check?.recipe?.scenario ||
+    session.graph?.execution?.scenario ||
+    (session.graph?.tasks?.some((t: Row) =>
+      [
+        "attraction_search",
+        "hotel_search",
+        "route_planning",
+        "travel_report",
+      ].includes(t.capability),
+    )
+      ? "travel_planning"
+      : session.graph?.tasks?.some((t: Row) =>
+            [
+              "data_cleaning",
+              "data_validation",
+              "statistical_analysis",
+              "report_generation",
+            ].includes(t.capability),
+          )
+        ? "cross_org_analysis"
+        : "");
+  const confirmed = session.phase === "confirmed" && !dirty;
   return (
     <section className="execution-check panel" aria-label="执行条件检查">
+      <h3>下一步：执行这份方案</h3>
+      {!confirmed && <p>确认上方任务图后，在这里检查材料和服务预算。</p>}
       <div className="workspace-actions">
         <button
           type="button"
           className="primary"
-          disabled={dirty || busy}
+          disabled={!confirmed || busy}
           onClick={() =>
             void run(async () => {
               setOpen(true);
@@ -109,120 +150,139 @@ export default function ExecutionCheck({
                 }}
               />
             </label>
-            <label>
-              销售统计维度
-              <select
-                value={groupBy}
-                onChange={(e) => {
-                  setGroupBy(e.target.value);
-                  reset();
-                }}
-              >
-                <option value="">按目标匹配；模板沿用默认</option>
-                <option value="month">月份</option>
-                <option value="category">商品类别</option>
-                <option value="organization">组织</option>
-                <option value="organization_quarter">组织与季度</option>
-              </select>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={charts}
-                onChange={(e) => {
-                  setCharts(e.target.checked);
-                  reset();
-                }}
-              />
-              本次明确需要报告与图表
-            </label>
+            {scenario === "cross_org_analysis" && (
+              <>
+                <label>
+                  销售统计维度
+                  <select
+                    value={groupBy}
+                    onChange={(e) => {
+                      setGroupBy(e.target.value);
+                      reset();
+                    }}
+                  >
+                    <option value="">按目标匹配；模板沿用默认</option>
+                    <option value="month">月份</option>
+                    <option value="category">商品类别</option>
+                    <option value="organization">组织</option>
+                    <option value="organization_quarter">组织与季度</option>
+                  </select>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={charts}
+                    onChange={(e) => {
+                      setCharts(e.target.checked);
+                      reset();
+                    }}
+                  />
+                  本次明确需要报告与图表
+                </label>
+              </>
+            )}
           </fieldset>
           <details open={check?.status === "needs_input"}>
-            <summary>材料与出游条件</summary>
+            <summary>
+              {scenario === "travel_planning"
+                ? "出游条件"
+                : scenario === "cross_org_analysis"
+                  ? "销售数据"
+                  : "补充执行材料"}
+            </summary>
             <fieldset disabled={busy}>
-              <p>销售分析需要私有 CSV；旅游不要求上传资料。</p>
-              {materials
-                .filter((m) => m.scenario === "cross_org_analysis")
-                .map((m) => (
-                  <label key={m.id}>
+              {scenario === "travel_planning" && (
+                <p>景点和住宿资料由服务 Agent 获取，无需上传旅游文件。</p>
+              )}
+              {scenario === "cross_org_analysis" && (
+                <>
+                  <p>选择或上传本次要分析的销售 CSV。</p>
+                  {materials
+                    .filter((m) => m.scenario === "cross_org_analysis")
+                    .map((m) => (
+                      <label key={m.id}>
+                        <input
+                          type="checkbox"
+                          checked={ids.includes(m.id)}
+                          onChange={(e) => {
+                            setIds(
+                              e.target.checked
+                                ? [...ids, m.id]
+                                : ids.filter((x) => x !== m.id),
+                            );
+                            reset();
+                          }}
+                        />
+                        {m.name}
+                      </label>
+                    ))}
+                  <label>
+                    上传销售 CSV
                     <input
-                      type="checkbox"
-                      checked={ids.includes(m.id)}
+                      type="file"
+                      accept=".csv"
+                      disabled={busy}
                       onChange={(e) => {
-                        setIds(
-                          e.target.checked
-                            ? [...ids, m.id]
-                            : ids.filter((x) => x !== m.id),
-                        );
-                        reset();
-                      }}
-                    />
-                    {m.name}
-                  </label>
-                ))}
-              <label>
-                上传销售 CSV
-                <input
-                  type="file"
-                  accept=".csv"
-                  disabled={busy}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f)
-                      void run(async () => {
-                        if (f.size > 2_000_000)
-                          throw Error("文件不能超过 2 MB");
-                        const m = await api(base + "/materials", {
-                          name: f.name,
-                          scenario: "cross_org_analysis",
-                          content: await f.text(),
-                        });
-                        setMaterials(await api(base + "/materials"));
-                        setIds([...ids, m.id]);
-                        reset();
-                      });
-                  }}
-                />
-              </label>
-              <div className="execution-settings">
-                {[
-                  ["destination", "目的地", "text"],
-                  ["start_date", "出发日期", "date"],
-                  ["days", "天数", "number"],
-                  ["travelers", "人数", "number"],
-                  ["budget_cents", "旅行预算（元）", "number"],
-                ].map(([key, label, type]) => (
-                  <label key={key}>
-                    {label}
-                    <input
-                      type={type}
-                      value={
-                        key === "budget_cents"
-                          ? travel[key] === undefined
-                            ? ""
-                            : travel[key] / 100
-                          : (travel[key] ?? "")
-                      }
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setTravel({
-                          ...travel,
-                          [key]:
-                            type === "number"
-                              ? Number(v) * (key === "budget_cents" ? 100 : 1)
-                              : v,
-                        });
-                        reset();
+                        const f = e.target.files?.[0];
+                        if (f)
+                          void run(async () => {
+                            if (f.size > 2_000_000)
+                              throw Error("文件不能超过 2 MB");
+                            const m = await api(base + "/materials", {
+                              name: f.name,
+                              scenario: "cross_org_analysis",
+                              content: await f.text(),
+                            });
+                            setMaterials(await api(base + "/materials"));
+                            setIds([...ids, m.id]);
+                            reset();
+                          });
                       }}
                     />
                   </label>
-                ))}
-              </div>
+                </>
+              )}
+              {scenario === "travel_planning" && (
+                <div className="execution-settings">
+                  {[
+                    ["destination", "目的地", "text"],
+                    ["start_date", "出发日期", "date"],
+                    ["days", "天数", "number"],
+                    ["travelers", "人数", "number"],
+                    ["budget_cents", "旅行预算（元）", "number"],
+                  ].map(([key, label, type]) => (
+                    <label key={key}>
+                      {label}
+                      <input
+                        type={type}
+                        value={
+                          key === "budget_cents"
+                            ? travel[key] === undefined
+                              ? ""
+                              : travel[key] / 100
+                            : (travel[key] ?? "")
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setTravel({
+                            ...travel,
+                            [key]:
+                              type === "number"
+                                ? Number(v) * (key === "budget_cents" ? 100 : 1)
+                                : v,
+                          });
+                          reset();
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
             </fieldset>
           </details>
           <button
             type="button"
-            disabled={busy || dirty}
+            disabled={busy || !confirmed}
             onClick={() => void run(inspect)}
           >
             {busy ? "正在检查…" : "重新检查"}
@@ -260,22 +320,46 @@ export default function ExecutionCheck({
               ))}
               {check.recipe && (
                 <p>
-                  本次交付：{check.mapping.draft.summary}；统计维度：
-                  {
-                    (
+                  本次交付：
+                  {check.recipe.outputs
+                    .map(
+                      (key: string) =>
+                        (
+                          ({
+                            report: "完整报告",
+                            charts: "图表",
+                            attractions: "景点推荐",
+                            hotels: "住宿比较",
+                            route: "每日行程",
+                            clean: "清洗数据",
+                            validate: "质量检查",
+                            statistics: "统计汇总",
+                          }) as Row
+                        )[key] || key,
+                    )
+                    .join("、")}
+                  ；
+                  {scenario === "cross_org_analysis" && (
+                    <>
+                      统计维度：
                       {
-                        month: "月份",
-                        category: "类别",
-                        organization: "组织",
-                        organization_quarter: "组织与季度",
-                      } as Row
-                    )[check.recipe.groupBy]
-                  }
-                  ；服务费上限 {Number(check.recipe.budget).toFixed(2)}{" "}
+                        (
+                          {
+                            month: "月份",
+                            category: "类别",
+                            organization: "组织",
+                            organization_quarter: "组织与季度",
+                          } as Row
+                        )[check.recipe.groupBy]
+                      }
+                      ；
+                    </>
+                  )}
+                  服务费上限 {Number(check.recipe.budget).toFixed(2)}{" "}
                   USDC。报告需要人工接受后结算。
                 </p>
               )}
-              {!!check.gaps?.length && (
+              {check.canConfirm && !!check.gaps?.length && (
                 <label>
                   <input
                     type="checkbox"

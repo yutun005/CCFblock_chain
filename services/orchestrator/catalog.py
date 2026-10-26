@@ -301,7 +301,7 @@ def capability_scope(skill):
                        ["仅处理符合格式的用户销售 CSV", "不支持预测、利润或因果分析"]),
             "materials": "出游要求；旅游资料可选" if travel else "用户销售 CSV 或已验证的前置成果",
             "validation": known[3] if known else "尚未接入",
-            "parameters": ({"days": "1–7", "travelers": "1–20", "currency": "人民币分", "interests": ["culture", "nature"], "dateRange": "按已冻结演示资料版本检查"} if travel else
+                           "parameters": ({"days": "1–7", "travelers": "1–20", "currency": "人民币分", "interests": ["culture", "nature"], "dateRange": "按已冻结演示资料版本检查", "nights": "住宿晚数=旅行天数-1；三日游为两晚", "transport": "仅使用演示资料中的交通时间和费用，不承诺真实线路或最短路"} if travel else
                            {"groupBy": ["month", "category", "organization", "organization_quarter"], "outputs": ["report", "charts"], "currency": "人民币分；无利润或预测字段"}),
             "executionSupport": "执行中报告进度、提出阻塞、交接候选、接收调整并继续；支持同项目有效委派间消息"}
 

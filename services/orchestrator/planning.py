@@ -97,6 +97,27 @@ class GoalDraft(BaseModel):
     serviceBudget: str | None = None
 
 
+def canonical_draft(draft):
+    """Translate model-local node IDs at the boundary, including every reference."""
+    keys = [task.key for task in draft.tasks]
+    skills = [task.skill for task in draft.tasks]
+    if len(set(keys)) != len(keys) or len(set(skills)) != len(skills):
+        raise ValueError("任务编号或服务能力重复，不能合并为一次交付")
+    unknown = set(skills) - CAPABILITIES.keys()
+    if unknown:
+        raise ValueError("尚未接入服务能力：" + "、".join(sorted(unknown)))
+    aliases = {task.key: CAPABILITIES[task.skill][0] for task in draft.tasks}
+    tasks = []
+    for task in draft.tasks:
+        if set(task.dependencies) - aliases.keys():
+            raise ValueError("前置任务不存在：" + task.title)
+        tasks.append(task.model_copy(update={"key": aliases[task.key],
+            "dependencies": [aliases[key] for key in task.dependencies]}))
+    # The model may use its task IDs or the public output names for deliverables.
+    outputs = list(dict.fromkeys(aliases.get(key, key) for key in draft.outputs))
+    return draft.model_copy(update={"tasks": tasks, "outputs": outputs}), aliases
+
+
 def binding(recipe):
     """Changing materials or requirements invalidates the interpretation; ranking need not re-call the model."""
     from .application import object_hash
