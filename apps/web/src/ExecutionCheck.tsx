@@ -11,6 +11,7 @@ const states: Row = {
   unsupported_structure: "当前结构无法执行",
   service_unavailable: "服务暂不可用",
   model_unavailable: "模型暂不可用",
+  needs_revision: "这份草稿需要更新",
   blocked: "需要调整",
 };
 
@@ -19,14 +20,15 @@ export default function ExecutionCheck({
   session,
   dirty,
   onJob,
+  onRegenerate,
 }: {
   api: Api;
   session: Row;
   dirty: boolean;
   onJob: (id: string) => void;
+  onRegenerate?: () => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false),
-    [busy, setBusy] = useState(false),
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [materials, setMaterials] = useState<Row[]>([]),
     [ids, setIds] = useState<string[]>([]);
@@ -52,11 +54,16 @@ export default function ExecutionCheck({
     setTravel(known.travelRequest || {});
     setIds([]);
     setCharts(known.outputs?.includes("charts") || false);
-    setOpen(false);
   }, [session.id, supplied]);
   useEffect(() => {
     reset();
   }, [session.revision, session.id, dirty]);
+  useEffect(() => {
+    if (session.phase === "confirmed")
+      void api(base + "/materials")
+        .then(setMaterials)
+        .catch((e) => setError(String(e)));
+  }, [session.id, session.phase, api]);
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -88,6 +95,21 @@ export default function ExecutionCheck({
     setCheck(result);
     setPartial(false);
     if (result.recipe?.travelRequest) setTravel(result.recipe.travelRequest);
+    return result;
+  };
+  const compare = async (result: Row, acceptPartial = false) => {
+    const scope = await api(`${base}/designs/${session.id}/execution-confirm`, {
+      checkId: result.id,
+      acceptPartial,
+    });
+    const comparison = await api(base + "/comparisons", scope.recipe);
+    setOptions(comparison.options);
+    if (!comparison.options.length)
+      setError(comparison.unavailable.map((x: Row) => x.reason).join("；"));
+  };
+  const quote = async () => {
+    const result = await inspect();
+    if (result.canConfirm && !result.gaps?.length) await compare(result);
   };
   const scenario =
     check?.recipe?.scenario ||
@@ -113,30 +135,16 @@ export default function ExecutionCheck({
         : "");
   const confirmed = session.phase === "confirmed" && !dirty;
   return (
-    <section className="execution-check panel" aria-label="执行条件检查">
-      <h3>下一步：执行这份方案</h3>
-      {!confirmed && <p>确认上方任务图后，在这里检查材料和服务预算。</p>}
-      <div className="workspace-actions">
-        <button
-          type="button"
-          className="primary"
-          disabled={!confirmed || busy}
-          onClick={() =>
-            void run(async () => {
-              setOpen(true);
-              setMaterials(await api(base + "/materials"));
-              await inspect();
-            })
-          }
-        >
-          检查执行条件
-        </button>
-        {dirty && <span>先保存任务图，再检查本次执行。</span>}
-      </div>
-      {open && (
+    <section className="execution-check panel" aria-label="服务报价与预算">
+      <h3>下一步：选择服务方案</h3>
+      {!confirmed && <p>确认上方任务图后，设置服务费上限并获取报价。</p>}
+      {(confirmed || check) && (
         <>
-          <p>先核对实际能交付的工作；确认范围后再比较费用。此处不会付款。</p>
-          <fieldset disabled={busy} className="execution-settings">
+          <p>按已确认的任务图获取报价，选择后再确认托管预算。</p>
+          <fieldset
+            disabled={busy || !confirmed}
+            className="execution-settings"
+          >
             <label>
               Agent 服务费上限（USDC）
               <input
@@ -190,7 +198,7 @@ export default function ExecutionCheck({
                   ? "销售数据"
                   : "补充执行材料"}
             </summary>
-            <fieldset disabled={busy}>
+            <fieldset disabled={busy || !confirmed}>
               {scenario === "travel_planning" && (
                 <p>景点和住宿资料由服务 Agent 获取，无需上传旅游文件。</p>
               )}
@@ -282,10 +290,11 @@ export default function ExecutionCheck({
           </details>
           <button
             type="button"
+            className="primary"
             disabled={busy || !confirmed}
-            onClick={() => void run(inspect)}
+            onClick={() => void run(quote)}
           >
-            {busy ? "正在检查…" : "重新检查"}
+            {busy ? "正在获取报价…" : "获取服务报价"}
           </button>
           {error && (
             <p role="alert" className="error">
@@ -294,30 +303,42 @@ export default function ExecutionCheck({
           )}
           {check && (
             <div aria-live="polite">
-              <h3>{states[check.status] || check.status}</h3>
+              {check.status !== "ready" && (
+                <h3>{states[check.status] || check.status}</h3>
+              )}
               {check.issues.map((issue: string, i: number) => (
                 <p key={i}>{issue}</p>
               ))}
-              {check.nodes.map((n: Row) => (
-                <article key={n.key} className="execution-node">
-                  <strong>{n.title}</strong>
-                  <p>{n.scope.supported}</p>
-                  <small>
-                    输入：{n.inputSources.join("、")} · 验收：
-                    {n.scope.validation}
-                  </small>
-                  <p>
-                    对应原图：
-                    {n.sourceKeys
-                      .map(
-                        (k: string) =>
-                          session.graph.tasks.find((t: Row) => t.key === k)
-                            ?.title || k,
-                      )
-                      .join("、")}
-                  </p>
-                </article>
-              ))}
+              {check.status === "needs_revision" && onRegenerate && (
+                <button
+                  type="button"
+                  disabled={busy || dirty}
+                  onClick={() => void run(onRegenerate)}
+                >
+                  按已有需求重新生成任务图
+                </button>
+              )}
+              {!!check.gaps?.length &&
+                check.nodes.map((n: Row) => (
+                  <article key={n.key} className="execution-node">
+                    <strong>{n.title}</strong>
+                    <p>{n.scope.supported}</p>
+                    <small>
+                      输入：{n.inputSources.join("、")} · 验收：
+                      {n.scope.validation}
+                    </small>
+                    <p>
+                      对应原图：
+                      {n.sourceKeys
+                        .map(
+                          (k: string) =>
+                            session.graph.tasks.find((t: Row) => t.key === k)
+                              ?.title || k,
+                        )
+                        .join("、")}
+                    </p>
+                  </article>
+                ))}
               {check.recipe && (
                 <p>
                   本次交付：
@@ -369,33 +390,15 @@ export default function ExecutionCheck({
                   我同意只执行上面支持的部分；未支持的原要求保留在项目记录中。
                 </label>
               )}
-              {check.canConfirm && (
+              {check.canConfirm && !!check.gaps?.length && (
                 <button
                   className="primary"
                   disabled={
                     busy || dirty || (check.gaps?.length > 0 && !partial)
                   }
-                  onClick={() =>
-                    void run(async () => {
-                      const scope = await api(
-                        `${base}/designs/${session.id}/execution-confirm`,
-                        { checkId: check.id, acceptPartial: partial },
-                      );
-                      const comparison = await api(
-                        base + "/comparisons",
-                        scope.recipe,
-                      );
-                      setOptions(comparison.options);
-                      if (!comparison.options.length)
-                        setError(
-                          comparison.unavailable
-                            .map((x: Row) => x.reason)
-                            .join("；"),
-                        );
-                    })
-                  }
+                  onClick={() => void run(() => compare(check, partial))}
                 >
-                  确认本次执行范围，查看费用
+                  按选定范围获取报价
                 </button>
               )}
             </div>

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   Background,
   Controls,
-  MarkerType,
+  BaseEdge,
+  getSmoothStepPath,
+  type EdgeProps,
   Position,
   ReactFlow,
   useReactFlow,
@@ -23,6 +25,38 @@ const labels: Record<string, string> = {
   hotels: "酒店推荐",
   route: "每日行程",
 };
+
+// Draw the arrow in the edge SVG itself. SVG marker URLs can resolve to a
+// hidden graph instance (especially in dialogs), leaving direction invisible.
+function DirectedEdge(props: EdgeProps) {
+  const { targetX, targetY, targetPosition = Position.Top } = props;
+  const [dx, dy] =
+    targetPosition === Position.Left
+      ? [-1, 0]
+      : targetPosition === Position.Right
+        ? [1, 0]
+        : targetPosition === Position.Bottom
+          ? [0, 1]
+          : [0, -1];
+  const tipX = targetX + dx * 9,
+    tipY = targetY + dy * 9;
+  const [path] = getSmoothStepPath({ ...props, targetX: tipX, targetY: tipY });
+  const backX = tipX + dx * 15,
+    backY = tipY + dy * 15;
+  const points = `${tipX},${tipY} ${backX + dy * 6},${backY - dx * 6} ${backX - dy * 6},${backY + dx * 6}`;
+  return (
+    <>
+      <BaseEdge id={props.id} path={path} style={props.style} />
+      <polygon
+        className="dag-arrowhead"
+        points={points}
+        fill="#72b5ef"
+        stroke="#72b5ef"
+      />
+    </>
+  );
+}
+const directedEdges = { directed: DirectedEdge };
 
 function FitVisibleGraph({
   layout,
@@ -88,14 +122,23 @@ function GraphSurface({
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setSize({
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
-      }),
-    );
+    let frame = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      cancelAnimationFrame(frame);
+      const { width, height } = entry.contentRect;
+      frame = requestAnimationFrame(() =>
+        setSize((current) =>
+          current.width === width && current.height === height
+            ? current
+            : { width, height },
+        ),
+      );
+    });
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, []);
   const levels: Record<string, number> = {};
   for (let pass = 0; pass < tasks.length; pass++)
@@ -108,90 +151,30 @@ function GraphSurface({
           Math.max(-1, ...task.dependencies.map((key: string) => levels[key])) +
           1;
   const columns: Record<number, number> = {};
-  const depth = Math.max(0, ...Object.values(levels)) + 1;
   const breadth = Math.max(
     1,
     ...Object.values(levels).map(
       (level) => tasks.filter((task) => levels[task.key] === level).length,
     ),
   );
-  const verticalFit = Math.min(
-    (size.width || 800) / (breadth * 260),
-    (size.height || 480) / (depth * 130),
-  );
-  const horizontalFit = Math.min(
-    (size.width || 800) / (depth * 280),
-    (size.height || 480) / (breadth * 105),
-  );
-  const horizontal = horizontalFit > verticalFit;
-  const wrapColumns = Math.max(
-    1,
-    Math.min(
-      breadth,
-      Math.round(
-        Math.sqrt(
-          ((breadth * (size.width || 800)) / (size.height || 480)) * 0.5,
-        ),
-      ),
-    ),
-  );
-  const stageOffsets: Record<number, number> = {};
-  let offset = 0;
-  for (let level = 0; level < depth; level++) {
-    stageOffsets[level] = offset;
-    const count = tasks.filter((task) => levels[task.key] === level).length;
-    offset += Math.ceil(count / wrapColumns) * 130;
-  }
-  const compactChain = planningOnly && depth > 5 && breadth <= 2;
-  const sequence = [...tasks].sort(
-    (a, b) => (levels[a.key] || 0) - (levels[b.key] || 0),
-  );
-  const chainColumns = Math.max(
-    2,
-    Math.round(
-      Math.sqrt(
-        ((tasks.length * (size.width || 800)) / (size.height || 480)) * 0.5,
-      ),
-    ),
-  );
   const nodes = tasks.map((task) => {
     const level = levels[task.key] || 0,
       column = columns[level] || 0;
     columns[level] = column + 1;
-    const index = sequence.findIndex((node) => node.key === task.key);
-    const row = Math.floor(index / chainColumns);
-    const chainColumn =
-      row % 2
-        ? chainColumns - 1 - (index % chainColumns)
-        : index % chainColumns;
     return {
       id: task.key,
       width: 230,
       height: 100,
-      position: compactChain
-        ? { x: chainColumn * 280, y: row * 140 }
-        : planningOnly && breadth > 3
-          ? {
-              x: (column % wrapColumns) * 260,
-              y: stageOffsets[level] + Math.floor(column / wrapColumns) * 130,
-            }
-          : horizontal
-            ? { x: level * 280, y: column * 105 }
-            : { x: column * 260, y: level * 130 },
-      sourcePosition: compactChain
-        ? row % 2
-          ? Position.Left
-          : Position.Right
-        : horizontal && breadth <= 3
-          ? Position.Right
-          : Position.Bottom,
-      targetPosition: compactChain
-        ? row % 2
-          ? Position.Right
-          : Position.Left
-        : horizontal && breadth <= 3
-          ? Position.Left
-          : Position.Top,
+      position: {
+        x:
+          (column +
+            (breadth - tasks.filter((t) => levels[t.key] === level).length) /
+              2) *
+          290,
+        y: level * 190,
+      },
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
       data: {
         label: (
           <div title={task.title}>
@@ -200,7 +183,7 @@ function GraphSurface({
             {(planningOnly
               ? task.dependencies.length
                 ? "依赖前置成果"
-                : "独立规划任务"
+                : "可直接开始"
               : task.estimatedProvider) ||
               (task.dependencies.length ? "前置任务完成后执行" : "可直接开始")}
           </div>
@@ -224,9 +207,8 @@ function GraphSurface({
       id: `${key}-${task.key}`,
       source: key,
       target: task.key,
-      type: "smoothstep",
+      type: "directed",
       ariaLabel: `${tasks.find((t) => t.key === key)?.title || key} → ${task.title}`,
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#72b5ef" },
       style: { stroke: "#72b5ef", strokeWidth: 2 },
     })),
   );
@@ -245,55 +227,58 @@ function GraphSurface({
         className={`planning-graph${large ? " planning-graph-large" : ""}`}
         aria-label="子任务依赖图"
       >
-        <ReactFlow
-          width={Math.max(1, size.width)}
-          height={Math.max(1, size.height)}
-          nodes={nodes}
-          edges={edges}
-          onInit={(instance) => {
-            fitGraph.current = () => {
-              const element = container.current;
-              if (!element?.clientWidth || !element.clientHeight) return;
-              void instance.setViewport(
-                getViewportForBounds(
-                  instance.getNodesBounds(instance.getNodes()),
-                  element.clientWidth,
-                  element.clientHeight,
-                  0.01,
-                  1,
-                  0.12,
-                ),
-              );
-            };
-          }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={!!onSelectTask}
-          onNodeClick={(_, node) => onSelectTask?.(node.id)}
-          deleteKeyCode={null}
-          minZoom={0.01}
-          maxZoom={2}
-        >
-          <FitVisibleGraph
-            layout={layout + horizontal}
-            width={size.width}
-            height={size.height}
-            bounds={{
-              x: 0,
-              y: 0,
-              width: Math.max(
-                230,
-                ...nodes.map((node) => node.position.x + 230),
-              ),
-              height: Math.max(
-                100,
-                ...nodes.map((node) => node.position.y + 100),
-              ),
+        {size.width > 0 && size.height > 0 && (
+          <ReactFlow
+            width={Math.max(1, size.width)}
+            height={Math.max(1, size.height)}
+            nodes={nodes}
+            edges={edges}
+            edgeTypes={directedEdges}
+            onInit={(instance) => {
+              fitGraph.current = () => {
+                const element = container.current;
+                if (!element?.clientWidth || !element.clientHeight) return;
+                void instance.setViewport(
+                  getViewportForBounds(
+                    instance.getNodesBounds(instance.getNodes()),
+                    element.clientWidth,
+                    element.clientHeight,
+                    0.01,
+                    1,
+                    0.12,
+                  ),
+                );
+              };
             }}
-          />
-          <Background />
-          <Controls showInteractive={false} />
-        </ReactFlow>
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={!!onSelectTask}
+            onNodeClick={(_, node) => onSelectTask?.(node.id)}
+            deleteKeyCode={null}
+            minZoom={0.01}
+            maxZoom={2}
+          >
+            <FitVisibleGraph
+              layout={layout}
+              width={size.width}
+              height={size.height}
+              bounds={{
+                x: 0,
+                y: 0,
+                width: Math.max(
+                  230,
+                  ...nodes.map((node) => node.position.x + 230),
+                ),
+                height: Math.max(
+                  100,
+                  ...nodes.map((node) => node.position.y + 100),
+                ),
+              }}
+            />
+            <Background />
+            <Controls showInteractive={false} />
+          </ReactFlow>
+        )}
       </div>
     </>
   );

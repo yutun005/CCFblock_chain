@@ -41,14 +41,14 @@ def test_template_without_model_preserves_parameters_and_requires_scope_confirma
     assert not ws.engine.db.values("jobs")
 
 
-def test_missing_materials_and_unbound_model_unavailable_are_distinct(setup):
+def test_missing_materials_and_old_unbound_graph_are_distinct(setup):
     check = inspect(setup, materialIds=[])
     assert check["status"] == "needs_input" and "CSV" in check["issues"][0]
     ws, _, session, _ = setup
     session["graph"]["tasks"][0].pop("capability")
     ws.engine.db.put("design_sessions", session["id"], session)
     check = inspect(setup)
-    assert check["status"] == "model_unavailable" and not check["canConfirm"]
+    assert check["status"] == "needs_revision" and not check["canConfirm"]
     assert ws.engine.db.get("design_sessions", session["id"])["graph"] == session["graph"]
 
 
@@ -85,26 +85,21 @@ def test_duplicate_capability_and_missing_input_edge_do_not_fall_back_to_templat
     assert "重复" in inspect(setup)["issues"][0]
 
 
-def test_model_mapping_expands_one_abstract_node_and_requires_partial_opt_in(setup, monkeypatch):
+def test_partial_bound_graph_requires_opt_in_without_model_replanning(setup, monkeypatch):
     ws, service, session, _ = setup
-    original = copy.deepcopy(session["graph"]["tasks"])
-    session["graph"]["tasks"] = [{**original[-1], "key": "analysis", "capability": None, "dependencies": [], "title": "分析并预测销售"}]
-    session["graph"]["deliverables"] = [{"taskKey": "analysis", "name": original[-1]["outputs"][0]}]
-    session["brief"]["requirements"].append({"id": "R2", "text": "未来销量预测", "kind": "deliverable"})
+    session["graph"]["tasks"].append({"key":"forecast", "title":"预测未来销量", "description":"预测需求", "dependencies":[],
+        "outputs":["销量预测"], "requirementIds":["R2"], "capabilityGap":"未接入未来预测能力"})
+    session["brief"]["requirements"].append({"id":"R2", "text":"未来销量预测", "kind":"deliverable"})
     ws.engine.db.put("design_sessions", session["id"], session)
-    payload = {"scenario": "cross_org_analysis", "draft": {"status": "ready", "summary": "按月汇总历史销售、报告及图表；本次不包含预测", "outputs": ["report", "charts"], "groupBy": "month",
-        "tasks": [{"key": t["key"], "skill": t["capability"], "title": t["title"], "dependencies": t["dependencies"], "reason": t["description"]} for t in original]},
-        "sources": {t["key"]: ["analysis"] for t in original}, "coveredRequirements": ["R1"],
-        "gaps": [{"sourceKeys": ["analysis"], "requirementIds": ["R2"], "reason": "未接入未来预测能力"}]}
-    monkeypatch.setattr(planning, "configuration", lambda: (planning.PlannerConfig(model="mock-test"), "", True))
-    model = AsyncMock(return_value=json.dumps(payload, ensure_ascii=False)); monkeypatch.setattr(planning, "completion", model)
+    model = AsyncMock(side_effect=AssertionError("quoting must not re-plan")); monkeypatch.setattr(planning, "completion", model)
     check = inspect(setup)
     assert check["status"] == "capability_gap" and len(check["nodes"]) == 4
     with pytest.raises(ValueError, match="明确确认"):
-        asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId": check["id"]}))
-    scope = asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId": check["id"], "acceptPartial": True}))
-    assert scope["excludedRequirements"] == payload["gaps"]
-    assert scope["originalRequirements"][-1]["text"] == "未来销量预测" and model.await_count == 1
+        asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId":check["id"]}))
+    scope = asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId":check["id"], "acceptPartial":True}))
+    assert scope["excludedRequirements"][0]["reason"] == "未接入未来预测能力"
+    assert scope["originalRequirements"][-1]["text"] == "未来销量预测"
+    model.assert_not_called()
 
 
 def test_offline_provider_is_not_reported_as_missing_business_capability(setup):

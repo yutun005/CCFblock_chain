@@ -48,13 +48,87 @@ def service(tmp_path, monkeypatch):
     db = application.Database(tmp_path / "designs.sqlite")
     workspace = Workspace(SimpleNamespace(db=db), {}, None)
     monkeypatch.setattr(planning, "configuration", lambda: (planning.PlannerConfig(model="fake-test"), "", True))
-    return designs.Designs(workspace)
+    service = designs.Designs(workspace)
+    # These cases exercise open-domain conversation/format, without installed services.
+    monkeypatch.setattr(designs.Designs, "service_context", lambda self: [])
+    return service
 
 
 def mock_model(monkeypatch, *responses):
     model = AsyncMock(side_effect=[json.dumps(value, ensure_ascii=False) for value in responses])
     monkeypatch.setattr(planning, "completion", model)
     return model
+
+
+def travel_service(tmp_path, monkeypatch):
+    workspace = Workspace(SimpleNamespace(db=application.Database(tmp_path / "travel-design.sqlite")), {}, None)
+    service = designs.Designs(workspace)
+    monkeypatch.setattr(planning, "configuration", lambda: (planning.PlannerConfig(model="fixture"), "", True))
+    template = next(t for t in service.templates() if any(n.get("capability") == "travel_report" for n in t["graph"]["tasks"]))
+    return service, {"graph": copy.deepcopy(template["graph"]), "reply": "景点与住宿并行，之后安排行程并出报告。"}
+
+
+@pytest.mark.parametrize("problem", ["all_unbound", "internal", "serial", "missing_dependency"])
+def test_first_turn_checks_service_graph_even_when_every_binding_is_missing(tmp_path, monkeypatch, problem):
+    service, good = travel_service(tmp_path, monkeypatch)
+    bad = copy.deepcopy(good)
+    tasks = bad["graph"]["tasks"]
+    if problem == "all_unbound":
+        for task in tasks: task.pop("capability", None)
+    elif problem == "internal":
+        tasks[0]["title"] = "整理并确认需求与约束"
+    elif problem == "serial":
+        tasks[1]["dependencies"] = [tasks[0]["key"]]
+    else:
+        tasks[-1]["dependencies"] = []
+    model = mock_model(monkeypatch, bad, good)
+    record = asyncio.run(service.message("两个人去杭州玩三天，帮我安排一下"))
+    tasks = record["graph"]["tasks"]
+    assert model.await_count == 2
+    assert all(t.get("capability") for t in tasks)
+    assert len([t for t in tasks if not t["dependencies"]]) == 2
+    assert not service.db.values("jobs")
+
+
+def test_redundant_intermediate_output_names_do_not_trigger_model_retry(tmp_path, monkeypatch):
+    service, good = travel_service(tmp_path, monkeypatch)
+    good["graph"]["execution"] = {"scenario":"travel_planning", "outputs":["attractions","hotels","route","report"]}
+    model = mock_model(monkeypatch, good)
+    record = asyncio.run(service.message("杭州三日旅游方案"))
+    assert record["graph"]["execution"]["outputs"] == ["report"]
+    assert model.await_count == 1
+
+
+def test_truncated_response_is_retried_internally_without_blame_on_configuration(tmp_path, monkeypatch):
+    service, good = travel_service(tmp_path, monkeypatch)
+    model = AsyncMock(side_effect=[planning.ModelResponseError("模型输出达到长度上限"), json.dumps(good,ensure_ascii=False)])
+    monkeypatch.setattr(planning,"completion",model)
+    result = asyncio.run(service.message("杭州三日旅游方案"))
+    assert result["graph"] and model.await_count == 2
+
+
+def test_bad_service_graph_is_never_saved_as_a_valid_plan(tmp_path, monkeypatch):
+    service, good = travel_service(tmp_path, monkeypatch)
+    for task in good["graph"]["tasks"]: task.pop("capability",None)
+    mock_model(monkeypatch, good, good)
+    with pytest.raises(ValueError,match="任务图"):
+        asyncio.run(service.message("杭州三日旅游方案"))
+    assert not service.db.values("design_sessions")
+
+
+@pytest.mark.parametrize("finish, refusal, retryable", [("length",None,True),("content_filter",None,False),("stop","refused",False),(None,None,None)])
+def test_provider_output_errors_are_not_reported_as_invalid_configuration(monkeypatch,finish,refusal,retryable):
+    client = httpx.AsyncClient
+    def respond(request):
+        return httpx.Response(200,json={"choices":[{"finish_reason":finish,"message":{"content":"{}","refusal":refusal}}]})
+    monkeypatch.setattr(planning.httpx,"AsyncClient",lambda **kw:client(transport=httpx.MockTransport(respond),**kw))
+    call = planning.completion(planning.PlannerConfig(endpoint="https://fixture.invalid/chat",model="fixture"),"",[])
+    if retryable is None:
+        assert asyncio.run(call) == "{}"
+    else:
+        with pytest.raises(planning.ModelResponseError) as caught: asyncio.run(call)
+        assert caught.value.retryable is retryable
+        assert "配置" not in str(caught.value)
 
 
 def draft_response():

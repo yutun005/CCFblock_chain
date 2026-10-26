@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -67,11 +68,11 @@ def status():
     try:
         config, _, ready = configuration()
         return {"configured": ready, "model": config.model, "configFile": "planner.local.json",
-                "flowVersion": "requirements-dag-v1", "serviceExecution": "shared-model" if ready else "builtin-tools",
+                "flowVersion": "service-dag-v2", "serviceExecution": "shared-model" if ready else "builtin-tools",
                 "message": "主智能体与本项目子智能体共用此模型配置；无需分别填写。" if ready else "尚未配置模型；模板与内置业务工具仍可使用。配置一次后，主智能体与子智能体共用。"}
     except ValueError as exc:
         return {"configured": False, "model": "", "configFile": "planner.local.json",
-                "flowVersion": "requirements-dag-v1", "serviceExecution": "configuration-error", "message": str(exc)}
+                "flowVersion": "service-dag-v2", "serviceExecution": "configuration-error", "message": str(exc)}
 
 
 class PlannedTask(BaseModel):
@@ -238,6 +239,12 @@ async def review_draft(workspace, planning_id, data):
                               intake=intake)
 
 
+class ModelResponseError(ValueError):
+    def __init__(self, message, *, retryable=True):
+        super().__init__(message)
+        self.retryable = retryable
+
+
 async def completion(config, secret, messages, *, purpose="planning"):
     body = {"model": config.model, "messages": messages, config.tokenParameter: config.maxTokens, "stream": False}
     if config.responseFormat == "json_object":
@@ -257,11 +264,17 @@ async def completion(config, secret, messages, *, purpose="planning"):
                         raise ValueError("模型响应超过大小限制")
         answer = json.loads(payload)
         choice = answer["choices"][0]
-        if choice.get("finish_reason") != "stop" or choice["message"].get("tool_calls") or choice["message"].get("refusal"):
-            raise ValueError("模型未返回完整内容（截断、拒绝或格式不符），请调整模型配置")
+        finish = choice.get("finish_reason")
+        logging.getLogger(__name__).info("Model response purpose=%s finish=%s usage=%s", purpose, finish, answer.get("usage", {}))
+        if choice["message"].get("refusal") or finish == "content_filter":
+            raise ModelResponseError("模型拒绝了本次请求，请调整任务描述后重试。", retryable=False)
+        if finish == "length":
+            raise ModelResponseError("模型输出达到长度上限，未返回完整方案；请精简说明并重新返回完整的任务节点、服务绑定及依赖。")
+        if choice["message"].get("tool_calls") or finish not in {None, "stop"}:
+            raise ModelResponseError("模型没有返回方案文本，请返回完整 JSON 对象。")
         content = choice["message"]["content"]
         if not isinstance(content, str) or len(content) > 40000:
-            raise ValueError("模型未返回有效的文本内容")
+            raise ModelResponseError("模型未返回有效的文本内容")
         return content
     except httpx.TimeoutException:
         raise ValueError("子智能体模型调用超时，本次未提交成果。" if purpose == "execution" else "模型调用超时，未创建任务或托管资金，可重试") from None

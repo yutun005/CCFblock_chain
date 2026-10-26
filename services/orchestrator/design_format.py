@@ -40,6 +40,7 @@ def contract(name):
     task = {"type": "object", "properties": {
         "key": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"},
         "capability": {"type": ["string", "null"], "description": "匹配 serviceCatalog 的 id；未接入的业务为 null"},
+        "capabilityGap": {"type": "string", "description": "仅在 capability 为空时填写确实未接入的具体业务能力；已接入工作不可用此字段替代绑定"},
         **{key: {"type": "array", "items": {"type": "string"}} for key in
            ("dependencies", "inputs", "outputs", "acceptance", "requirementIds")}}, "required": ["title"]}
     graph = {"type": "object", "properties": {"title": {"type": "string"}, "summary": {"type": "string"},
@@ -164,6 +165,7 @@ def adapt(name, raw, context):
             row = {**(item.get("data") if isinstance(item.get("data"), dict) else {}), **item}
             old_id = str(pick(row, "key", "id", "taskId", default=f"task{index+1}"))
             for canonical, aliases in {"title": ("name", "label"), "description": ("reason",),
+                "capability": ("skill", "serviceId", "service_id", "capabilityId"),
                 "stageId": ("stage_id",), "dependencies": ("dependsOn", "depends_on", "deps"),
                 "outputs": ("deliverables",), "acceptance": ("acceptanceCriteria", "acceptance_criteria"),
                 "requirementIds": ("requirement_ids",)}.items():
@@ -183,8 +185,9 @@ def adapt(name, raw, context):
                           "inputs": strings(row.get("inputs")), "outputs": strings(pick(row, "outputs", "deliverables", default=[])),
                           "acceptance": strings(pick(row, "acceptance", "acceptanceCriteria", "acceptance_criteria", default=[])),
                           "requirementIds": [req_map.get(value, key(value, "R")) for value in references(pick(row, "requirementIds", "requirement_ids", default=[]))]})
-            if "capability" in row:
-                tasks[-1]["capability"] = row["capability"]
+            for field in ("capability", "capabilityGap"):
+                if field in row:
+                    tasks[-1][field] = row[field]
         for task in tasks:
             if sum(item["title"] == task["title"] for item in tasks) == 1:
                 node_map.setdefault(str(task["title"]), task["key"])

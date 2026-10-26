@@ -163,7 +163,7 @@ function GraphEditor({
         <fieldset className="design-node-form" disabled={disabled}>
           <legend>编辑任务：{task.title}</legend>
           <label>
-            执行能力（可留空，由模型匹配）
+            执行服务
             <select
               value={task.capability || ""}
               onChange={(e) =>
@@ -517,6 +517,8 @@ export default function DesignWorkspace({
   const [sessions, setSessions] = useState<Row[]>([]);
   const [templates, setTemplates] = useState<Row[]>([]);
   const [planner, setPlanner] = useState<Row | null>(null);
+  const outdated =
+    !!planner?.flowVersion && planner.flowVersion !== "service-dag-v2";
   const [text, setText] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -579,6 +581,10 @@ export default function DesignWorkspace({
     await refresh();
   };
   const send = async (message = text) => {
+    if (outdated)
+      throw new Error(
+        "后台仍在运行旧版本，请在启动窗口按 R 重启服务后刷新页面。",
+      );
     if (!message.trim()) return;
     if (dirty) throw new Error("请先保存任务图修改，再继续与 AI 讨论。");
     const result = session
@@ -816,6 +822,12 @@ export default function DesignWorkspace({
                 </button>
               </div>
             )}
+            {outdated && (
+              <p role="alert" className="error">
+                页面已更新，但后台仍是旧版本。请在启动窗口按 R
+                重启服务，然后刷新页面。
+              </p>
+            )}
             <form
               className="design-composer"
               onSubmit={(event) => {
@@ -846,7 +858,11 @@ export default function DesignWorkspace({
                   type="submit"
                   className="primary"
                   disabled={
-                    !!busy || !text.trim() || !planner?.configured || dirty
+                    !!busy ||
+                    !text.trim() ||
+                    !planner?.configured ||
+                    dirty ||
+                    outdated
                   }
                 >
                   <Send size={16} />
@@ -1028,12 +1044,25 @@ export default function DesignWorkspace({
                         </button>
                         <button
                           type="button"
-                          disabled={!!busy || dirty || !planner?.configured}
+                          disabled={
+                            !!busy || dirty || !planner?.configured || outdated
+                          }
                           onClick={() =>
                             void run("review", () => mutate("review"))
                           }
                         >
                           AI 查漏（可选）
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !!busy || dirty || !planner?.configured || outdated
+                          }
+                          onClick={() =>
+                            void run("expand", () => mutate("regenerate"))
+                          }
+                        >
+                          按已有需求重新生成任务图
                         </button>
                         <button
                           type="button"
@@ -1106,8 +1135,11 @@ export default function DesignWorkspace({
                       <ExecutionCheck
                         api={api}
                         session={session}
-                        dirty={dirty}
+                        dirty={dirty || outdated}
                         onJob={onJob}
+                        onRegenerate={() =>
+                          run("expand", () => mutate("regenerate"))
+                        }
                       />
                     </div>
                   </>
