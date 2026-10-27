@@ -42,7 +42,7 @@ def test_ready_dispatch_is_signed_and_does_not_change_legacy_plan_hashes():
 @pytest.fixture
 def dispatcher(tmp_path):
     """Exercise real dispatch, SQLite checkpoints and protocol validation with controlled RPC/market boundaries."""
-    plan = data_plan([]).model_copy(update={"execution": ExecutionPolicy(dispatch="on_ready", selection="fastest")})
+    plan = data_plan([], sla=30).model_copy(update={"execution": ExecutionPolicy(dispatch="on_ready", selection="fastest")})
     # Scheduling-only graph A -> C with an independent B; business execution is
     # separately exercised with both complete, contract-valid scenario DAGs.
     plan = plan.model_copy(update={"tasks": tuple(
@@ -223,3 +223,56 @@ def test_reference_time_includes_merchant_serial_capacity_and_independent_branch
     assert elapsed_seconds(tasks, team) == 20  # C starts at 3 while unrelated B is running.
     team[1]["agentId"] = "one"
     assert elapsed_seconds(tasks, team) == 27  # The same merchant cannot execute A/B in parallel.
+
+
+def test_frontier_keeps_only_real_tradeoffs_and_labels_three_representatives():
+    from services.orchestrator.pareto import frontier, public
+    tasks = [SimpleNamespace(key="task", dependencies=())]
+    values = [(59, 54, 70), (70, 30, 69), (70, 46, 98), (80, 19, 52), (82, 35, 50)]
+    pools = [[{"agentId":str(i), "price":cost, "seconds":seconds,
+               "history":{"settled":success, "expired":100-success}}
+              for i, (cost, seconds, success) in enumerate(values)]]
+    all_options = frontier(tasks, pools, 100, limit=20)["options"]
+    assert (82, 35) not in {(o["price"], o["seconds"]) for o in all_options}
+    assert (70, 46) in {(o["price"], o["seconds"]) for o in all_options}  # Better third objective.
+    result = frontier(tasks, pools, 100)
+    assert len(result["options"]) == 3
+    assert {(o["price"], o["seconds"]) for o in result["options"]} == {(59,54), (70,46), (80,19)}
+    assert public(next(o for o in result["options"] if o["price"] == 70))["estimatedSuccessPercent"] == "98.00"
+    for o in result["options"]:
+        assert not any(p["price"] <= o["price"] and p["seconds"] <= o["seconds"] and p["success"] >= o["success"]
+                       and (p["price"],p["seconds"],p["success"]) != (o["price"],o["seconds"],o["success"])
+                       for p in all_options)
+
+
+def test_no_history_is_not_a_quote_blocker_or_an_invented_success_rate():
+    from services.orchestrator.pareto import frontier, public
+    tasks = [SimpleNamespace(key="task", dependencies=())]
+    offers = [{"agentId":"new", "price":5, "seconds":10, "history":{"settled":0,"expired":0}},
+              {"agentId":"old", "price":8, "seconds":12, "history":{"settled":10,"expired":0}}]
+    result = frontier(tasks, [offers], 6)
+    assert result["objectives"] == ["price", "seconds"]
+    assert result["options"][0]["team"][0]["agentId"] == "new"
+    assert public(result["options"][0])["estimatedSuccessPercent"] is None
+    assert result["comparisonNotice"]
+
+
+def test_old_short_model_timeouts_are_widened_and_new_jobs_allow_slow_work(tmp_path, monkeypatch):
+    import json
+    from services.orchestrator import planning
+    from services.orchestrator.application import JobRequest, data_plan, travel_plan
+    from services.orchestrator.workspace import execution_allowance
+    monkeypatch.setattr(planning, "ROOT", tmp_path)
+    config_path = tmp_path / "planner.local.json"
+    for saved, effective in [(40, 600), (120, 600), (1800, 1800)]:
+        config_path.write_text(json.dumps({"timeoutSeconds": saved}), encoding="utf-8")
+        assert planning.configuration()[0].timeoutSeconds == effective
+        assert json.loads(config_path.read_text())["timeoutSeconds"] == saved
+    assert execution_allowance() == 3600
+    assert execution_allowance(1800) >= 1800 + 2 * 600 + 30
+    assert execution_allowance(3300) == 3600
+    assert JobRequest().slaSeconds == 3600
+    for build in (data_plan, travel_plan):
+        plan = build(["0x" + "ab" * 32])
+        assert all(t.sla_seconds == 3600 for t in plan.tasks)
+        assert plan.duration_seconds >= sum(t.sla_seconds * t.max_attempts for t in plan.tasks)

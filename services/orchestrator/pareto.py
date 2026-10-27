@@ -40,9 +40,11 @@ def elapsed_seconds(tasks, team):
     return now
 
 
-def frontier(tasks, pools, budget, preference="lowest_price", limit=10):
+def frontier(tasks, pools, budget, preference="lowest_price", limit=3):
     if any(not pool for pool in pools):
-        raise ValueError("有子任务没有可用且具备近期履约记录的商家，无法比较三个指标")
+        raise ValueError("有子任务没有可用商家")
+    use_history = all(o["history"]["settled"] + o["history"]["expired"] > 0 for pool in pools for o in pool)
+    score = lambda o: o["success"] if use_history else Fraction(0)
     combinations = prod(len(pool) for pool in pools)
     if combinations > 100_000:
         raise ValueError("候选组合超过 100000，无法完成精确前沿计算，请缩小候选范围")
@@ -56,13 +58,14 @@ def frontier(tasks, pools, budget, preference="lowest_price", limit=10):
             history = offer["history"]
             count = history["settled"] + history["expired"]
             if count <= 0:
-                raise ValueError("缺少近期履约记录，不能虚构任务成功率")
+                success = None
+                break
             success *= Fraction(history["settled"], count)
         feasible.append({"team": team, "price": total, "seconds": elapsed_seconds(tasks, team), "success": success})
     if not feasible:
         minimum = sum(min(o["price"] for o in pool) for pool in pools)
         raise ValueError(f"全部组合均超过预算；最低服务费为 {minimum / 1_000_000:.2f} USDC")
-    feasible.sort(key=lambda item: (item["price"], item["seconds"], -item["success"], team_key(item)))
+    feasible.sort(key=lambda item: (item["price"], item["seconds"], -score(item), team_key(item)))
     # Price sweep + prefix maximum over elapsed time: exact rational comparisons, O(N log N).
     times = {value: index + 1 for index, value in enumerate(sorted({f["seconds"] for f in feasible}))}
     tree = [Fraction(-1)] * (len(times) + 1)
@@ -73,21 +76,21 @@ def frontier(tasks, pools, budget, preference="lowest_price", limit=10):
         while index:
             best = max(best, tree[index])
             index -= index & -index
-        if best < option["success"]:
+        if best < score(option):
             nondominated.append(option)
         index = position
         while index < len(tree):
-            tree[index] = max(tree[index], option["success"])
+            tree[index] = max(tree[index], score(option))
             index += index & -index
     selected = list(range(len(nondominated)))
     if len(selected) > limit:
         # Keep all objective extremes, then maximize separation for readable coverage of the frontier.
         selected = list(dict.fromkeys([
-            min(range(len(nondominated)), key=lambda i: (nondominated[i]["price"], nondominated[i]["seconds"], -nondominated[i]["success"])),
-            min(range(len(nondominated)), key=lambda i: (nondominated[i]["seconds"], nondominated[i]["price"], -nondominated[i]["success"])),
-            min(range(len(nondominated)), key=lambda i: (-nondominated[i]["success"], nondominated[i]["price"], nondominated[i]["seconds"])),
+            min(range(len(nondominated)), key=lambda i: (nondominated[i]["price"], nondominated[i]["seconds"], -score(nondominated[i]))),
+            min(range(len(nondominated)), key=lambda i: (nondominated[i]["seconds"], nondominated[i]["price"], -score(nondominated[i]))),
+            min(range(len(nondominated)), key=lambda i: (-score(nondominated[i]), nondominated[i]["price"], nondominated[i]["seconds"])),
         ]))
-        coords = [(o["price"], o["seconds"], float(o["success"])) for o in nondominated]
+        coords = [(o["price"], o["seconds"], float(score(o))) for o in nondominated]
         lows = [min(c[d] for c in coords) for d in range(3)]
         spans = [max(c[d] for c in coords) - lows[d] or 1 for d in range(3)]
         coords = [tuple((c[d] - lows[d]) / spans[d] for d in range(3)) for c in coords]
@@ -96,15 +99,28 @@ def frontier(tasks, pools, budget, preference="lowest_price", limit=10):
             selected.append(max((i for i in range(len(coords)) if i not in chosen), key=lambda i: (
                 min(sum(abs(coords[i][d] - coords[j][d]) for d in range(3)) for j in selected), -i)))
     options = [nondominated[i] for i in selected]
-    orders = {"lowest_price": lambda o: (o["price"], o["seconds"], -o["success"], team_key(o)),
-              "fastest": lambda o: (o["seconds"], o["price"], -o["success"], team_key(o)),
-              "reliability": lambda o: (-o["success"], o["price"], o["seconds"], team_key(o))}
+    for option in options:
+        option["advantages"] = []
+        if option["price"] == min(o["price"] for o in nondominated):
+            option["advantages"].append("费用最低")
+        if option["seconds"] == min(o["seconds"] for o in nondominated):
+            option["advantages"].append("预计最快")
+        if use_history and option["success"] == max(o["success"] for o in nondominated):
+            option["advantages"].append("参考成功率最高")
+    orders = {"lowest_price": lambda o: (o["price"], o["seconds"], -score(o), team_key(o)),
+              "fastest": lambda o: (o["seconds"], o["price"], -score(o), team_key(o)),
+              "reliability": lambda o: (-score(o), o["price"], o["seconds"], team_key(o))}
     options.sort(key=orders[preference])
     return {"options": options, "candidateCombinations": combinations, "feasibleCount": len(feasible),
-            "frontierCount": len(nondominated), "displayLimit": limit, "truncated": len(nondominated) > limit}
+            "frontierCount": len(nondominated), "displayLimit": limit, "truncated": len(nondominated) > limit,
+            "objectives": ["price", "seconds", *(["success"] if use_history else [])],
+            "comparisonNotice": "" if use_history else "部分商家尚无履约记录，本轮按费用与耗时比较；不把没有记录当作失败。"}
 
 
 def public(option):
     probability = option["success"]
+    if probability is None:
+        return {"estimatedSuccessPercent": None, "successNumerator": None, "successDenominator": None,
+                "advantages": option.get("advantages", [])}
     return {"estimatedSuccessPercent": percent(probability), "successNumerator": str(probability.numerator),
-            "successDenominator": str(probability.denominator)}
+            "successDenominator": str(probability.denominator), "advantages": option.get("advantages", [])}

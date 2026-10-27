@@ -16,6 +16,24 @@ const states: Row = {
   blocked: "需要调整",
 };
 
+export function ProposalMetrics({ proposal }: { proposal: Row }) {
+  const rate = proposal.pareto?.estimatedSuccessPercent;
+  const sources: string[] = proposal.historySummary?.sources || [];
+  return (
+    <>
+      {!!proposal.pareto?.advantages?.length && (
+        <p>{proposal.pareto.advantages.join(" · ")}</p>
+      )}
+      <strong className="price">{price(proposal.estimatedPrice)} USDC</strong>
+      <p>预计 {proposal.estimatedSeconds} 秒</p>
+      <p>
+        {rate == null ? "履约记录不足，暂不估算成功率" : `参考成功率 ${rate}%`}
+      </p>
+      {sources.includes("demo") && <small>成功率含演示履约记录</small>}
+    </>
+  );
+}
+
 export default function ExecutionCheck({
   api,
   session,
@@ -404,12 +422,24 @@ export default function ExecutionCheck({
               )}
             </div>
           )}
+          {!!options.length && (
+            <p>
+              {options[0].proposal.pareto?.comparisonNotice ||
+                "同样的交付，比较费用、预计耗时和参考成功率。"}
+            </p>
+          )}
           <div className="execution-options">
             {options.map((o: Row) => (
               <article className="execution-node" key={o.proposal.id}>
-                <strong>{price(o.proposal.estimatedPrice)} USDC</strong>
-                <p>预计 {o.proposal.estimatedSeconds} 秒</p>
-                <p>交付：{o.proposal.deliverables.join("、")}</p>
+                <ProposalMetrics proposal={o.proposal} />
+                <details>
+                  <summary>查看服务与费用</summary>
+                  {o.proposal.work.map((w: Row) => (
+                    <p key={w.key}>
+                      {w.title}：{price(w.estimatedPrice)} USDC
+                    </p>
+                  ))}
+                </details>
                 <button onClick={() => setChosen(o.proposal)}>
                   选择此方案
                 </button>

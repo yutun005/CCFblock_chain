@@ -5,5 +5,5 @@
   "responseFormat": "json_object",
   "tokenParameter": "max_tokens",
   "maxTokens": 8192,
-  "timeoutSeconds": 120
+  "timeoutSeconds": 600
 }

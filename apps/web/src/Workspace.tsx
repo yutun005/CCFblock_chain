@@ -7,6 +7,7 @@ import {
   TemplateLibrary,
 } from "./TaskPlanning";
 import { Draft, ReviewCard } from "./Deliverables";
+import { ProposalMetrics } from "./ExecutionCheck";
 import ServiceGraph, { evidenceLabels } from "./ServiceGraph";
 import {
   ArrowLeft,
@@ -280,7 +281,7 @@ export default function Workspace({
     }
     setOffers(result.options);
     setFrontier(result.frontier || null);
-    setUnknownHistory(result.excludedForNoHistory || []);
+    setUnknownHistory(result.unknownHistory || []);
     setUnavailable(result.unavailable);
     setPage("compare");
     setChosen(null);
@@ -1494,15 +1495,12 @@ export default function Workspace({
                 检查了 {frontier.candidateCombinations} 种商家组合，其中{" "}
                 {frontier.feasibleCount} 种符合预算；完整前沿有{" "}
                 {frontier.frontierCount} 种，当前展示 {offers.length} 种
-                {frontier.truncated
-                  ? "代表方案，保留费用、速度、成功率三个极端并兼顾分布"
-                  : ""}
-                。
+                {frontier.truncated ? "代表方案" : ""}。
               </p>
             )}
             {!!unknownHistory.length && (
               <p className="hint">
-                以下服务缺少近期履约记录，暂未参与三指标比较：
+                以下服务尚无履约记录，仍可按费用与耗时参与比较：
                 {unknownHistory.join("、")}
               </p>
             )}
@@ -1512,6 +1510,7 @@ export default function Workspace({
               </p>
             )}
           </details>
+          {frontier?.comparisonNotice && <p>{frontier.comparisonNotice}</p>}
           {!!offers.length && (
             <details className="workspace-panel">
               <summary>查看已确认的任务与交付</summary>
@@ -1558,16 +1557,7 @@ export default function Workspace({
               >
                 <h3>方案 {offer.rank}</h3>
                 <>
-                  <strong className="price">
-                    {price(offer.proposal.estimatedPrice)} USDC
-                  </strong>
-                  <p>整份任务预计 {offer.proposal.estimatedSeconds} 秒</p>
-                  <p>
-                    <b>
-                      估算整单成功率{" "}
-                      {offer.proposal.pareto.estimatedSuccessPercent}%
-                    </b>
-                  </p>
+                  <ProposalMetrics proposal={offer.proposal} />
                   {!!offer.proposal.work.length && (
                     <details>
                       <summary>查看各项服务估价</summary>

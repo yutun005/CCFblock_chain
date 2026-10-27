@@ -1660,7 +1660,7 @@ SKILL_POLICIES = {skill: ("travel-v1" if skill in {"attraction_search", "hotel_s
 # ============================================================================
 # scenarios
 # ============================================================================
-def data_plan(input_hashes: list[str], *, sla: int = 30, deposit: str = "100") -> Plan:
+def data_plan(input_hashes: list[str], *, sla: int = 3600, deposit: str = "100") -> Plan:
     specs = [("clean", "数据清洗", "data_cleaning", [], "25"),
              ("validate", "原始数据校验", "data_validation", [], "20"),
              ("statistics", "统计分析", "statistical_analysis", ["clean", "validate"], "30"),
@@ -1673,7 +1673,7 @@ def data_plan(input_hashes: list[str], *, sla: int = 30, deposit: str = "100") -
                 deposit=deposit, tasks=tasks, input_hashes=tuple(input_hashes), duration_seconds=max(900, sla*12))
 
 
-def travel_plan(input_hashes: list[str], *, sla: int = 30, deposit: str = "100") -> Plan:
+def travel_plan(input_hashes: list[str], *, sla: int = 3600, deposit: str = "100") -> Plan:
     specs = [("attractions", "景点检索", "attraction_search", [], "25"),
              ("hotels", "酒店信息汇总", "hotel_search", [], "20"),
              ("route", "路线规划", "route_planning", ["attractions", "hotels"], "30"),
@@ -3879,7 +3879,7 @@ class JobRequest(StrictModel):
     requestId: str | None = Field(default=None, min_length=1, max_length=128)
     scenario: str = "cross_org_analysis"
     expectedPlanHash: HashRef | None = None
-    slaSeconds: int = Field(default=30, ge=2, le=3600, strict=True)
+    slaSeconds: int = Field(default=3600, ge=2, le=3600, strict=True)
     deposit: str = "100"
     plan: dict | None = None
 

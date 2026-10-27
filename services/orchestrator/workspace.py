@@ -18,6 +18,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .products import Terms, needs_review, normalize_change
 
 
+def execution_allowance(review_seconds=0):
+    # Use the existing protocol's full per-task window. Estimate seconds describe
+    # merchant performance, not a deadline that should cancel otherwise useful work.
+    return 3600
+
+
 class Recipe(BaseModel):
     model_config = ConfigDict(extra="forbid")
     projectId: str | None = None
@@ -554,7 +560,7 @@ class Workspace:
             self.engine.db.put("proposals", value["id"], value)
             options.append({"rank": index + 1, "preferences": [], "proposal": self.public_proposal(value)})
         return {"options": options, "unavailable": [], "frontier": {key: value for key, value in result.items() if key != "options"},
-                "excludedForNoHistory": sorted(cache.get("unknown_history", set()))}
+                "excludedForNoHistory": [], "unknownHistory": sorted(cache.get("unknown_history", set()))}
 
     async def proposal(self, data, *, cache=None, persist=True, option_index=0):
         from services.orchestrator.application import (
@@ -692,7 +698,7 @@ class Workspace:
                 update={
                     "dependencies": tuple(key for key in spec.dependencies if not nodes[key]["source"]),
                     "options": options,
-                    "sla_seconds": recipe.reviewSeconds + 120 if needs_review(spec) else 60,
+                    "sla_seconds": execution_allowance(recipe.reviewSeconds if needs_review(spec) else 0),
                 }
             )
             estimate_key = ("offers", object_hash(spec.model_dump(mode="json")))
@@ -713,18 +719,12 @@ class Workspace:
             from .catalog import reliability
             service_node = next(n for n in cache["service_graph"]["nodes"] if n["id"] == spec.skill)
             provider_map = {p["id"]: p for p in service_node["providers"]}
-            known = []
             for offer in available:
                 verified = history.get(offer["wallet"])
                 offer["history"] = (reliability({}, None, verified) if verified and verified.get("evidence")
                                     else provider_map[offer["agentId"]]["history"])
-                if offer["history"]["window"]:
-                    known.append(offer)
-                else:
+                if not offer["history"]["window"]:
                     cache.setdefault("unknown_history", set()).add(offer["agentId"] + ":" + spec.skill)
-            available = known
-            if not available:
-                raise ValueError("服务 " + spec.title + " 没有具备近期履约记录的在线商家，暂不能比较成功率")
             available.sort(key=lambda offer: offer["agentId"])
             tasks.append(spec)
             pools.append(available)
@@ -753,7 +753,7 @@ class Workspace:
             "totalTasks": len(team),
         }
         history_summary["sources"] = sorted({offer["history"]["source"] for offer in team})
-        reason = "在当前预算与候选商家中，没有其他组合能在费用、耗时、成功率上都不差且至少一项更好。" if tasks else "全部沿用已结算成果，无需新增执行。"
+        reason = " · ".join(selected.get("advantages", [])) if tasks else "全部沿用已结算成果，无需新增执行。"
         plan = None
         if tasks:
             plan = Plan(
@@ -762,7 +762,8 @@ class Workspace:
                 deposit=recipe.budget,
                 tasks=tuple(tasks),
                 input_hashes=tuple(p["sha256"] for p in inputs),
-                duration_seconds=recipe.reviewSeconds + 600,
+                duration_seconds=min(86400, max(recipe.reviewSeconds + 600,
+                    sum(t.sla_seconds * t.max_attempts for t in tasks) + 120)),
                 planning_mode=planning["mode"] if planning else "workspace_v1",
                 execution=ExecutionPolicy(selection=recipe.preference, dispatch="on_ready"),
             )

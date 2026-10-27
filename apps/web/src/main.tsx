@@ -182,7 +182,7 @@ function App() {
     [selected, setSelected] = useState(0);
   const [createOpen, setCreateOpen] = useState(false),
     [budget, setBudget] = useState("100"),
-    [sla, setSla] = useState(30);
+    [sla, setSla] = useState(3600);
   const [copied, setCopied] = useState(""),
     [stopOpen, setStopOpen] = useState(false);
   const [streamStatus, setStreamStatus] = useState("连接中"),
@@ -409,8 +409,8 @@ function App() {
       );
       return;
     }
-    if (!Number.isInteger(sla) || sla < 10 || sla > 120) {
-      setPreviewError("每轮结算时限请填写 10 至 120 秒的整数。");
+    if (!Number.isInteger(sla) || sla < 10 || sla > 3600) {
+      setPreviewError("执行等待时间请填写 10 至 3600 秒的整数。");
       return;
     }
     const timer = setTimeout(() => {
@@ -1466,12 +1466,12 @@ function App() {
             />
           </div>
           <div>
-            <label htmlFor="sla">每轮结算时限（秒）</label>
+            <label htmlFor="sla">每次执行最长等待（秒）</label>
             <input
               id="sla"
               type="number"
               min={10}
-              max={120}
+              max={3600}
               value={sla}
               disabled={!!busy}
               onChange={(e) => {

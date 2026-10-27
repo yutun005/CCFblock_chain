@@ -263,7 +263,12 @@ test('travel graph has visible directed arrows and goes straight from confirmati
     confirmations++;return route.fulfill({json:{recipe:{...execution,budget:'100'}}});
   });
   await page.route('**/api/workspace/comparisons',route=>{
-    comparisons++;return route.fulfill({json:{options:[{proposal:{id:'option',estimatedPrice:'72.000000',estimatedSeconds:42,deliverables:['行程报告']}}]}});
+    comparisons++;return route.fulfill({json:{options:[
+      {proposal:{id:'fast',estimatedPrice:'70.000000',estimatedSeconds:30,work:[],
+        pareto:{estimatedSuccessPercent:'69.55',advantages:['预计最快']},historySummary:{sources:['demo']}}},
+      {proposal:{id:'reliable',estimatedPrice:'70.000000',estimatedSeconds:46,work:[],
+        pareto:{estimatedSuccessPercent:'98.00',advantages:['参考成功率最高']},historySummary:{sources:['demo']}}},
+    ]}});
   });
   await page.getByRole('button',{name:'模板库',exact:true}).click();
   await page.getByRole('button',{name:'按此模板生成 DAG'}).click();
@@ -283,7 +288,10 @@ test('travel graph has visible directed arrows and goes straight from confirmati
   await expect(page.getByLabel('销售统计维度')).toHaveCount(0);
   expect(checks).toBe(0);
   await page.getByRole('button',{name:'获取服务报价',exact:true}).click();
-  await expect(page.getByRole('button',{name:'选择此方案'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'选择此方案'})).toHaveCount(2);
+  await expect(page.getByText('参考成功率 69.55%',{exact:true})).toBeVisible();
+  await expect(page.getByText('参考成功率 98.00%',{exact:true})).toBeVisible();
+  await expect(page.getByText('成功率含演示履约记录',{exact:true})).toHaveCount(2);
   expect([checks,confirmations,comparisons]).toEqual([1,1,1]);
   await page.getByLabel('服务报价与预算').screenshot({path:testInfo.outputPath('direct-quotes.png')});
 });

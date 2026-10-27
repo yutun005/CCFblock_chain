@@ -211,7 +211,7 @@ class CContractAlignmentTests(unittest.TestCase):
 
     def test_frontend_does_not_claim_per_job_withdrawal_amount(self):
         self.assertIn("本任务待提现", WEB)
-        self.assertIn("按当前任务领取", WEB)
+        self.assertIn("api(`/api/jobs/${jobId}/claims`, {})", WEB)
         self.assertIn("job.chain.withdrawn", WEB)
 
 

@@ -39,7 +39,7 @@ class PlannerConfig(BaseModel):
     responseFormat: Literal["json_object", "text"] = "json_object"
     tokenParameter: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
     maxTokens: int = Field(default=4096, ge=512, le=12000, strict=True)
-    timeoutSeconds: int = Field(default=40, ge=5, le=180, strict=True)
+    timeoutSeconds: int = Field(default=600, ge=5, le=1800, strict=True)
 
 
 def configuration():
@@ -52,6 +52,7 @@ def configuration():
             if os.environ.get(env):
                 values[field] = os.environ[env]
         config = PlannerConfig.model_validate(values)
+        config = config.model_copy(update={"timeoutSeconds": max(600, config.timeoutSeconds)})
     except (OSError, ValueError):
         raise ValueError("planner.local.json 配置无效，请检查字段和 JSON 格式") from None
     url = urlparse(config.endpoint)

@@ -63,7 +63,7 @@ test("admin can connect, preview a plan, and start a collaboration job", async (
       const body = request.postDataJSON();
       expect(body.scenario).toBe("cross_org_analysis");
       expect(body.deposit).toBe("100");
-      expect(body.slaSeconds).toBe(30);
+      expect(body.slaSeconds).toBe(3600);
       return route.fulfill({
         json: {
           planHash,
@@ -165,7 +165,7 @@ test("admin can connect, preview a plan, and start a collaboration job", async (
   expect(createdBody).toMatchObject({
     scenario: "cross_org_analysis",
     deposit: "100",
-    slaSeconds: 30,
+    slaSeconds: 3600,
     expectedPlanHash: planHash,
   });
   expect(createdBody?.requestId).toEqual(expect.any(String));

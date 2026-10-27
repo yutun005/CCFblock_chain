@@ -56,8 +56,8 @@ run工具后查看实际结果；已有成功结果通常不必再运行。工�
 收到请求时可先用工具核实，再 reply，用 replyTo 指向原消息ID，status 为 answered/accepted/declined。
 reply 可用 artifactNames 附上自己的真实成果文件；不要编造文件内容、结果或声称做了没有工具支持的调整。
 收到答复后结合内容继续自己的工作。对方不可用、拒绝或要求重新授权时，应明确处理，不能当作成功。
-progress 报告实际进度；candidate 提交当前工具生成的成果供检查；final 仅在当前成果已被检查接受后交付。
-candidate/final 可省略 artifactNames，或列出本步骤全部成果文件名；实际文件由系统附上。不要输出 delivery、candidate 布尔值或自造文件。
+progress 报告实际进度。execute_task 成功后，平台自动提交真实成果供检查，通过后自动交付，不需要你再输出 candidate 或 final。
+不要输出 delivery、candidate 布尔值或自造文件。文件、成果检查和正式交付由平台处理。
 outputSchema 按行动分别列出字段；只填写所选行动的字段。nextStep 是当前成果状态对应的提交示例，不是已经执行的操作。
 如有待答问题，先处理。wait 仅用于等待已经发出的请求；未提问题时不要无故等待。
 没有新增信息时不要重复空报进度。需要人补充用 request to=user，不能用progress假装等待。
@@ -107,6 +107,35 @@ def decision_error(exc):
     # Pydantic's generic value_error alone hides the actionable validator reason.
     return "; ".join((".".join(map(str, error["loc"])) or "操作") + ": " + error["msg"]
                      for error in exc.errors(include_input=False, include_url=False)[:6])[:1500]
+
+
+def read_decision(content):
+    """Normalize harmless provider envelopes, not the meaning of an operation."""
+    from services.orchestrator.design_format import decode_response
+    value = decode_response(content)
+    for _ in range(5):
+        if isinstance(value, list) and len(value) == 1:
+            value = value[0]
+        elif isinstance(value, dict) and not value.get("kind"):
+            wrapper = next((k for k in ("decision", "action", "actions", "nextStep")
+                            if k in value and len(value) == 1), None)
+            if wrapper:
+                value = value[wrapper]
+            elif isinstance(value.get("action"), str):
+                value = {**value, "kind": value["action"]}
+                del value["action"]
+            else:
+                break
+        elif isinstance(value, str) and value.strip().startswith(("{", "[", "```")):
+            decoded = decode_response(value)
+            if decoded == value:
+                break
+            value = decoded
+        else:
+            break
+    if not isinstance(value, dict):
+        raise ValueError("回复中没有可执行的操作，请返回一个包含 kind 和 message 的对象")
+    return Decision.model_validate(value)
 
 
 def artifact_view(packet, offset=0, limit=1200):
@@ -178,7 +207,6 @@ class ModelWorker:
 
     async def advance(self, context: Context):
         from services.orchestrator import planning
-        from services.orchestrator.design_format import decode_response
         state = copy.deepcopy(context.state)
         state["driver"] = "model"
         state["model"] = self.config.model
@@ -198,6 +226,13 @@ class ModelWorker:
         from services.orchestrator.application import Plan
         plan = Plan.model_validate(context.request["plan"])
         pending = [m for m in state["messages"] if m["kind"] == "request" and m["id"] not in state.get("answered", [])]
+        # Delivery is protocol bookkeeping, not another language-model decision.
+        # Keep outstanding business questions and rejected outputs on the worker path.
+        if state.get("delivery") and not pending and not state.get("waiting"):
+            if state.get("accepted"):
+                return Action(kind="final", message="成果检查通过，已提交正式成果。", delivery=state["delivery"]), state
+            if context.feedback.get("kind") != "candidate_rejected":
+                return Action(kind="candidate", message="本步骤已完成，提交成果检查。", delivery=state["delivery"]), state
         output_schema, next_step = decision_contract(state, pending)
         payload = {
             "goal": plan.goal,
@@ -226,14 +261,14 @@ class ModelWorker:
             except ValueError as exc:
                 return Action(kind="failure", message=str(exc)), state
             try:
-                decision = Decision.model_validate(decode_response(content))
+                decision = read_decision(content)
                 self.check_decision(decision, state, pending, plan, context)
                 break
             except ValueError as exc:
                 reason = decision_error(exc)
                 state["decisionErrors"] = [*state.get("decisionErrors", []), reason][-6:]
                 if attempt:
-                    return Action(kind="failure", message="子智能体操作未通过校验：" + reason), state
+                    return Action(kind="failure", message="智能体未能给出可执行的下一步，已停止本次尝试；请重试。"), state
                 messages.extend([{"role": "assistant", "content": content},
                                  {"role": "user", "content": "操作未执行，请修正：" + reason
                                   + "。只填写当前行动的字段，参考 nextStep；不要重复运行已成功的工具。"}])
@@ -246,7 +281,7 @@ class ModelWorker:
                     state["accepted"] = False
                     state["delivery"] = await context.produce()
                     event["observation"] = {"ok": True, "artifacts": [artifact_view(p) for p in state["delivery"]["artifacts"]]}
-                    action = Action(kind="progress", message="已完成本步骤的业务工具计算，正在核对成果。")
+                    action = Action(kind="candidate", message="本步骤已完成，提交成果检查。", delivery=state["delivery"])
                 else:
                     pools = {"inputs": context.request["inputs"], "results": state.get("delivery", {}).get("artifacts", []),
                              "messages": message_artifacts(state)}
@@ -279,8 +314,8 @@ class ModelWorker:
             raise ValueError("还没有真实成果，请先调用 execute_task；不能凭文字宣布完成")
         if d.kind in {"candidate", "final"} and d.artifactNames:
             files = {p["name"] for p in state["delivery"].get("artifacts", [])}
-            if set(d.artifactNames) != files:
-                raise ValueError("提交必须引用本步骤全部真实成果文件：" + "、".join(sorted(files)) + "；也可省略 artifactNames 由系统附上")
+            if not set(d.artifactNames) <= files:
+                raise ValueError("只能引用本步骤已生成的真实成果文件")
         if d.kind == "final" and (not state.get("accepted") or pending or state.get("waiting")):
             raise ValueError("需先提交candidate、收到candidate_accepted，并处理待答问题，才能final")
         if d.kind == "request" and (d.to not in {t.key for t in plan.tasks} | {"platform", "user"} or d.to == context.task.key):
