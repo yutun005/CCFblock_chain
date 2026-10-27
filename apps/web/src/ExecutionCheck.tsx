@@ -150,14 +150,23 @@ export default function ExecutionCheck({
         : "");
   const confirmed = session.phase === "confirmed" && !dirty;
   if (!confirmed && !check) return null;
-  const missing = (session.graph?.tasks || []).filter((t: Row) => !t.capability);
-  if (missing.length) return (
-    <section className="execution-check panel" aria-label="规划预览未落地">
-      <h3>规划预览 · 未落地</h3>
-      <p>任务图存在未注册能力，暂不能发现服务、报价、执行或托管结算。接入能力并更新任务图后可继续。</p>
-      {missing.map((t: Row) => <p key={t.key}>{t.title}：{t.capabilityGap || "尚未注册可执行能力"}</p>)}
-    </section>
+  const missing = (session.graph?.tasks || []).filter(
+    (t: Row) => !t.capability,
   );
+  if (missing.length)
+    return (
+      <section className="execution-check panel" aria-label="规划预览未落地">
+        <h3>规划预览 · 未落地</h3>
+        <p>
+          任务图存在未注册能力，暂不能发现服务、报价、执行或托管结算。接入能力并更新任务图后可继续。
+        </p>
+        {missing.map((t: Row) => (
+          <p key={t.key}>
+            {t.title}：{t.capabilityGap || "尚未注册可执行能力"}
+          </p>
+        ))}
+      </section>
+    );
   return (
     <section className="execution-check panel" aria-label="服务报价与预算">
       <h3>服务报价与预算</h3>
@@ -213,14 +222,14 @@ export default function ExecutionCheck({
               </>
             )}
           </fieldset>
-          <details open={check?.status === "needs_input"}>
-            <summary>
+          <section className="content-section">
+            <h3 className="section-title">
               {scenario === "travel_planning"
                 ? "出游条件"
                 : scenario === "cross_org_analysis"
                   ? "销售数据"
                   : "补充执行材料"}
-            </summary>
+            </h3>
             <fieldset disabled={busy || !confirmed}>
               {scenario === "travel_planning" && (
                 <p>景点和住宿资料由服务 Agent 获取，无需上传旅游文件。</p>
@@ -310,7 +319,7 @@ export default function ExecutionCheck({
                 </div>
               )}
             </fieldset>
-          </details>
+          </section>
           <button
             type="button"
             className="primary"
@@ -426,14 +435,14 @@ export default function ExecutionCheck({
                   )}
                 </div>
                 <ProposalMetrics proposal={o.proposal} />
-                <details>
-                  <summary>查看服务与费用</summary>
+                <section className="content-section">
+                  <h3 className="section-title">查看服务与费用</h3>
                   {o.proposal.work.map((w: Row) => (
                     <p key={w.key}>
                       {w.title}：{price(w.estimatedPrice)} USDC
                     </p>
                   ))}
-                </details>
+                </section>
                 <button
                   disabled={busy}
                   aria-pressed={chosen?.id === o.proposal.id}
@@ -490,7 +499,6 @@ export function Collaboration({
   jobId: string;
   tasks: Row[];
 }) {
-  const [openOutputs, setOpenOutputs] = useState<Record<number, boolean>>({});
   const [rows, setRows] = useState<Row[]>([]),
     [error, setError] = useState("");
   const [questions, setQuestions] = useState<Row[]>([]);
@@ -616,26 +624,21 @@ export function Collaboration({
                           : "执行条件满足后自动委派。"}
               </p>
               {hasResult && (
-                <details
-                  onToggle={(e) => {
-                    const open = e.currentTarget.open;
-                    setOpenOutputs((old) => ({ ...old, [task.taskId]: open }));
-                  }}
-                >
-                  <summary>查看本步骤成果</summary>
-                  {openOutputs[task.taskId] && (
-                    <TaskOutput
-                      api={api}
-                      jobId={jobId}
-                      taskId={task.taskId}
-                      revision={`${records.length}:${task.checkpoint.status}`}
-                    />
-                  )}
-                </details>
+                <section className="content-section">
+                  <h3 className="section-title">本步骤成果</h3>
+                  <TaskOutput
+                    api={api}
+                    jobId={jobId}
+                    taskId={task.taskId}
+                    revision={`${records.length}:${task.checkpoint.status}`}
+                  />
+                </section>
               )}
               {!!records.length && (
-                <details className="task-history">
-                  <summary>查看处理过程 · {records.length} 条记录</summary>
+                <section className="content-section task-history">
+                  <h3 className="section-title">
+                    查看处理过程 · {records.length} 条记录
+                  </h3>
                   <ol>
                     {records
                       .filter(
@@ -667,7 +670,7 @@ export function Collaboration({
                         </li>
                       ))}
                   </ol>
-                </details>
+                </section>
               )}
             </article>
           );

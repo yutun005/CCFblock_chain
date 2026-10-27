@@ -191,7 +191,7 @@ function App() {
   const selectedJobRef = useRef(jobId);
   const flowRef = useRef<ReactFlowInstance | null>(null);
   const dagRef = useRef<HTMLDivElement>(null);
-  const executionRecords = useRef<HTMLDetailsElement>(null);
+  const executionRecords = useRef<HTMLElement>(null);
   const settlementHeading = useRef<HTMLHeadingElement>(null);
   const selectJob = useCallback((id: string) => {
     selectedJobRef.current = id;
@@ -742,48 +742,11 @@ function App() {
                 </div>
               )}
               {tab === "market" ? (
-                <>
-                  <ServiceGraph api={api} onChange={() => void refresh()} />
-                  <details className="panel execution-records">
-                    <summary>
-                      在线服务实例 ·{" "}
-                      {agents.filter((a) => a.status === "ONLINE").length}
-                    </summary>
-                    <div className="panel-heading">
-                      <div>
-                        <h2>可发现的服务 Agent</h2>
-                        <p>
-                          {agents.filter((a) => a.status === "ONLINE").length}{" "}
-                          个在线实例 · 身份经过端点签名挑战
-                        </p>
-                      </div>
-                      <Network />
-                    </div>
-                    <div className="agent-grid">
-                      {agents.map((a) => (
-                        <div className="agent-card" key={a.agentId}>
-                          <div className="agent-title">
-                            <span className="agent-avatar">
-                              <Network size={19} />
-                            </span>
-                            <strong>{a.agentId}</strong>
-                            <Badge value={a.status} />
-                          </div>
-                          <p>{a.skills.join(" / ")}</p>
-                          <div className="row">
-                            <span>钱包</span>
-                            <code title={a.wallet}>{short(a.wallet)}</code>
-                          </div>
-                          <div className="row">
-                            <span>注册版本</span>
-                            <span>v{a.bindingVersion}</span>
-                          </div>
-                          <small>{a.endpoint}</small>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                </>
+                <ServiceGraph
+                  api={api}
+                  agents={agents}
+                  onChange={() => void refresh()}
+                />
               ) : !job ? (
                 <section className="panel empty">
                   <GitBranch size={36} />
@@ -838,18 +801,15 @@ function App() {
                         onChange={refresh}
                         onSettlement={openSettlement}
                       />
-                      <details
-                        className="panel execution-graph"
-                        open={!job.chain.finalized}
-                      >
-                        <summary>
+                      <section className="content-section panel execution-graph">
+                        <h3 className="section-title">
                           任务进度 ·{" "}
                           {
                             job.tasks.filter((t) => t.onchain.state === 2)
                               .length
                           }
                           /{job.tasks.length} 项已完成
-                        </summary>
+                        </h3>
                         <div className="panel-heading">
                           <span className="stream">
                             <Activity size={14} />
@@ -901,7 +861,6 @@ function App() {
                                 job.tasks.findIndex((t) => t.key === n.id),
                               );
                               if (executionRecords.current) {
-                                executionRecords.current.open = true;
                                 executionRecords.current.scrollIntoView({
                                   block: "start",
                                   behavior: "smooth",
@@ -931,18 +890,18 @@ function App() {
                           </span>
                           <span>点击任务查看费用与执行状态</span>
                         </div>
-                      </details>
+                      </section>
                       <Collaboration
                         key={`collaboration-${job.jobId}`}
                         api={api}
                         jobId={job.jobId}
                         tasks={job.tasks}
                       />
-                      <details
-                        className="execution-records"
+                      <section
+                        className="content-section execution-records"
                         ref={executionRecords}
                       >
-                        <summary>报价与执行记录</summary>
+                        <h3 className="section-title">报价与执行记录</h3>
                         <div className="detail-grid">
                           <section className="panel">
                             <div className="panel-heading">
@@ -1110,7 +1069,7 @@ function App() {
                             </div>
                           </section>
                         </div>
-                      </details>
+                      </section>
                     </>
                   )}
                   {tab === "funds" && (
@@ -1193,8 +1152,8 @@ function App() {
                           已提现 <strong>{amount(job.chain.withdrawn)}</strong>
                         </span>
                       </div>
-                      <details className="settlement-transactions">
-                        <summary>查看链上交易记录</summary>
+                      <section className="content-section settlement-transactions">
+                        <h3 className="section-title">查看链上交易记录</h3>
                         <div className="table-wrap">
                           <table>
                             <thead>
@@ -1245,7 +1204,7 @@ function App() {
                             </tbody>
                           </table>
                         </div>
-                      </details>
+                      </section>
                       <p className="hint">
                         金额四舍五入显示两位小数；实际结算保留完整精度。Gas
                         使用对应链的原生币单独支付。

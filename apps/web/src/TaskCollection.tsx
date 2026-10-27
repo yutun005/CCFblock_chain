@@ -118,8 +118,7 @@ export function TaskResults({
   onChange: () => Promise<unknown>;
   onSettlement: (id: string) => void;
 }) {
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
-  const [reviews, setReviews] = useState<Row[]>([]);
+  const [reviews, setReviews] = useState<Row[] | null>(null);
   const parents = new Set(job.tasks.flatMap((t: Row) => t.dependencies));
   const isFinal = (t: Row) =>
     finalTaskKeys?.length ? finalTaskKeys.includes(t.key) : !parents.has(t.key);
@@ -133,28 +132,20 @@ export function TaskResults({
             artifacts.filter((a) => a.manifest.taskId === t.taskId).at(-1);
           const files = delivery?.manifest.artifacts || [];
           return (
-            <details
-              key={t.key}
-              onToggle={(e) => {
-                const open = e.currentTarget.open;
-                setOpened((old) => ({ ...old, [t.key]: open }));
-              }}
-            >
-              <summary>
+            <section className="content-section" key={t.key}>
+              <h3 className="section-title">
                 <strong>{t.title}</strong>
                 <span>
                   {files.length ? `${files.length} 个文件` : "查看交付进度"}
                 </span>
-              </summary>
-              {opened[t.key] && (
-                <TaskOutput
-                  api={api}
-                  jobId={job.jobId}
-                  taskId={t.taskId}
-                  revision={t.onchain.resultHash || String(t.onchain.attempt)}
-                />
-              )}
-            </details>
+              </h3>
+              <TaskOutput
+                api={api}
+                jobId={job.jobId}
+                taskId={t.taskId}
+                revision={t.onchain.resultHash || String(t.onchain.attempt)}
+              />
+            </section>
           );
         })}
       </section>
@@ -168,16 +159,17 @@ export function TaskResults({
         onSettlement={onSettlement}
         onLoaded={setReviews}
       />
-      {group(
-        job.tasks.filter(
-          (t: Row) =>
-            isFinal(t) &&
-            !reviews.some(
-              (r: Row) => r.taskId === t.taskId && r.drafts?.length,
-            ),
-        ),
-        "最终交付文件",
-      )}
+      {reviews &&
+        group(
+          job.tasks.filter(
+            (t: Row) =>
+              isFinal(t) &&
+              !reviews.some(
+                (r: Row) => r.taskId === t.taskId && r.drafts?.length,
+              ),
+          ),
+          "最终交付文件",
+        )}
       {group(
         job.tasks.filter((t: Row) => !isFinal(t)),
         "中间成果",

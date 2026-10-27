@@ -436,17 +436,17 @@ export function Draft({ value }: { value?: Row | null }) {
       {value.files
         .filter((p: Row) => p.name.endsWith(".html"))
         .map((p: Row) => (
-          <details key={p.name}>
-            <summary>预览离线网页报告</summary>
+          <section className="content-section" key={p.name}>
+            <h3 className="section-title">预览离线网页报告</h3>
             <iframe
               title="离线网页报告"
               sandbox=""
               srcDoc={previewMarkup(p.text)}
             />
-          </details>
+          </section>
         ))}
-      <details>
-        <summary>关联数据、引用资料与版本记录</summary>
+      <section className="content-section">
+        <h3 className="section-title">关联数据、引用资料与版本记录</h3>
         {[...value.files, ...(value.related || [])]
           .filter((p: Row) => /\.(json|csv)$/.test(p.name))
           .map((p: Row) => (
@@ -455,7 +455,7 @@ export function Draft({ value }: { value?: Row | null }) {
               <DataFile file={p} />
             </section>
           ))}
-      </details>
+      </section>
     </div>
   );
 }
@@ -633,8 +633,8 @@ export function ReviewCard({
         </label>
       )}
       <Draft value={value} />
-      <details className="review-checks">
-        <summary>查看系统检查与验收记录</summary>
+      <section className="content-section review-checks">
+        <h3 className="section-title">查看系统检查与验收记录</h3>
         <ul>
           {(draft?.checks || []).map((c: string) => (
             <li key={c}>{checkLabels[c] || "检查通过"}</li>
@@ -659,7 +659,7 @@ export function ReviewCard({
             {fileLabels[c.target] || c.target}：{c.text || c.feedback}
           </p>
         ))}
-      </details>
+      </section>
       {!latest && <p>当前为历史版本。切换到最新版后可以验收。</p>}
       {canDecide && (
         <div className="review-controls">
@@ -880,10 +880,13 @@ export function TaskOutput({
 }) {
   const [value, setValue] = useState<Row | null>(null),
     [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     let active = true;
     api(`/api/workspace/jobs/${jobId}/tasks/${taskId}/outputs`)
       .then((v) => {
+        if (!Array.isArray(v.files))
+          throw new Error("未能读取成果文件列表，请重试。");
         if (active) {
           setValue(v);
           setError("");
@@ -895,8 +898,21 @@ export function TaskOutput({
     return () => {
       active = false;
     };
-  }, [api, jobId, taskId, revision]);
-  if (error) return <p role="alert">成果读取失败，请稍后重新展开。{error}</p>;
+  }, [api, jobId, taskId, revision, retry]);
+  if (error)
+    return (
+      <div role="alert">
+        <p>成果读取失败。{error}</p>
+        <button
+          onClick={() => {
+            setError("");
+            setRetry((n) => n + 1);
+          }}
+        >
+          重新读取成果
+        </button>
+      </div>
+    );
   if (!value) return <p role="status">正在读取成果…</p>;
   if (!value.files.length) return <p>本步骤还没有提交成果。</p>;
   return (

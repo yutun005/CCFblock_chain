@@ -106,7 +106,7 @@ test("acceptance opens settlement, follows confirmation and refund, and survives
   const id = "settlement-job";
   const job = settlementJob(id);
   const review = {
-    id: "settlement-review", jobId: id, status: "AWAITING_REVIEW", price: "9000000",
+    id: "settlement-review", jobId: id, taskId: 3, status: "AWAITING_REVIEW", price: "9000000",
     deadline: Date.now() / 1000 + 3600, changes: [], decisions: [],
     drafts: [{ resultHash: planHash, checks: [] }],
   };
@@ -118,6 +118,7 @@ test("acceptance opens settlement, follows confirmation and refund, and survives
     if (path === "/api/config") return route.fulfill({ json: { scenarios: [], chainId: 31337, tokenSymbol: "USDC" } });
     if (path === "/api/jobs") return route.fulfill({ json: [{ jobId: id, title: "杭州三日游", status: job.status }] });
     if (path === `/api/jobs/${id}`) return route.fulfill({ json: job });
+    if (path.endsWith('/outputs')) return route.fulfill({json:{stage:'delivered',files:[]}});
     if (path.endsWith("/planner")) return route.fulfill({ json: { configured: false } });
     if (path.endsWith("/settlements")) return route.fulfill({ json: { events: [] } });
     if (path.endsWith("/events")) return route.fulfill({ body: "", contentType: "text/event-stream" });

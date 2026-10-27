@@ -818,8 +818,8 @@ export function PlanReview({
         {draft.summary}
       </p>
       <CoverageView plan={plan} dirty={dirty} />
-      <details>
-        <summary>查看与修改方案说明</summary>
+      <section className="content-section">
+        <h3 className="section-title">查看与修改方案说明</h3>
         <label>
           对目标的理解
           <textarea
@@ -829,7 +829,7 @@ export function PlanReview({
             onChange={(e) => change({ ...draft, summary: e.target.value })}
           />
         </label>
-      </details>
+      </section>
       {(draft.limitations || []).map((limit: string, i: number) => (
         <p className="hint" key={i}>
           {limit}
@@ -870,8 +870,8 @@ export function PlanReview({
         {plan.reviewedAt && !dirty ? "已确认任务图" : "确认任务方案"}
       </button>
       <p className="hint">确认方案不会付款；下一页确认预算托管后才开始执行。</p>
-      <details>
-        <summary>保存到模板库，下次复用</summary>
+      <section className="content-section">
+        <h3 className="section-title">保存到模板库，下次复用</h3>
         <label>
           模板名称
           <input
@@ -911,7 +911,7 @@ export function PlanReview({
         {saved && (
           <p role="status">已保存“{saved}”，可以在模板库中查找和管理。</p>
         )}
-      </details>
+      </section>
     </section>
   );
 }

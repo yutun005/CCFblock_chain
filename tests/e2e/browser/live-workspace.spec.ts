@@ -64,8 +64,7 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   expect((await download).suggestedFilename()).toMatch(/report\.md$/);
   await page.getByRole("button",{name:"查看任务成果",exact:true}).click();
   const intermediate=page.getByRole("region",{name:"中间成果",exact:true});
-  await intermediate.locator("summary").first().click();
-  await expect(intermediate.locator(".task-output")).toBeVisible();
+  await expect(intermediate.locator(".task-output").first()).toBeVisible();
   await expect(intermediate.locator(".task-output pre")).toHaveCount(0);
   await page.screenshot({ path: output!.replace(/\.json$/, "-pending.png"), fullPage: true });
   if (decision === "revise") {

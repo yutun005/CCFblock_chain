@@ -17,7 +17,13 @@ test('new task has one goal entry; configuration can be rechecked without changi
 });
 
 test('sales data upload and budget authorization lead from the confirmed design into execution', async ({page}) => {
-  await setup(page,false,2,false,{execution:{scenario:'cross_org_analysis',outputs:['report']}});
+  await setup(page,false,2,false,{
+    execution:{scenario:'cross_org_analysis',outputs:['report']},
+    tasks: [
+      {key:'research',title:'清洗销售数据',capability:'data_cleaning',dependencies:[]},
+      {key:'plan',title:'生成分析报告',capability:'report_generation',dependencies:['research']},
+    ].map(t=>({...t,stageId:'design',description:t.title,inputs:[],outputs:['成果'],acceptance:['符合需求'],requirementIds:['R1']})),
+  });
   let material:any=null, created=false, confirmed=0;
   const recipe={scenario:'cross_org_analysis',outputs:['report'],budget:'100',materialIds:['sales']};
   await page.route('**/api/workspace/materials',async route=>{
@@ -48,8 +54,8 @@ test('sales data upload and budget authorization lead from the confirmed design 
   await page.getByRole('button',{name:'按此模板生成 DAG'}).click();
   await expect(page.getByRole('button',{name:'获取服务报价',exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'确认这版任务图',exact:true}).click();
-  await expect(page.locator('.design-graph-section')).not.toHaveAttribute('open','');
-  await page.getByText('销售数据',{exact:true}).click();
+  await expect(page.locator('.design-graph-section')).toBeVisible();
+  await expect(page.locator('details,summary')).toHaveCount(0);
   await page.getByLabel('上传销售 CSV').setInputFiles({name:'我的销售.csv',mimeType:'text/csv',buffer:Buffer.from('organization,order_id,date,category,quantity,unit_price_cents\n甲,1,2026-10-01,book,2,500')});
   await expect(page.getByLabel('我的销售.csv',{exact:true})).toBeChecked();
   await page.getByRole('button',{name:'获取服务报价',exact:true}).click();

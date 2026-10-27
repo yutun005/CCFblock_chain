@@ -1,42 +1,18 @@
 import { expect, test } from '@playwright/test';
 import { setup } from './design-fixture';
 
-test('execution scope gaps require opt-in; budget and graph edits invalidate the preview', async ({page}, testInfo) => {
+test('unregistered capabilities remain a visible planning preview without quoting', async ({page}) => {
   await setup(page, false);
-  let checks=0, scopes=0;
-  await page.route('**/api/workspace/designs/design1/execution-check', route => {
-    checks++;
-    const body=route.request().postDataJSON();
-    expect(body.settings.budget).toBe(checks===1?'100':'80');
-    return route.fulfill({json:{id:`check${checks}`,status:'capability_gap',canConfirm:true,
-      issues:['尚无预测服务；可交付历史分析'],nodes:[{key:'statistics',title:'历史汇总',sourceKeys:['research'],scope:{supported:'按月份统计历史销售',validation:'按原始数据复算'},inputSources:['用户销售 CSV']}],
-      gaps:[{reason:'没有预测能力'}]}});
-  });
-  await page.route('**/api/workspace/designs/design1/execution-confirm', route => {
-    expect(route.request().postDataJSON()).toEqual({checkId:'check1',acceptPartial:true});scopes++;
-    return route.fulfill({json:{recipe:{outputs:['statistics'],groupBy:'month',budget:'100'}}});
-  });
-  await page.route('**/api/workspace/comparisons', route=>route.fulfill({json:{options:[],unavailable:[{reason:'当前服务繁忙，稍后重新估价'}]}}));
+  let executionRequests=0;
+  await page.route('**/api/workspace/designs/design1/execution-*',route=>{executionRequests++;return route.fulfill({json:{}});});
   await page.getByRole('button',{name:'模板库',exact:true}).click();
   await page.getByRole('button',{name:'按此模板生成 DAG'}).click();
+  await expect(page.getByLabel('任务名称',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'确认这版任务图',exact:true}).click();
-  await page.getByRole('button',{name:'获取服务报价',exact:true}).click();
-  await expect(page.getByText('尚无预测服务；可交付历史分析')).toBeVisible();
-  const scope=page.getByRole('button',{name:'按选定范围获取报价'});
-  await expect(scope).toBeDisabled();
-  await page.getByLabel(/我同意只执行上面支持的部分/).check();
-  await scope.click();
-  await expect(page.getByRole('alert')).toContainText('当前服务繁忙');expect(scopes).toBe(1);
-  await page.getByLabel('Agent 服务费上限（USDC）').fill('80');
-  await expect(scope).toHaveCount(0);
-  await page.getByRole('button',{name:'获取服务报价',exact:true}).click();
-  await expect(page.getByLabel(/我同意只执行上面支持的部分/)).not.toBeChecked();
-  await page.screenshot({path:testInfo.outputPath('execution-conditions.png'),fullPage:true});
-  await page.getByText('已确认的任务图 · 2 项工作',{exact:true}).click();
-  await page.getByRole('button', {name:'编辑所选任务',exact:true}).click();
-  await page.getByLabel('任务名称',{exact:true}).fill('改动后的工作');
+  await expect(page.getByRole('region',{name:'规划预览未落地'})).toContainText('任务图存在未注册能力');
   await expect(page.getByRole('button',{name:'获取服务报价',exact:true})).toHaveCount(0);
-  await expect(scope).toHaveCount(0);
+  await expect(page.locator('details,summary,[aria-expanded]')).toHaveCount(0);
+  expect(executionRequests).toBe(0);
 });
 
 test('arbitrary goal, clarification, outline discussion, explicit DAG expansion, edit and final version', async ({ page }, testInfo) => {
@@ -57,18 +33,14 @@ test('arbitrary goal, clarification, outline discussion, explicit DAG expansion,
   await send('规模太大，先做小规模试点');
   await expect(page.getByRole('heading', { name: '先做小规模试点' })).toBeVisible();
   await page.getByRole('button', { name: '先生成草稿 DAG' }).click();
-  await page.getByRole('button', {name:'编辑所选任务',exact:true}).click();
   await page.getByLabel('任务名称', { exact: true }).fill('调查读书兴趣');
   await page.getByRole('button', { name: '保存任务图修改' }).click();
-  await page.getByRole('button', {name:'编辑所选任务',exact:true}).click();
   await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue('调查读书兴趣');
   await page.getByRole('button', { name: '确认这版任务图' }).click();
   await expect(page.getByRole('button', { name: '此版已确认' })).toBeDisabled();
-  await page.getByText('保存为可复用模板', { exact: true }).click();
   await page.getByLabel('模板名称', { exact: true }).fill('我的校园策划');
   await page.getByRole('button', { name: '保存到模板库', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('模板已保存');
-  await page.getByText('历史确认版本 · 1',{exact:true}).click();
   await page.getByRole('button', { name: '查看第 1 版' }).click();
   await expect(page.getByRole('button', { name: '导出此确认版本' })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -85,7 +57,6 @@ test('templates need no model; dirty edits survive navigation and failed saves',
   await expect(page.locator('.design-template-preview').getByText('明确预算和日程')).toBeVisible();
   await page.getByRole('button', { name: '关闭模板预览' }).click();
   await page.getByRole('button', { name: '按此模板生成 DAG' }).click();
-  await page.getByRole('button', {name:'编辑所选任务',exact:true}).click();
   await page.getByLabel('任务名称', { exact: true }).fill('保留这段未保存编辑');
   await page.getByRole('button', { name: '模板库', exact: true }).click();
   await expect(page.getByRole('button', { name: '按此模板生成 DAG' })).toBeDisabled();
@@ -114,7 +85,6 @@ test('asking in chat renders a DAG without clicking the outline button', async (
   await expect(page.getByRole('button', { name: '先生成草稿 DAG' })).toBeVisible();
   await send('生成DAG呀');
   await expect(page.getByRole('region', { name: '开放任务图编辑器' })).toBeVisible();
-  await page.getByRole('button', {name:'编辑所选任务',exact:true}).click();
   await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue('了解学生需求');
   await expect(page.getByRole('log')).toContainText('已生成任务图');
   await expect(page.getByRole('button', { name: '先生成草稿 DAG' })).toHaveCount(0);
@@ -127,7 +97,6 @@ test('rough first draft can be edited and confirmed even when optional AI review
   await page.getByRole('button', {name:'发送给 AI',exact:true}).click();
   await expect(page.getByRole('region',{name:'开放任务图编辑器'})).toBeVisible();
   await expect(page.getByRole('log')).toContainText('日期以后再补');
-  await page.getByText('更多方案操作',{exact:true}).click();
   await page.getByRole('button',{name:'AI 查漏（可选）',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('可继续编辑或直接确认');
   await page.getByRole('button',{name:'确认这版任务图'}).click();

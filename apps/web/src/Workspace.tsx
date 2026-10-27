@@ -659,15 +659,15 @@ export default function Workspace({
                   : "填写一次模型配置，主智能体与子智能体共同使用；未配置时仍可使用模板和内置业务工具。"}
               </p>
               {!planner?.configured && (
-                <details>
-                  <summary>怎样启用模型规划</summary>
+                <section className="content-section">
+                  <h3 className="section-title">怎样启用模型规划</h3>
                   <p>
                     打开项目根目录的 <code>planner.local.json</code>，填写{" "}
                     <code>endpoint</code>（完整 Chat Completions 地址）、
                     <code>model</code> 和 <code>apiKey</code>
                     。保存后点击右侧“重新检查配置”，新执行会话自动使用这份配置。
                   </p>
-                </details>
+                </section>
               )}
             </div>
             <button
@@ -879,8 +879,8 @@ export default function Workspace({
                   )}
                 </div>
                 <div className="request-card">
-                  <details open={!travel}>
-                    <summary hidden={!travel}>补充已有资料（可选）</summary>
+                  <section className="content-section">
+                    <h3 className="section-title">补充已有资料（可选）</h3>
                     <div className="request-card-title">
                       <FolderOpen size={19} />
                       <h2>{travel ? "补充资料" : "任务材料"}</h2>
@@ -1003,19 +1003,19 @@ export default function Workspace({
                         }}
                       />
                     </label>
-                    <details className="format-help">
-                      <summary>文件格式要求</summary>
+                    <section className="content-section format-help">
+                      <h3 className="section-title">文件格式要求</h3>
                       <p>
                         {travel
                           ? "上传包含 request、attractions、hotels 的旅游 JSON 资料；目的地与出行条件可在下方调整。"
                           : "CSV 需包含 organization、order_id、date、category、quantity、unit_price_cents 列。金额以分计；UTF-8 编码；类别为 book、food、tool；日期格式 YYYY-MM-DD，最多 20000 行。"}
                       </p>
-                    </details>
+                    </section>
                     {travel &&
                       recipe.travelRequest &&
                       !!recipe.materialIds.length && (
-                        <details>
-                          <summary>调整出行条件</summary>
+                        <section className="content-section">
+                          <h3 className="section-title">调整出行条件</h3>
                           <div className="compact-fields">
                             {[
                               ["destination", "目的地", "text"],
@@ -1085,9 +1085,9 @@ export default function Workspace({
                               />
                             </label>
                           </div>
-                        </details>
+                        </section>
                       )}
-                  </details>
+                  </section>
                 </div>
               </fieldset>
             </section>
@@ -1108,8 +1108,8 @@ export default function Workspace({
                 <p className="field-help">
                   用于支付 Agent 的服务报酬。此时不会扣款。
                 </p>
-                <details>
-                  <summary>更多设置</summary>
+                <section className="content-section">
+                  <h3 className="section-title">更多设置</h3>
                   <label>
                     项目名称
                     <input
@@ -1176,7 +1176,7 @@ export default function Workspace({
                       ))}
                     </fieldset>
                   )}
-                </details>
+                </section>
                 <button
                   className="primary request-submit"
                   type="submit"
@@ -1296,12 +1296,14 @@ export default function Workspace({
                     <span key={key}>{labels[key] || key}</span>
                   ))}
                 </div>
-                <details>
-                  <summary>包含 {item.tasks.length} 项工作</summary>
+                <section className="content-section">
+                  <h3 className="section-title">
+                    包含 {item.tasks.length} 项工作
+                  </h3>
                   {item.tasks.map((task: Row) => (
                     <p key={task.key}>{task.title}</p>
                   ))}
-                </details>
+                </section>
                 <button
                   className="primary"
                   type="button"
@@ -1489,8 +1491,8 @@ export default function Workspace({
           <p>
             交付内容相同，比较费用、耗时和履约表现。商家在每项任务可以开始时确定，实际费用不超过约定预算。
           </p>
-          <details>
-            <summary>估价与履约记录说明</summary>
+          <section className="content-section">
+            <h3 className="section-title">估价与履约记录说明</h3>
             {frontier && (
               <p>
                 检查了 {frontier.candidateCombinations} 种商家组合，其中{" "}
@@ -1510,11 +1512,11 @@ export default function Workspace({
                 价格和耗时来自商家估价，耗时考虑等待关系及同一商家的串行执行。成功率是历史样本的估算，不是履约保证；重试、其他项目占用和人工验收可能增加耗时。
               </p>
             )}
-          </details>
+          </section>
           {frontier?.comparisonNotice && <p>{frontier.comparisonNotice}</p>}
           {!!offers.length && (
-            <details className="workspace-panel">
-              <summary>查看已确认的任务与交付</summary>
+            <section className="content-section workspace-panel">
+              <h3 className="section-title">查看已确认的任务与交付</h3>
               {offers[0].proposal.planning && (
                 <>
                   <h3>您已确认的任务图</h3>
@@ -1529,7 +1531,7 @@ export default function Workspace({
                   .join("、")}
               </p>
               <p>交付文件：{offers[0].proposal.deliverables.join("、")}</p>
-            </details>
+            </section>
           )}
           {offers.length === 1 && <p role="status">当前有 1 个可选方案。</p>}
           {unavailable.map((item, index) => (
@@ -1566,8 +1568,8 @@ export default function Workspace({
                 <>
                   <ProposalMetrics proposal={offer.proposal} />
                   {!!offer.proposal.work.length && (
-                    <details>
-                      <summary>查看各项服务估价</summary>
+                    <section className="content-section">
+                      <h3 className="section-title">查看各项服务估价</h3>
                       {offer.proposal.work.map((w: Row) => (
                         <div key={w.key}>
                           <p>
@@ -1584,7 +1586,7 @@ export default function Workspace({
                           </p>
                         </div>
                       ))}
-                    </details>
+                    </section>
                   )}
                   {!offer.proposal.work.length && (
                     <p>全部沿用已结算成果，无需新增执行。</p>

@@ -15,6 +15,39 @@
   --accent: #edc56c;
   --green: #81dbc0;
 }
+.content-section { min-width: 0; margin: 20px 0; }
+.section-title { font-size: 16px; line-height: 1.5; margin: 0 0 16px; color: #dce6ef; }
+.content-section > .content-section { padding-top: 16px; border-top: 1px solid var(--line); }
+.service-instances { margin-top: 24px; }
+.service-definition-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.service-definition { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.service-definition h4, .service-offer h4 { margin: 0; }
+.service-definition p { font-size: 13px; }
+.service-definition button { margin-top: auto; }
+.agent-card > button { margin-top: 16px; width: 100%; }
+.service-dialog { width: min(680px, calc(100% - 32px)); max-width: 680px; }
+.service-dialog .modal-heading { gap: 16px; }
+.service-dialog .modal-heading h2 { font-size: 21px; overflow-wrap: anywhere; }
+.service-dialog .modal-heading button { flex-shrink: 0; }
+.service-dialog .workspace-panel { padding: 0; margin: 0; border: 0; background: transparent; }
+.service-dialog fieldset { border: 0; padding: 0; min-width: 0; }
+.service-dialog label { margin-top: 16px; }
+.service-dialog input, .service-dialog select, .service-dialog textarea { margin-top: 6px; }
+.service-dialog .task-editor, .service-offer { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
+.service-dialog .modal-actions { flex-wrap: wrap; }
+.service-dialog .workspace-panel > button, .service-dialog fieldset > button { margin: 12px 8px 0 0; }
+.service-dialog .task-editor > button { margin: 12px 8px 0 0; }
+.service-dialog .error { margin-bottom: 16px; }
+.service-facts { display: grid; gap: 12px; margin: 20px 0 24px; }
+.service-facts > div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; }
+.service-facts dt { color: var(--muted); }
+.service-facts dd { margin: 0; overflow-wrap: anywhere; }
+.service-offer p { margin-top: 8px; }
+@media (max-width: 600px) {
+  .service-dialog { padding: 20px; }
+  .service-facts > div { grid-template-columns: 1fr; gap: 4px; }
+  .service-definition-grid { grid-template-columns: 1fr; }
+}
 * {
   box-sizing: border-box;
 }
@@ -823,9 +856,9 @@ tbody tr:hover {
 .settlement-transactions {
   border-top: 1px solid var(--line);
 }
-.settlement-transactions > summary {
+.settlement-transactions > .section-title {
   padding: 20px 24px;
-  cursor: pointer;
+
 }
 .ledger-balances strong {
   margin-left: 8px;
@@ -1551,8 +1584,8 @@ dialog > p {
 .project-workspace small { display: block; color: #b1c3d4; font-weight: 400; }
 .project-workspace p { line-height: 1.65; overflow-wrap: anywhere; }
 .project-workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; background: #0b1420; padding: 14px; border-radius: 7px; font-size: 13px; }
-.project-workspace details { margin: 14px 0; }
-.project-workspace summary { padding: 12px 0; cursor: pointer; font-weight: 600; }
+.project-workspace .content-section { margin: 14px 0; }
+.project-workspace .section-title { padding: 12px 0;  font-weight: 600; }
 .project-workspace button { min-height: 44px; cursor: pointer; }
 .project-workspace button:disabled { cursor: not-allowed; opacity: .55; }
 .project-workspace :focus-visible { outline: 3px solid #2f62d5; outline-offset: 3px; }
@@ -1708,7 +1741,7 @@ dialog > p {
 .planner-connection h2 { font-size: 18px; margin: 0 0 8px; }
 .planner-connection p { margin: 8px 0; line-height: 1.7; }
 .planner-connection button { flex: 0 0 auto; }
-.planner-connection details { margin-top: 12px; }
+.planner-connection .content-section { margin-top: 12px; }
 .planner-connection code, .planner-connection .hint { overflow-wrap: anywhere; }
 @media (max-width: 1100px) { .goal-workflow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .planner-connection { flex-direction: column; } }
@@ -1801,7 +1834,7 @@ dialog > p {
 .design-coverage p { line-height: 1.8; }
 .design-finalize { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 20px; }
 .design-finalize .workspace-actions { flex-wrap: wrap; margin-top: 15px; }
-.design-finalize details { margin-top: 20px; font-size: 13px; }
+.design-finalize .content-section { margin-top: 20px; font-size: 13px; }
 .design-finalize label { margin: 15px 0; }
 .design-versions { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
 .design-versions .workspace-actions { flex-wrap: wrap; }
@@ -1843,7 +1876,7 @@ dialog > p {
 .design-conversation { height: min(720px, calc(100vh - 420px)); min-height: 480px; }
 .design-messages { min-height: 0; }
 .design-context { margin: 14px 0; font-size: 13px; }
-.design-context > summary, .design-suggestions > summary { cursor: pointer; padding: 12px 0; color: #b9cede; }
+.design-context > .section-title, .design-suggestions > .section-title {  padding: 12px 0; color: #b9cede; }
 .design-canvas .planning-graph { height: clamp(390px, 55vh, 620px); }
 .planning-graph-workbench { position: relative; min-width: 0; }
 .planning-graph-workbench { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -1978,7 +2011,7 @@ dialog > p {
   min-height: 100px;
 }
 .review-checks,
-.task-record details {
+.task-record .content-section {
   margin-top: 16px;
 }
 .task-record-grid {
@@ -2074,9 +2107,9 @@ dialog > p {
 .itinerary-day time {
   color: var(--accent);
 }
-.review-card summary,
-.task-record summary {
-  cursor: pointer;
+.review-card .section-title,
+.task-record .section-title {
+
   min-height: 32px;
 }
 @media (max-width: 760px) {
@@ -2113,19 +2146,19 @@ dialog > p {
 .back-link { border: 0; background: transparent; padding: 8px 0; color: var(--muted); font-size: 13px; }
 .continue-design { margin-top: 20px; }
 .draft-collection { margin-top: 30px; }
-.draft-collection > summary, .design-graph-section > summary { cursor: pointer; padding: 16px 0; font-weight: 600; }
+.draft-collection > .section-title, .design-graph-section > .section-title {  padding: 16px 0; font-weight: 600; }
 .design-layout.is-empty { grid-template-columns: minmax(0, 800px); justify-content: center; }
 .design-layout.is-empty .design-conversation { height: auto; min-height: 480px; position: static; }
 .design-layout.is-empty .design-messages { max-height: none; }
 .design-graph-section { margin-top: 18px; border-top: 1px solid var(--line); }
 .design-graph-editor > button { margin: 12px 0; }
-.execution-graph > summary, .execution-records > summary { padding: 20px 24px; cursor: pointer; font-weight: 600; }
+.execution-graph > .section-title, .execution-records > .section-title { padding: 20px 24px;  font-weight: 600; }
 .execution-records { margin-top: 24px; }
 .result-task-group { margin-top: 24px; padding: 24px; }
 .result-task-group h2 { margin: 0 0 16px; font-size: 20px; }
-.result-task-group > details { border-top: 1px solid var(--line); }
-.result-task-group > details > summary { cursor: pointer; padding: 20px 0; }
-.result-task-group > details > summary > span { margin-left: 20px; font-size: 12px; color: var(--muted); }
+.result-task-group > .content-section { border-top: 1px solid var(--line); }
+.result-task-group > .content-section > .section-title {  padding: 20px 0; }
+.result-task-group > .content-section > .section-title > span { margin-left: 20px; font-size: 12px; color: var(--muted); }
 .result-task-group .task-output { padding: 0 0 20px; }
 @media(max-width: 760px) {
   .task-list > li { flex-wrap: wrap; gap: 0; padding: 8px 14px; }
@@ -2135,5 +2168,5 @@ dialog > p {
   .task-list-main .tag { font-size: 11px; }
   .task-list-results { margin: 0 0 8px; }
   .result-task-group { padding: 16px; }
-  .result-task-group > details > summary > span { display: block; margin: 8px 0 0; }
+  .result-task-group > .content-section > .section-title > span { display: block; margin: 8px 0 0; }
 }

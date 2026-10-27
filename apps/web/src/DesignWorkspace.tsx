@@ -49,7 +49,6 @@ function GraphEditor({
   const [value, setValue] = useState<Row>(graph);
   const [selected, setSelected] = useState(graph.tasks[0]?.key || "");
   const [dirty, setDirty] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [capabilities, setCapabilities] = useState<Row[]>([]);
   const [editError, setEditError] = useState("");
   useEffect(() => {
@@ -126,7 +125,6 @@ function GraphEditor({
       ],
     });
     setSelected(key);
-    setEditing(true);
   };
   return (
     <section className="design-graph-editor" aria-label="开放任务图编辑器">
@@ -149,18 +147,10 @@ function GraphEditor({
         selectedTask={task?.key}
         onSelectTask={(key) => {
           setSelected(key);
-          setEditing(true);
         }}
         planningOnly
       />
-      <button
-        type="button"
-        className="node-edit-toggle"
-        onClick={() => setEditing(!editing)}
-      >
-        {editing ? "收起任务编辑" : "编辑所选任务"}
-      </button>
-      {task && editing && (
+      {task && (
         <fieldset className="design-node-form" disabled={disabled}>
           <legend>编辑任务：{task.title}</legend>
           <label>
@@ -341,9 +331,7 @@ function GraphEditor({
       )}
       {dirty && (
         <div className="design-edit-footer">
-          <p className="hint">
-            修改尚未保存。
-          </p>
+          <p className="hint">修改尚未保存。</p>
           <button
             type="button"
             disabled={disabled || !dirty}
@@ -689,8 +677,8 @@ export default function DesignWorkspace({
             empty="还没有发起任务。点击“新建任务”，描述你想完成的目标。"
           />
           {!!drafts.length && (
-            <details className="draft-collection" open={!jobs.length}>
-              <summary>未发起的方案 · {drafts.length}</summary>
+            <section className="content-section draft-collection">
+              <h3 className="section-title">未发起的方案 · {drafts.length}</h3>
               <ul className="task-list">
                 {drafts.map((item) => (
                   <li key={item.id}>
@@ -716,7 +704,7 @@ export default function DesignWorkspace({
                   </li>
                 ))}
               </ul>
-            </details>
+            </section>
           )}
         </section>
       )}
@@ -893,8 +881,8 @@ export default function DesignWorkspace({
                   <h2>{session.title}</h2>
                   <span className="subtle-badge">{phases[session.phase]}</span>
                 </div>
-                <details className="design-context" open={!session.graph}>
-                  <summary>需求与方案说明</summary>
+                <section className="content-section design-context">
+                  <h3 className="section-title">需求与方案说明</h3>
                   <section className="design-brief">
                     <h3>我们理解的需求</h3>
                     <p>{session.brief.objective}</p>
@@ -963,19 +951,16 @@ export default function DesignWorkspace({
                       )}
                     </section>
                   )}
-                </details>
+                </section>
                 {session.graph && (
                   <>
-                    <details
-                      className="design-graph-section"
-                      open={session.phase !== "confirmed"}
-                    >
-                      <summary>
+                    <section className="content-section design-graph-section">
+                      <h3 className="section-title">
                         {session.phase === "confirmed"
                           ? "已确认的任务图"
                           : "任务安排"}{" "}
                         · {session.graph.tasks.length} 项工作
-                      </summary>
+                      </h3>
                       <div ref={graphAnchor}>
                         <GraphEditor
                           api={api}
@@ -995,23 +980,27 @@ export default function DesignWorkspace({
                           }}
                         />
                       </div>
-                    </details>
+                    </section>
                     {!!(
                       session.warnings?.length || session.questions?.length
                     ) && (
-                      <details className="design-suggestions">
-                        <summary>后续可完善的事项（不影响保存和确认）</summary>
+                      <section className="content-section design-suggestions">
+                        <h3 className="section-title">
+                          后续可完善的事项（不影响保存和确认）
+                        </h3>
                         {[
                           ...(session.warnings || []),
                           ...(session.questions || []),
                         ].map((item: string, index: number) => (
                           <p key={index}>{item}</p>
                         ))}
-                      </details>
+                      </section>
                     )}
                     {!!session.coverage?.length && (
-                      <details className="design-coverage">
-                        <summary>查看需求与任务的对应关系</summary>
+                      <section className="content-section design-coverage">
+                        <h3 className="section-title">
+                          查看需求与任务的对应关系
+                        </h3>
                         {session.coverage.map((row: Row) => (
                           <p key={row.id}>
                             <strong>{row.text}</strong>
@@ -1026,7 +1015,7 @@ export default function DesignWorkspace({
                               .join("、")}
                           </p>
                         ))}
-                      </details>
+                      </section>
                     )}
                     <section className="design-finalize">
                       <h3>最终交付</h3>
@@ -1055,8 +1044,8 @@ export default function DesignWorkspace({
                             : "确认这版任务图"}
                         </button>
                       </div>
-                      <details className="design-extra">
-                        <summary>更多方案操作</summary>
+                      <section className="content-section design-extra">
+                        <h3 className="section-title">更多方案操作</h3>
                         <div className="workspace-actions">
                           <button
                             type="button"
@@ -1102,7 +1091,7 @@ export default function DesignWorkspace({
                             导出 DAG
                           </button>
                         </div>
-                      </details>
+                      </section>
                       {session.review?.source === "model_suggestions" && (
                         <div className="design-suggestions" role="status">
                           <strong>AI 查漏建议</strong>
@@ -1122,8 +1111,8 @@ export default function DesignWorkspace({
                           {session.graph.limitations.join("；")}
                         </p>
                       )}
-                      <details>
-                        <summary>保存为可复用模板</summary>
+                      <section className="content-section">
+                        <h3 className="section-title">保存为可复用模板</h3>
                         <label>
                           模板名称
                           <input
@@ -1152,7 +1141,7 @@ export default function DesignWorkspace({
                         >
                           保存到模板库
                         </button>
-                      </details>
+                      </section>
                     </section>
                     <div ref={executionAnchor}>
                       <ExecutionCheck
@@ -1168,8 +1157,10 @@ export default function DesignWorkspace({
                   </>
                 )}
                 {!!session.versions.length && (
-                  <details className="design-versions">
-                    <summary>历史确认版本 · {session.versions.length}</summary>
+                  <section className="content-section design-versions">
+                    <h3 className="section-title">
+                      历史确认版本 · {session.versions.length}
+                    </h3>
                     <div className="workspace-actions">
                       {session.versions.map((item: Row) => (
                         <button
@@ -1204,7 +1195,7 @@ export default function DesignWorkspace({
                         />
                       </div>
                     )}
-                  </details>
+                  </section>
                 )}
               </>
             )}
