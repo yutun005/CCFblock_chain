@@ -512,7 +512,7 @@ test("acceptance opens settlement, follows confirmation and refund, and survives
     deadline: Date.now() / 1000 + 3600, changes: [], decisions: [],
     drafts: [{ resultHash: planHash, checks: [] }],
   };
-  let failAcceptance = true, decisions = 0, claims = 0;
+  let failAcceptance = true, failRefund = true, decisions = 0, claims = 0;
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/**", async (route) => {
@@ -532,9 +532,10 @@ test("acceptance opens settlement, follows confirmation and refund, and survives
       job.tasks[3].checkpoint.status = "SETTLING";
       return route.fulfill({ json: review });
     }
-    if (path.endsWith("/claims") && route.request().method() === "POST") {
+    if (path.endsWith("/refund") && route.request().method() === "POST") {
       claims++;
-      Object.assign(job.chain, { withdrawn: "59000000", agentCredits: "0", refundCredit: "0", refunded: "41000000" });
+      if (failRefund) return route.fulfill({ status: 503, json: {detail:"连接暂时中断"} });
+      Object.assign(job.chain, { refundCredit: "0", refunded: "41000000" });
       return route.fulfill({ json: job });
     }
     return route.fulfill({ json: [] });
@@ -558,7 +559,9 @@ test("acceptance opens settlement, follows confirmation and refund, and survives
   await expect(page.getByRole("region", { name: "成果与验收", exact: true })).toHaveCount(0);
   const panel = page.getByRole("region", { name: "任务结算明细", exact: true });
   await expect(panel.getByRole("heading", { name: "结算进行中", exact: true })).toBeVisible();
-  const claim = panel.getByRole("button", { name: "领取报酬与退款", exact: true });
+  const refund = page.getByRole("region", { name: "领取退还代币", exact: true });
+  const claim = refund.getByRole("button");
+  await expect(claim).toHaveText("领取退还代币");
   await expect(claim).toBeDisabled();
   await expect(page.locator(".metric").filter({ hasText: "实际服务费" })).toContainText("50.00");
   expect(decisions).toBe(2);
@@ -571,7 +574,8 @@ test("acceptance opens settlement, follows confirmation and refund, and survives
   Object.assign(job.chain, { finalized: true, settledAmount: "59000000", agentCredits: "59000000", refundCredit: "41000000", reserved: "0", unallocated: "0" });
   await expect(panel.getByRole("heading", { name: "结算完成", exact: true })).toBeVisible({ timeout: 12_000 });
   await expect(page.locator(".metric").filter({ hasText: "实际服务费" })).toContainText("59.00");
-  await expect(page.locator(".metric").filter({ hasText: "可领取退款" })).toContainText("41.00");
+  await expect(refund).toContainText("剩余 41.00 代币");
+  await expect(page.getByText("可领取退款", {exact: true})).toHaveCount(0);
   await expect(page.getByRole("table", { name: "各项服务费用" }).getByRole("row").filter({ hasText: "生成旅行方案" })).toContainText("9.00");
   await expect(claim).toBeEnabled();
   expect(claims).toBe(0);
@@ -581,21 +585,54 @@ test("acceptance opens settlement, follows confirmation and refund, and survives
   await expect(claim).toBeEnabled();
   await claim.focus();
   await claim.press("Enter");
+  await expect(refund.getByRole("alert")).toContainText("连接暂时中断");
+  await expect(claim).toBeEnabled();
+  expect(job.chain.refunded).toBe("0");
+  failRefund = false;
+  await claim.click();
   await expect(page.locator(".metric").filter({ hasText: "已退还用户" })).toContainText("41.00");
-  await expect(page.locator(".metric").filter({ hasText: "可领取退款" })).toContainText("0.00");
-  await expect(panel).toContainText("本次任务的付款与退款已处理完毕。");
+  await expect(refund).toContainText("已退还 41.00 代币到你的钱包。");
+  await expect(claim).toHaveText("已领取退还代币");
   await expect(claim).toBeDisabled();
-  expect(claims).toBe(1);
+  expect(claims).toBe(2);
+  expect(job.chain.agentCredits).toBe("59000000");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   await page.screenshot({ path: testInfo.outputPath("settlement-mobile.png"), fullPage: true });
   await panel.getByRole("button", { name: "查看报告与验收记录", exact: true }).click();
+  await expect(refund).toBeVisible();
+  await expect(claim).toBeDisabled();
   const reopen = page.getByRole("button", { name: "查看结算", exact: true });
   await reopen.focus();
   await reopen.press("Enter");
   await expect(page.getByRole("heading", { name: "任务结算", exact: true })).toBeVisible();
   expect(decisions).toBe(2);
   expect(errors).toEqual([]);
+});
+
+test("fully spent budget has no refund to claim", async ({ page }) => {
+  const job = settlementJob("spent-job");
+  job.status = "SUCCEEDED";
+  Object.assign(job.chain, {finalized:true, settledAmount:"100000000",agentCredits:"100000000",reserved:"0",unallocated:"0"});
+  job.tasks.forEach(task => {task.onchain.state=2; task.checkpoint.status="SETTLED";});
+  let refundCalls = 0;
+  await page.route("**/api/**", route => {
+    const path = new URL(route.request().url()).pathname;
+    if(path === "/api/config") return route.fulfill({json:{scenarios:[],chainId:31337,tokenSymbol:"USDC"}});
+    if(path === "/api/jobs") return route.fulfill({json:[{jobId:job.jobId,status:job.status}]});
+    if(path === `/api/jobs/${job.jobId}`) return route.fulfill({json:job});
+    if(path.endsWith("/refund")) refundCalls++;
+    if(path.endsWith("/events")) return route.fulfill({body:"",contentType:"text/event-stream"});
+    if(path.endsWith("/settlements")) return route.fulfill({json:{events:[]}});
+    return route.fulfill({json:[]});
+  });
+  await page.goto(`/?job=${job.jobId}&view=funds`);
+  await page.getByLabel("访问令牌").fill(token);
+  await page.getByRole("button",{name:/连接工作区/}).click();
+  const refund = page.getByRole("region",{name:"领取退还代币",exact:true});
+  await expect(refund).toContainText("本次预算已全部用于服务，无剩余代币。");
+  await expect(refund.getByRole("button",{name:"无剩余代币",exact:true})).toBeDisabled();
+  expect(refundCalls).toBe(0);
 });
 
 for (const complete of [false, true]) {

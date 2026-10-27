@@ -225,24 +225,36 @@ def test_reference_time_includes_merchant_serial_capacity_and_independent_branch
     assert elapsed_seconds(tasks, team) == 27  # The same merchant cannot execute A/B in parallel.
 
 
-def test_frontier_keeps_only_real_tradeoffs_and_labels_three_representatives():
+def test_frontier_keeps_every_real_tradeoff_and_labels_objective_extremes():
     from services.orchestrator.pareto import frontier, public
     tasks = [SimpleNamespace(key="task", dependencies=())]
     values = [(59, 54, 70), (70, 30, 69), (70, 46, 98), (80, 19, 52), (82, 35, 50)]
     pools = [[{"agentId":str(i), "price":cost, "seconds":seconds,
                "history":{"settled":success, "expired":100-success}}
               for i, (cost, seconds, success) in enumerate(values)]]
-    all_options = frontier(tasks, pools, 100, limit=20)["options"]
+    all_options = frontier(tasks, pools, 100)["options"]
     assert (82, 35) not in {(o["price"], o["seconds"]) for o in all_options}
     assert (70, 46) in {(o["price"], o["seconds"]) for o in all_options}  # Better third objective.
     result = frontier(tasks, pools, 100)
-    assert len(result["options"]) == 3
-    assert {(o["price"], o["seconds"]) for o in result["options"]} == {(59,54), (70,46), (80,19)}
-    assert public(next(o for o in result["options"] if o["price"] == 70))["estimatedSuccessPercent"] == "98.00"
+    assert len(result["options"]) == 4
+    assert {(o["price"], o["seconds"]) for o in result["options"]} == {(59,54), (70,30), (70,46), (80,19)}
+    assert public(next(o for o in result["options"] if o["seconds"] == 46))["estimatedSuccessPercent"] == "98.00"
     for o in result["options"]:
         assert not any(p["price"] <= o["price"] and p["seconds"] <= o["seconds"] and p["success"] >= o["success"]
                        and (p["price"],p["seconds"],p["success"]) != (o["price"],o["seconds"],o["success"])
                        for p in all_options)
+
+
+def test_frontier_has_no_display_limit_and_only_merges_equal_metrics():
+    from services.orchestrator.pareto import frontier
+    task = SimpleNamespace(key="task", dependencies=())
+    offers = [{"agentId": str(i), "price": 10 + i, "seconds": 100 - i,
+               "history": {"settled": 10, "expired": 0}} for i in range(24)]
+    offers.append({**offers[10], "agentId": "duplicate"})
+    result = frontier([task], [offers], 100)
+    assert len(result["options"]) == result["frontierCount"] == 24
+    assert not result["truncated"]
+    assert [o["price"] for o in result["options"]] == list(range(10, 34))
 
 
 def test_no_history_is_not_a_quote_blocker_or_an_invented_success_rate():

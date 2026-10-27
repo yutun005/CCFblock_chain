@@ -8,6 +8,7 @@ import {
 } from "./TaskPlanning";
 import { Draft, ReviewCard } from "./Deliverables";
 import { ProposalMetrics } from "./ExecutionCheck";
+import RefundClaim from "./RefundClaim";
 import ServiceGraph, { evidenceLabels } from "./ServiceGraph";
 import {
   ArrowLeft,
@@ -1550,12 +1551,18 @@ export default function Workspace({
             {offers.map((offer) => (
               <article
                 key={offer.proposal.id}
+                aria-label={`方案 ${offer.rank}`}
                 className={
-                  "workspace-panel " +
-                  (chosen?.id === offer.proposal?.id ? "chosen" : "")
+                  "workspace-panel proposal-card" +
+                  (chosen?.id === offer.proposal?.id ? " is-selected" : "")
                 }
               >
-                <h3>方案 {offer.rank}</h3>
+                <div className="proposal-heading">
+                  <h3>方案 {offer.rank}</h3>
+                  {chosen?.id === offer.proposal.id && (
+                    <span className="proposal-selection">已选择</span>
+                  )}
+                </div>
                 <>
                   <ProposalMetrics proposal={offer.proposal} />
                   {!!offer.proposal.work.length && (
@@ -1584,9 +1591,12 @@ export default function Workspace({
                   )}
                   <button
                     disabled={!!busy}
+                    aria-pressed={chosen?.id === offer.proposal.id}
                     onClick={() => setChosen(offer.proposal)}
                   >
-                    {chosen?.id === offer.proposal.id ? "已选择" : "选择此方案"}
+                    {chosen?.id === offer.proposal.id
+                      ? "已选择此方案"
+                      : "选择此方案"}
                   </button>
                 </>
               </article>
@@ -1724,30 +1734,24 @@ export default function Workspace({
                   <p>
                     已结算报酬：{money(version.chain.settledAmount)} USDC ·
                     已退款：
-                    {money(version.chain.refunded)} USDC · 可退余额：
-                    {money(version.chain.refundCredit)} USDC
+                    {money(version.chain.refunded)} USDC
                   </p>
+                )}
+                {version.jobId && version.chain && (
+                  <RefundClaim
+                    key={version.jobId}
+                    jobId={version.jobId}
+                    chain={version.chain}
+                    api={api}
+                    onChange={async () => {
+                      setVersion(await api(`${prefix}/versions/${version.id}`));
+                    }}
+                  />
                 )}
                 <div className="workspace-actions">
                   <button onClick={() => follow(version)}>
                     基于此版本继续
                   </button>
-                  {version.jobId &&
-                    ["SUCCEEDED", "PARTIAL_FAILED"].includes(
-                      version.status,
-                    ) && (
-                      <button
-                        disabled={!!busy}
-                        onClick={() =>
-                          void run("claim", async () => {
-                            await api(`/api/jobs/${version.jobId}/claims`, {});
-                            setNotice("已执行服务提款和剩余预算退款。");
-                          })
-                        }
-                      >
-                        完成提款与退款
-                      </button>
-                    )}
                   <button
                     onClick={() => {
                       if (version.jobId) onJob(version.jobId);

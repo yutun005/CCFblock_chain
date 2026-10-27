@@ -45,6 +45,7 @@ import "./style.css";
 import Workspace from "./Workspace";
 import DesignWorkspace from "./DesignWorkspace";
 import { ReviewInbox } from "./Deliverables";
+import RefundClaim from "./RefundClaim";
 import { Collaboration } from "./ExecutionCheck";
 import { amount, price, tokenUnits } from "./amount";
 
@@ -846,7 +847,6 @@ function App() {
                           BigInt(job.chain.withdrawn),
                         ShieldCheck,
                       ],
-                      ["可领取退款", job.chain.refundCredit, ArrowDownToLine],
                       ["已退还用户", job.chain.refunded, Wallet],
                     ].map(([title, value, Icon]: any) => (
                       <div className="metric" key={title}>
@@ -861,6 +861,15 @@ function App() {
                       </div>
                     ))}
                   </div>
+                  {(tab === "overview" || tab === "funds") && (
+                    <RefundClaim
+                      key={job.jobId}
+                      jobId={job.jobId}
+                      chain={job.chain}
+                      api={api}
+                      onChange={refresh}
+                    />
+                  )}
                   {tab === "overview" && (
                     <>
                       <ReviewInbox
@@ -1142,34 +1151,14 @@ function App() {
                           </h2>
                           <p aria-live="polite">
                             {job.chain.finalized
-                              ? BigInt(job.chain.refundCredit) > 0n ||
-                                BigInt(job.chain.agentCredits) > 0n
-                                ? "服务费用已确认，可点击“领取报酬与退款”收取剩余预算。"
-                                : "本次任务的付款与退款已处理完毕。"
+                              ? BigInt(job.chain.refundCredit) > 0n
+                                ? "本次服务费用已确认，未使用的代币通过上方按钮领取。"
+                                : BigInt(job.chain.refunded) > 0n
+                                  ? "本次服务费用已确认，剩余代币已退回你的钱包。"
+                                  : "本次服务费用已确认，预算已全部用于服务。"
                               : "已完成的服务费用会陆续入账，任务结束后确定退款金额。此页会自动更新。"}
                           </p>
                         </div>
-                        <button
-                          disabled={
-                            !!busy ||
-                            !job.chain.finalized ||
-                            (BigInt(job.chain.agentCredits) === 0n &&
-                              BigInt(job.chain.refundCredit) === 0n)
-                          }
-                          className="primary"
-                          onClick={() =>
-                            void action("claims", () =>
-                              api(`/api/jobs/${jobId}/claims`, {}),
-                            )
-                          }
-                        >
-                          {busy === "claims" ? (
-                            <Loader2 className="spin" size={17} />
-                          ) : (
-                            <ArrowDownToLine size={17} />
-                          )}
-                          领取报酬与退款
-                        </button>
                       </div>
                       {!job.chain.finalized && job.lastError && (
                         <p className="inline-error" role="alert">

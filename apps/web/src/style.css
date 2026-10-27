@@ -432,7 +432,7 @@ main {
 }
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 24px;
 }
@@ -1558,7 +1558,19 @@ dialog > p {
 .project-workspace :focus-visible { outline: 3px solid #2f62d5; outline-offset: 3px; }
 .workspace-notice { padding: 12px 16px; border: 1px solid #355a51; background: #142c28; border-radius: 8px; color: #a7e0d0; margin: 12px 0; }
 .tier-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,300px),1fr)); gap: 18px; }
-.tier-grid .chosen { outline: 3px solid #244cb1; outline-offset: -2px; }
+.proposal-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.proposal-heading h3 { margin: 0; }
+.proposal-selection { background: #2457ab; color: #fff; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+.proposal-card.is-selected { background: #e6f1ff; color: #14283e; border-color: #6aa5e9; box-shadow: inset 0 0 0 2px #6aa5e9; }
+.proposal-card.is-selected p, .proposal-card.is-selected small, .proposal-card.is-selected .hint { color: #304c69; }
+.proposal-card.is-selected .price { color: #123961; }
+.proposal-card.is-selected button[aria-pressed="true"] { background: #2457ab; color: #fff; border-color: #2457ab; }
+.refund-panel { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; padding: 22px; margin: 0 0 24px; border: 1px solid #9b834e; border-radius: 10px; background: #182b3c; }
+.refund-panel > div { flex: 1 1 260px; min-width: 0; }
+.refund-panel h2 { margin: 0; font-size: 18px; }
+.refund-panel p { margin: 8px 0 0; }
+.refund-panel button { flex: 0 0 auto; }
+@media(max-width: 600px) { .refund-panel button { width: 100%; } }
 .tier-grid .price { font-size: 24px; color: var(--accent); }
 .tier-grid ul { padding-left: 20px; line-height: 1.8; font-size: 14px; overflow-wrap: anywhere; }
 .workspace-actions, .version-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }

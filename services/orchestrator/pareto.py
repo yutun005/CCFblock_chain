@@ -1,4 +1,4 @@
-"""Exact cost/time/reliability frontier, followed by bounded representative display."""
+"""All distinct cost/time/reliability tradeoffs within the authorized budget."""
 
 from fractions import Fraction
 from itertools import product
@@ -40,7 +40,7 @@ def elapsed_seconds(tasks, team):
     return now
 
 
-def frontier(tasks, pools, budget, preference="lowest_price", limit=3):
+def frontier(tasks, pools, budget, preference="lowest_price"):
     if any(not pool for pool in pools):
         raise ValueError("有子任务没有可用商家")
     use_history = all(o["history"]["settled"] + o["history"]["expired"] > 0 for pool in pools for o in pool)
@@ -82,37 +82,24 @@ def frontier(tasks, pools, budget, preference="lowest_price", limit=3):
         while index < len(tree):
             tree[index] = max(tree[index], score(option))
             index += index & -index
-    selected = list(range(len(nondominated)))
-    if len(selected) > limit:
-        # Keep all objective extremes, then maximize separation for readable coverage of the frontier.
-        selected = list(dict.fromkeys([
-            min(range(len(nondominated)), key=lambda i: (nondominated[i]["price"], nondominated[i]["seconds"], -score(nondominated[i]))),
-            min(range(len(nondominated)), key=lambda i: (nondominated[i]["seconds"], nondominated[i]["price"], -score(nondominated[i]))),
-            min(range(len(nondominated)), key=lambda i: (-score(nondominated[i]), nondominated[i]["price"], nondominated[i]["seconds"])),
-        ]))
-        coords = [(o["price"], o["seconds"], float(score(o))) for o in nondominated]
-        lows = [min(c[d] for c in coords) for d in range(3)]
-        spans = [max(c[d] for c in coords) - lows[d] or 1 for d in range(3)]
-        coords = [tuple((c[d] - lows[d]) / spans[d] for d in range(3)) for c in coords]
-        while len(selected) < limit:
-            chosen = set(selected)
-            selected.append(max((i for i in range(len(coords)) if i not in chosen), key=lambda i: (
-                min(sum(abs(coords[i][d] - coords[j][d]) for d in range(3)) for j in selected), -i)))
-    options = [nondominated[i] for i in selected]
+    options = nondominated
+    cheapest = min(o["price"] for o in options)
+    fastest = min(o["seconds"] for o in options)
+    most_reliable = max(score(o) for o in options)
     for option in options:
         option["advantages"] = []
-        if option["price"] == min(o["price"] for o in nondominated):
+        if option["price"] == cheapest:
             option["advantages"].append("费用最低")
-        if option["seconds"] == min(o["seconds"] for o in nondominated):
+        if option["seconds"] == fastest:
             option["advantages"].append("预计最快")
-        if use_history and option["success"] == max(o["success"] for o in nondominated):
+        if use_history and option["success"] == most_reliable:
             option["advantages"].append("参考成功率最高")
     orders = {"lowest_price": lambda o: (o["price"], o["seconds"], -score(o), team_key(o)),
               "fastest": lambda o: (o["seconds"], o["price"], -score(o), team_key(o)),
               "reliability": lambda o: (-score(o), o["price"], o["seconds"], team_key(o))}
     options.sort(key=orders[preference])
     return {"options": options, "candidateCombinations": combinations, "feasibleCount": len(feasible),
-            "frontierCount": len(nondominated), "displayLimit": limit, "truncated": len(nondominated) > limit,
+            "frontierCount": len(nondominated), "displayLimit": None, "truncated": False,
             "objectives": ["price", "seconds", *(["success"] if use_history else [])],
             "comparisonNotice": "" if use_history else "部分商家尚无履约记录，本轮按费用与耗时比较；不把没有记录当作失败。"}
 

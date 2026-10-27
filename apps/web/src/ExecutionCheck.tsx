@@ -424,13 +424,24 @@ export default function ExecutionCheck({
           )}
           {!!options.length && (
             <p>
+              共 {options.length} 种方案。
               {options[0].proposal.pareto?.comparisonNotice ||
                 "同样的交付，比较费用、预计耗时和参考成功率。"}
             </p>
           )}
           <div className="execution-options">
-            {options.map((o: Row) => (
-              <article className="execution-node" key={o.proposal.id}>
+            {options.map((o: Row, index: number) => (
+              <article
+                className={`execution-node proposal-card${chosen?.id === o.proposal.id ? " is-selected" : ""}`}
+                aria-label={`方案 ${index + 1}`}
+                key={o.proposal.id}
+              >
+                <div className="proposal-heading">
+                  <h3>方案 {index + 1}</h3>
+                  {chosen?.id === o.proposal.id && (
+                    <span className="proposal-selection">已选择</span>
+                  )}
+                </div>
                 <ProposalMetrics proposal={o.proposal} />
                 <details>
                   <summary>查看服务与费用</summary>
@@ -440,8 +451,12 @@ export default function ExecutionCheck({
                     </p>
                   ))}
                 </details>
-                <button onClick={() => setChosen(o.proposal)}>
-                  选择此方案
+                <button
+                  disabled={busy}
+                  aria-pressed={chosen?.id === o.proposal.id}
+                  onClick={() => setChosen(o.proposal)}
+                >
+                  {chosen?.id === o.proposal.id ? "已选择此方案" : "选择此方案"}
                 </button>
               </article>
             ))}

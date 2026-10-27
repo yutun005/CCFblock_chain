@@ -3852,6 +3852,16 @@ class Engine:
             raise RuntimeError("chain changed during snapshot")
         return JobSnapshot.model_validate(value).model_dump(exclude_unset=True)
 
+    async def refund(self, job_id: str) -> dict:
+        # Owner refunds do not depend on any merchant's withdrawal endpoint.
+        async with self.locks.setdefault("refund:" + job_id, asyncio.Lock()):
+            job = self.chain.job(job_id)
+            if not job["finalized"]:
+                raise HTTPException(409, "任务尚未结算完成，请稍后领取退还代币。")
+            if job["refundCredit"]:
+                await self.submit(job_id, "withdrawRefund", [job_id], owner=True)
+            return self.snapshot(job_id)
+
     async def claims(self, job_id: str) -> dict:
         snapshot = self.snapshot(job_id)
         paid = set()
@@ -4157,6 +4167,11 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
     async def claims(job_id: str):
         require_job(job_id)
         return await engine.claims(job_id)
+
+    @app.post("/api/jobs/{job_id}/refund")
+    async def refund(job_id: str):
+        require_job(job_id)
+        return await engine.refund(job_id)
 
     @app.get("/api/jobs/{job_id}/events")
     async def events(job_id: str, request: Request, after: str = "0"):

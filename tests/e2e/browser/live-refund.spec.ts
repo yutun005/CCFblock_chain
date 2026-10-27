@@ -1,0 +1,37 @@
+import { expect, test } from "@playwright/test";
+import { writeFileSync } from "node:fs";
+
+test("completed job refunds the owner through the page while merchants are offline", async ({ page, request }) => {
+  const api = process.env.AGENTFLOW_LIVE_API_URL;
+  const token = process.env.AGENTFLOW_LIVE_API_TOKEN;
+  const jobId = process.env.AGENTFLOW_LIVE_REFUND_JOB_ID;
+  const output = process.env.AGENTFLOW_LIVE_RESULT_PATH;
+  test.skip(!api || !token || !jobId || !output, "requires a completed local-chain job with merchant processes stopped");
+  const headers = {Authorization:`Bearer ${token}`};
+  const before = await (await request.get(`${api}/api/jobs/${jobId}`, {headers})).json();
+  expect(before.chain.finalized).toBe(true);
+  expect(BigInt(before.chain.refundCredit)).toBeGreaterThan(0n);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(`${api}/?job=${jobId}&view=funds`);
+  await page.getByLabel("访问令牌").fill(token!);
+  await page.getByRole("button", {name:/连接工作区/}).click();
+  const refund = page.getByRole("region", {name:"领取退还代币",exact:true});
+  await refund.getByRole("button", {name:"领取退还代币",exact:true}).click();
+  await expect(refund.getByRole("button", {name:"已领取退还代币",exact:true})).toBeDisabled();
+  const after = await (await request.get(`${api}/api/jobs/${jobId}`, {headers})).json();
+  expect(after.chain.refunded).toBe(before.chain.refundCredit);
+  expect(after.chain.refundCredit).toBe("0");
+  expect(after.chain.agentCredits).toBe(before.chain.agentCredits);
+  const repeated = await request.post(`${api}/api/jobs/${jobId}/refund`, {headers,data:{}});
+  expect(repeated.ok()).toBeTruthy();
+  expect((await repeated.json()).chain.refunded).toBe(after.chain.refunded);
+  await page.reload();
+  await expect(refund.getByRole("button", {name:"已领取退还代币",exact:true})).toBeDisabled();
+  await page.screenshot({path:output!.replace(/\.json$/, "-desktop.png"),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+  await page.screenshot({path:output!.replace(/\.json$/, "-mobile.png"),fullPage:true});
+  expect(errors).toEqual([]);
+  writeFileSync(output!, JSON.stringify({jobId,refund:after.chain.refunded,merchantCredits:after.chain.agentCredits},null,2));
+});

@@ -211,8 +211,43 @@ class CContractAlignmentTests(unittest.TestCase):
 
     def test_frontend_does_not_claim_per_job_withdrawal_amount(self):
         self.assertIn("本任务待提现", WEB)
-        self.assertIn("api(`/api/jobs/${jobId}/claims`, {})", WEB)
+        refund = (ROOT / "apps/web/src/RefundClaim.tsx").read_text(encoding="utf-8")
+        self.assertIn("api(`/api/jobs/${jobId}/refund`, {})", refund)
         self.assertIn("job.chain.withdrawn", WEB)
+
+    def test_owner_refund_does_not_contact_merchants_and_is_repeatable(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        engine = app.Engine.__new__(app.Engine)
+        engine.locks = {}
+        chain = {"finalized": True, "refundCredit": 41_000_000, "refunded": 0}
+        engine.chain = SimpleNamespace(job=lambda _: dict(chain))
+        engine.snapshot = lambda _: {"chain": dict(chain)}
+        engine.post = AsyncMock(side_effect=AssertionError("Merchant is offline"))
+        async def withdraw(*args, **kwargs):
+            await asyncio.sleep(0)
+            chain.update(refunded=41_000_000, refundCredit=0)
+        engine.submit = AsyncMock(side_effect=withdraw)
+        async def scenario():
+            results = await asyncio.gather(engine.refund("job"), engine.refund("job"))
+            self.assertTrue(all(r["chain"]["refunded"] == 41_000_000 for r in results))
+            await engine.refund("job")
+        asyncio.run(scenario())
+        engine.submit.assert_awaited_once_with("job", "withdrawRefund", ["job"], owner=True)
+        engine.post.assert_not_awaited()
+
+    def test_refund_waits_for_job_finalization(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from fastapi import HTTPException
+        engine = app.Engine.__new__(app.Engine)
+        engine.locks = {}
+        engine.chain = SimpleNamespace(job=lambda _: {"finalized": False, "refundCredit": 0})
+        engine.submit = AsyncMock()
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(engine.refund("unfinished"))
+        self.assertEqual(raised.exception.status_code, 409)
+        engine.submit.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -264,10 +264,13 @@ test('travel graph has visible directed arrows and goes straight from confirmati
   });
   await page.route('**/api/workspace/comparisons',route=>{
     comparisons++;return route.fulfill({json:{options:[
-      {proposal:{id:'fast',estimatedPrice:'70.000000',estimatedSeconds:30,work:[],
-        pareto:{estimatedSuccessPercent:'69.55',advantages:['预计最快']},historySummary:{sources:['demo']}}},
-      {proposal:{id:'reliable',estimatedPrice:'70.000000',estimatedSeconds:46,work:[],
+      {proposal:{id:'fast',budget:'100',estimatedPrice:'70.000000',estimatedSeconds:30,work:[],
+        pareto:{estimatedSuccessPercent:'69.55',advantages:['费用最低']},historySummary:{sources:['demo']}}},
+      {proposal:{id:'reliable',budget:'100',estimatedPrice:'70.000000',estimatedSeconds:46,work:[],
         pareto:{estimatedSuccessPercent:'98.00',advantages:['参考成功率最高']},historySummary:{sources:['demo']}}},
+      ...Array.from({length:10},(_,i)=>({proposal:{id:`tradeoff-${i}`,budget:'100',
+        estimatedPrice:String(71+i),estimatedSeconds:29-i,work:[],
+        pareto:{estimatedSuccessPercent:String(70+i),advantages:[]},historySummary:{sources:['demo']}}})),
     ]}});
   });
   await page.getByRole('button',{name:'模板库',exact:true}).click();
@@ -288,10 +291,19 @@ test('travel graph has visible directed arrows and goes straight from confirmati
   await expect(page.getByLabel('销售统计维度')).toHaveCount(0);
   expect(checks).toBe(0);
   await page.getByRole('button',{name:'获取服务报价',exact:true}).click();
-  await expect(page.getByRole('button',{name:'选择此方案'})).toHaveCount(2);
+  await expect(page.getByRole('button',{name:'选择此方案'})).toHaveCount(12);
   await expect(page.getByText('参考成功率 69.55%',{exact:true})).toBeVisible();
   await expect(page.getByText('参考成功率 98.00%',{exact:true})).toBeVisible();
-  await expect(page.getByText('成功率含演示履约记录',{exact:true})).toHaveCount(2);
+  await expect(page.getByText('成功率含演示履约记录',{exact:true})).toHaveCount(12);
+  const first = page.getByRole('article',{name:'方案 1',exact:true});
+  const second = page.getByRole('article',{name:'方案 2',exact:true});
+  await second.getByRole('button',{name:'选择此方案',exact:true}).click();
+  await expect(second).toHaveClass(/is-selected/);
+  await expect(second.getByRole('button',{name:'已选择此方案',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(second).toHaveCSS('background-color','rgb(230, 241, 255)');
+  await first.getByRole('button',{name:'选择此方案',exact:true}).click();
+  await expect(first).toHaveClass(/is-selected/);
+  await expect(second).not.toHaveClass(/is-selected/);
   expect([checks,confirmations,comparisons]).toEqual([1,1,1]);
   await page.getByLabel('服务报价与预算').screenshot({path:testInfo.outputPath('direct-quotes.png')});
 });
