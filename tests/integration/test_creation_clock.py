@@ -24,6 +24,59 @@ def test_funding_deadline_uses_appropriate_chain_clock(client_name,chain_id,late
         assert chain.funding_deadline(900)==expected
 
 
+def test_validator_attestation_accounts_for_idle_anvil_and_task_deadline(monkeypatch):
+    from services.orchestrator import application as core, products, communication
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    wallet = "0x" + "11" * 20
+    task = {"attempt": 0, "payee": wallet, "deadline": 20000,
+            "config": {"slaSeconds": 20000, "requirementHash": "req"}}
+    context = {"spec": SimpleNamespace(), "policy": "policy", "upstreamRefs": []}
+    chain = MagicMock(chain_id=31337, now=100)
+    chain.funding_deadline.return_value = 10060
+    result = {"jobId": "job", "taskId": 0, "attempt": 0, "agentWallet": wallet,
+              "resultHash": "hash", "artifactURIHash": "uri", "submittedAt": 99}
+    manifest = {"jobId": "job", "taskId": 0, "attempt": 0, "agentWallet": wallet,
+                "requirementHash": "req", "inputRefs": [], "upstreamRefs": [], "artifacts": []}
+    request = {"jobId": "job", "taskId": 0, "delivery": {"result": result, "manifest": manifest,
+               "artifacts": [], "signature": "signature"}}
+    monkeypatch.setattr(core, "check_context", lambda *_: (task, context, []))
+    monkeypatch.setattr(core, "delivery_commitment", lambda *_: "hash")
+    monkeypatch.setattr(core, "delivery_uri_hash", lambda *_: "uri")
+    monkeypatch.setattr(core, "recover", lambda *_: wallet)
+    monkeypatch.setattr(core, "sign", lambda *_: "signature")
+    monkeypatch.setattr(products, "verify_product", lambda *_: [])
+    monkeypatch.setattr(communication, "missing_information", lambda *_: None)
+    assert core.validate_delivery(chain, request, "key")["attestation"]["validUntil"] == 10060
+    chain.funding_deadline.assert_called_with(60)
+    task["deadline"] = 10030
+    assert core.validate_delivery(chain, request, "key")["attestation"]["validUntil"] == 10030
+
+
+def test_accepted_review_can_resume_after_review_deadline():
+    from services.orchestrator.workspace import review_delivery
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+    engine = MagicMock()
+    engine.delegation_locks = {}
+    delivery = {"result": {"resultHash": "accepted"}}
+    review = {"id": "job:0:0", "jobId": "job", "taskId": 0, "attempt": 0,
+              "status": "ACCEPTED", "deadline": 1, "acceptedHash": "accepted", "changes": []}
+    def get(bucket, key, *args):
+        return {"reviews": review, "results": delivery, "jobs": {}}.get(bucket)
+    engine.db.get.side_effect = get
+    engine.chain.task.return_value = {"state": 1, "attempt": 0}
+    engine.post = AsyncMock(return_value={"passed": True})
+    engine.submit = AsyncMock()
+    engine.validator_url = "validator"
+    spec = SimpleNamespace(options={})
+    result = asyncio.run(review_delivery(engine, "job", 0, spec, {"attempt": 0}, {},
+                                        {"plan": {}, "inputs": []}, [], [], delivery, {}))
+    assert result[0] == delivery
+    assert engine.submit.await_args.args[1] == "approveResult"
+    assert review["status"] == "ACCEPTED"
+
+
 @pytest.fixture
 def engine(tmp_path):
     if not BINARY.exists():pytest.skip('Run manage.py setup')

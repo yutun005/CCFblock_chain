@@ -2873,7 +2873,7 @@ def validate_delivery(chain: Chain, request: dict, validator_key: str) -> dict:
     checks = verify_product(context["spec"], inputs, delivery["artifacts"], request.get("revision"))
     attestation = {"jobId": result["jobId"], "taskId": result["taskId"], "attempt": result["attempt"],
                    "resultHash": result["resultHash"], "validationPolicyId": context["policy"], "verdict": True,
-                   "validUntil": min(chain.now + 60, task["deadline"]), "attestationNonce": secrets.randbits(128)}
+                   "validUntil": min(chain.funding_deadline(60), task["deadline"]), "attestationNonce": secrets.randbits(128)}
     return {"passed": True, "checks": ["signature", "input_lineage", *checks], "attestation": attestation,
             "signature": sign("Attestation", attestation, validator_key, chain.chain_id, chain.escrow.address)}
 
@@ -3697,7 +3697,7 @@ class Engine:
             await asyncio.sleep(1)
         return None
 
-    async def execute_node(self, job_id: str, task_id: int, spec):
+    async def execute_node(self, job_id: str, task_id: int, spec, *, retry_expired_attestation: bool = True):
         job = self.db.get("jobs", job_id)
         state = await asyncio.to_thread(self.chain.task, job_id, task_id)
         attempt = state["attempt"]
@@ -3760,7 +3760,7 @@ class Engine:
             reusable = (isinstance(verification, dict) and isinstance(attestation, dict) and verification.get("passed") is True
                         and all(attestation.get(k) == v for k, v in expected.items())
                         and type(attestation.get("validUntil")) is int
-                        and attestation["validUntil"] >= self.chain.now)
+                        and attestation["validUntil"] > self.chain.funding_deadline(5))
             if not reusable:
                 verification = await self.post(self.validator_url + "/verify", {"jobId": job_id, "taskId": task_id,
                     "plan": job["plan"], "inputs": inputs, "upstream": upstream, "reused": reused, "delivery": delivery})
@@ -3781,6 +3781,17 @@ class Engine:
                 verification["signature"]], checkpoint=checkpoint)
             self.checkpoint(job_id, task_id, "SETTLED", settledAt=time.time())
         except (httpx.HTTPError, A2AClientError, ValueError, KeyError, TypeError, ChainReverted) as exc:
+            # Retry only a confirmed reverted settlement with an expired attestation.
+            # A fresh validator signature gives the retry a distinct idempotency key.
+            proof = verification.get("attestation", {}) if isinstance(locals().get("verification"), dict) else {}
+            if (retry_expired_attestation and phase == "chain" and isinstance(exc, ChainReverted)
+                    and type(proof.get("validUntil")) is int
+                    and proof["validUntil"] <= self.chain.funding_deadline(0)):
+                current = await asyncio.to_thread(self.chain.task, job_id, task_id)
+                if current["state"] == 1 and current["attempt"] == attempt and self.chain.funding_deadline(0) < current["deadline"]:
+                    self.db.event(job_id, "ATTESTATION_EXPIRED", {"taskId": task_id, "attempt": attempt})
+                    self.db.put("proofs", execution_key, None)
+                    return await self.execute_node(job_id, task_id, spec, retry_expired_attestation=False)
             fault = classify_fault(exc, phase, "await_expiry")
             self.checkpoint(job_id, task_id, "RECOVERING", reason=str(exc), fault=fault.model_dump())
             while True:
@@ -3788,7 +3799,7 @@ class Engine:
                 if current["state"] != 1 or current["attempt"] != attempt:
                     return
                 review = self.db.get("reviews", f"{job_id}:{task_id}:{attempt}")
-                if review and time.time() >= review["deadline"]:
+                if review and review["status"] != "ACCEPTED" and time.time() >= review["deadline"]:
                     await self.submit(job_id, "cancelTask", [job_id, task_id])
                     review["status"] = "TIMED_OUT"
                     self.db.put("reviews", review["id"], review)

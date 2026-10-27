@@ -309,7 +309,7 @@ async def review_delivery(
             return None
         if (
             review["status"] in {"REJECTED", "TIMED_OUT", "CANCELED"}
-            or time.time() >= review["deadline"]
+            or (review["status"] != "ACCEPTED" and time.time() >= review["deadline"])
             or engine.db.get("jobs", job_id).get("stopRequested")
         ):
             async with lock:

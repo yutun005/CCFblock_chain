@@ -173,3 +173,38 @@ def test_goal_to_reviewed_plan_requires_real_online_services(tmp_path):
     engine.agents.return_value = []
     with pytest.raises(ValueError, match="在线|离线"):
         asyncio.run(workspace.plan_goal(data))
+
+
+@pytest.mark.parametrize("city", ["示例城", "杭州", "北京", "上海", "成都", "西安"])
+@pytest.mark.parametrize("interest", ["culture", "nature"])
+def test_expanded_catalog_produces_verifiable_seven_day_itinerary(city, interest):
+    request = {**REQUEST, "destination": city, "days": 7, "budget_cents": 1000000,
+               "interests": [interest]}
+    root = travel.request_packet(request)
+    assert app.artifact_json(app.unpack(root))["catalog"] == "demo-travel-v2"
+    results = {}
+    for spec in app.travel_plan([root["sha256"]]).topological():
+        inputs = [item for dependency in spec.dependencies for item in results[dependency]] if spec.dependencies else [root]
+        results[spec.key] = execute_product(spec, inputs)
+        verify_product(spec, inputs, results[spec.key])
+    route = app.artifact_json(app.unpack(results["route"][0]))
+    assert len(route["days"]) == 7 and route["total_cents"] <= request["budget_cents"]
+    assert "演示" in route["source"]
+
+
+def test_v1_bound_request_keeps_original_catalog_after_v2_upgrade():
+    original, digest = travel.catalog("demo-travel-v1")
+    root = app.packet("travel-request.json", app.canonical({"schemaVersion": 2, "request": REQUEST,
+                      "catalog": "demo-travel-v1", "catalogHash": digest}), "application/json")
+    loaded = app.artifact_json(app.unpack(travel.search_inputs([root])[0]))
+    assert loaded["source"] == original["source"]
+    assert len(loaded["attractions"]) == len(original["attractions"])
+    assert travel.source_info()["id"] == "demo-travel-v2"
+
+
+def test_unknown_catalog_version_cannot_be_loaded():
+    root = travel.request_packet(REQUEST)
+    query = app.artifact_json(app.unpack(root))
+    query["catalog"] = "../demo-travel-v1"
+    with pytest.raises(ValueError, match="未知旅游资料库版本"):
+        travel.search_inputs([app.packet("travel-request.json", app.canonical(query), "application/json")])

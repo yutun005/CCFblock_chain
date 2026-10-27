@@ -11,8 +11,10 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-CATALOG_ID = "demo-travel-v1"
-CATALOG_PATH = Path(__file__).resolve().parents[2] / "data/travel/demo-catalog-v1.json"
+CATALOG_ID = "demo-travel-v2"
+CATALOG_DIR = Path(__file__).resolve().parents[2] / "data/travel"
+CATALOG_PATHS = {"demo-travel-v1": CATALOG_DIR / "demo-catalog-v1.json",
+                 "demo-travel-v2": CATALOG_DIR / "demo-catalog-v2.json"}
 NOTICE = "演示资料，不是实时检索或酒店实时报价；仅用于验证规划流程，不提供预订、购票。"
 FIELDS = {
     "destination": "目的地", "start_date": "出发日期", "days": "旅行天数",
@@ -47,13 +49,18 @@ class Interpretation(BaseModel):
     unsupported: list[str] = Field(default_factory=list, max_length=8)
 
 
-def catalog():
+def catalog(identifier=CATALOG_ID):
     from .application import object_hash
 
+    path = CATALOG_PATHS.get(identifier)
+    if path is None:
+        raise ValueError("未知旅游资料库版本，无法读取任务绑定的资料")
     try:
-        value = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ValueError("演示旅游资料库不可用，未创建任务；请检查资料文件或接入其他数据源") from exc
+    if value.get("id") != identifier:
+        raise ValueError("旅游资料库版本标识不匹配")
     return value, object_hash(value)
 
 
@@ -227,8 +234,8 @@ def search_inputs(inputs):
     query = artifact_json(unpack(inputs[0]))
     if set(query) != {"schemaVersion", "request", "catalog", "catalogHash"} or query["schemaVersion"] != 2:
         raise ValueError("无效的旅游检索请求")
-    data, digest = catalog()
-    if query["catalog"] != CATALOG_ID or query["catalogHash"] != digest:
+    data, digest = catalog(query["catalog"])
+    if query["catalogHash"] != digest:
         raise ValueError("旅游资料库版本与已确认方案不一致，不能用更新后的资料替换执行")
     doc = TravelInput.model_validate({
         "request": query["request"], "source": data["source"], "as_of": data["as_of"],

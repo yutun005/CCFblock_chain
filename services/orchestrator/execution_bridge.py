@@ -113,8 +113,26 @@ async def inspect_execution(workspace, designs, session_id, data):
         raise ValueError("未知执行设置")
     if not units(settings.get("budget", "100")):
         raise ValueError("Agent 服务预算必须大于零")
-    graph = await catalog.graph(workspace)
+    # Reject incomplete or unregistered graphs before discovering providers or requesting quotes.
+    document = catalog.corpus(workspace)
+    missing = [t for t in record["graph"]["tasks"]
+               if not t.get("capability") or t["capability"] not in planning.CAPABILITIES
+               or t["capability"] in document["removedServices"]]
     identity = str(uuid.uuid4())
+    if missing:
+        gaps = [{"sourceKeys": [t["key"]], "requirementIds": t.get("requirementIds", []),
+                 "reason": t.get("capabilityGap") or (t["title"] + "：尚未注册可执行能力")}
+                for t in missing]
+        check = {"id": identity, "designId": session_id, "designHash": digest(record),
+                 "catalogRevision": document["revision"], "createdAt": time.time(),
+                 "status": "capability_gap", "issues": [g["reason"] for g in gaps],
+                 "gaps": gaps, "nodes": [], "settings": settings, "originalGoal": record["goal"],
+                 "originalRequirements": record["brief"]["requirements"], "canConfirm": False}
+        check_current(workspace, check, latest=False)
+        workspace.engine.db.put("execution_checks", identity, check)
+        workspace.engine.db.put("execution_check_heads", session_id, identity)
+        return check
+    graph = await catalog.graph(workspace)
     check = {"id": identity, "designId": session_id, "designHash": digest(record), "catalogRevision": graph["revision"],
              "createdAt": time.time(), "status": "blocked", "issues": [], "nodes": [], "settings": settings,
              "originalGoal": record["goal"], "originalRequirements": record["brief"]["requirements"], "canConfirm": False}
@@ -191,8 +209,8 @@ async def confirm_scope(workspace, designs, session_id, data):
     if not check or check["designId"] != session_id or not check["canConfirm"]:
         raise ValueError("请先完成执行条件检查")
     record = check_current(workspace, check)
-    if check.get("gaps") and data.get("acceptPartial") is not True:
-        raise ValueError("目标存在未支持要求；需明确确认仅执行列出的部分")
+    if check.get("gaps"):
+        raise ValueError("任务图存在未注册能力，只能规划预览，不能进入报价或执行")
     prior = workspace.engine.db.get("execution_scopes", check["id"])
     from .workspace import Recipe
     recipe = Recipe.model_validate(check["recipe"])
@@ -221,6 +239,8 @@ def validate_source(workspace, planning_record):
         if not check:
             raise ValueError("执行范围检查不存在")
         check_current(workspace, check)
+        if check.get("gaps") or source.get("excludedRequirements"):
+            raise ValueError("任务图存在未注册能力，只能规划预览，不能进入报价或执行")
 
 
 def install(app, workspace, designs):

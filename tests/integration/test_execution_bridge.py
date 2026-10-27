@@ -48,7 +48,7 @@ def test_missing_materials_and_old_unbound_graph_are_distinct(setup):
     session["graph"]["tasks"][0].pop("capability")
     ws.engine.db.put("design_sessions", session["id"], session)
     check = inspect(setup)
-    assert check["status"] == "needs_revision" and not check["canConfirm"]
+    assert check["status"] == "capability_gap" and not check["canConfirm"]
     assert ws.engine.db.get("design_sessions", session["id"])["graph"] == session["graph"]
 
 
@@ -85,21 +85,40 @@ def test_duplicate_capability_and_missing_input_edge_do_not_fall_back_to_templat
     assert "重复" in inspect(setup)["issues"][0]
 
 
-def test_partial_bound_graph_requires_opt_in_without_model_replanning(setup, monkeypatch):
+def test_partial_graph_stays_in_preview_without_discovery_or_partial_confirmation(setup, monkeypatch):
     ws, service, session, _ = setup
     session["graph"]["tasks"].append({"key":"forecast", "title":"预测未来销量", "description":"预测需求", "dependencies":[],
         "outputs":["销量预测"], "requirementIds":["R2"], "capabilityGap":"未接入未来预测能力"})
     session["brief"]["requirements"].append({"id":"R2", "text":"未来销量预测", "kind":"deliverable"})
     ws.engine.db.put("design_sessions", session["id"], session)
-    model = AsyncMock(side_effect=AssertionError("quoting must not re-plan")); monkeypatch.setattr(planning, "completion", model)
+    ws.engine.agents.reset_mock()
     check = inspect(setup)
-    assert check["status"] == "capability_gap" and len(check["nodes"]) == 4
-    with pytest.raises(ValueError, match="明确确认"):
-        asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId":check["id"]}))
-    scope = asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId":check["id"], "acceptPartial":True}))
-    assert scope["excludedRequirements"][0]["reason"] == "未接入未来预测能力"
-    assert scope["originalRequirements"][-1]["text"] == "未来销量预测"
-    model.assert_not_called()
+    assert check["status"] == "capability_gap" and not check["canConfirm"]
+    ws.engine.agents.assert_not_awaited()
+    with pytest.raises(ValueError):
+        asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId":check["id"], "acceptPartial":True}))
+    assert not ws.engine.db.values("planning_runs") and not ws.engine.db.values("jobs")
+
+
+def test_legacy_partial_scope_cannot_be_used_for_new_quotes(setup):
+    ws, service, session, _ = setup
+    check = inspect(setup)
+    check["gaps"] = [{"reason": "未接入"}]
+    ws.engine.db.put("execution_checks", check["id"], check)
+    with pytest.raises(ValueError, match="未注册能力"):
+        bridge.validate_source(ws, {"source": {"executionCheck": check["id"]}})
+    with pytest.raises(ValueError, match="未注册能力"):
+        asyncio.run(bridge.confirm_scope(ws, service, session["id"], {"checkId":check["id"], "acceptPartial":True}))
+
+
+def test_unknown_capability_blocks_before_discovery(setup):
+    ws, _, session, _ = setup
+    session["graph"]["tasks"][0]["capability"] = "unregistered_skill"
+    ws.engine.db.put("design_sessions", session["id"], session)
+    ws.engine.agents.reset_mock()
+    check = inspect(setup)
+    assert check["status"] == "capability_gap" and not check["canConfirm"]
+    ws.engine.agents.assert_not_awaited()
 
 
 def test_offline_provider_is_not_reported_as_missing_business_capability(setup):

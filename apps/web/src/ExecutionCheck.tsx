@@ -8,7 +8,7 @@ const base = "/api/workspace";
 const states: Row = {
   ready: "可以准备执行",
   needs_input: "还需要补充材料或条件",
-  capability_gap: "部分要求尚无能力支持",
+  capability_gap: "规划预览 · 未落地：存在未注册能力",
   unsupported_structure: "当前结构无法执行",
   service_unavailable: "服务暂不可用",
   model_unavailable: "模型暂不可用",
@@ -57,13 +57,11 @@ export default function ExecutionCheck({
   const [travel, setTravel] = useState<Row>({}),
     [check, setCheck] = useState<Row | null>(null);
   const [options, setOptions] = useState<Row[]>([]),
-    [chosen, setChosen] = useState<Row | null>(null),
-    [partial, setPartial] = useState(false);
+    [chosen, setChosen] = useState<Row | null>(null);
   const reset = () => {
     setCheck(null);
     setOptions([]);
     setChosen(null);
-    setPartial(false);
   };
   const supplied = JSON.stringify(session.graph?.execution || {});
   useEffect(() => {
@@ -112,14 +110,12 @@ export default function ExecutionCheck({
       settings,
     });
     setCheck(result);
-    setPartial(false);
     if (result.recipe?.travelRequest) setTravel(result.recipe.travelRequest);
     return result;
   };
-  const compare = async (result: Row, acceptPartial = false) => {
+  const compare = async (result: Row) => {
     const scope = await api(`${base}/designs/${session.id}/execution-confirm`, {
       checkId: result.id,
-      acceptPartial,
     });
     const comparison = await api(base + "/comparisons", scope.recipe);
     setOptions(comparison.options);
@@ -154,6 +150,14 @@ export default function ExecutionCheck({
         : "");
   const confirmed = session.phase === "confirmed" && !dirty;
   if (!confirmed && !check) return null;
+  const missing = (session.graph?.tasks || []).filter((t: Row) => !t.capability);
+  if (missing.length) return (
+    <section className="execution-check panel" aria-label="规划预览未落地">
+      <h3>规划预览 · 未落地</h3>
+      <p>任务图存在未注册能力，暂不能发现服务、报价、执行或托管结算。接入能力并更新任务图后可继续。</p>
+      {missing.map((t: Row) => <p key={t.key}>{t.title}：{t.capabilityGap || "尚未注册可执行能力"}</p>)}
+    </section>
+  );
   return (
     <section className="execution-check panel" aria-label="服务报价与预算">
       <h3>服务报价与预算</h3>
@@ -398,27 +402,6 @@ export default function ExecutionCheck({
                   服务费上限 {Number(check.recipe.budget).toFixed(2)}{" "}
                   USDC。报告需要人工接受后结算。
                 </p>
-              )}
-              {check.canConfirm && !!check.gaps?.length && (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={partial}
-                    onChange={(e) => setPartial(e.target.checked)}
-                  />
-                  我同意只执行上面支持的部分；未支持的原要求保留在项目记录中。
-                </label>
-              )}
-              {check.canConfirm && !!check.gaps?.length && (
-                <button
-                  className="primary"
-                  disabled={
-                    busy || dirty || (check.gaps?.length > 0 && !partial)
-                  }
-                  onClick={() => void run(() => compare(check, partial))}
-                >
-                  按选定范围获取报价
-                </button>
               )}
             </div>
           )}
