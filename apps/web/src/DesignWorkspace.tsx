@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { PlanningGraph } from "./TaskPlanning";
 import ExecutionCheck from "./ExecutionCheck";
+import { TaskList } from "./TaskCollection";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -48,6 +49,7 @@ function GraphEditor({
   const [value, setValue] = useState<Row>(graph);
   const [selected, setSelected] = useState(graph.tasks[0]?.key || "");
   const [dirty, setDirty] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [capabilities, setCapabilities] = useState<Row[]>([]);
   const [editError, setEditError] = useState("");
   useEffect(() => {
@@ -124,6 +126,7 @@ function GraphEditor({
       ],
     });
     setSelected(key);
+    setEditing(true);
   };
   return (
     <section className="design-graph-editor" aria-label="开放任务图编辑器">
@@ -144,22 +147,20 @@ function GraphEditor({
       <PlanningGraph
         tasks={value.tasks}
         selectedTask={task?.key}
-        onSelectTask={setSelected}
+        onSelectTask={(key) => {
+          setSelected(key);
+          setEditing(true);
+        }}
         planningOnly
       />
-      <div className="design-node-tabs">
-        {value.tasks.map((node: Row) => (
-          <button
-            type="button"
-            key={node.key}
-            aria-pressed={node.key === task?.key}
-            onClick={() => setSelected(node.key)}
-          >
-            {node.title}
-          </button>
-        ))}
-      </div>
-      {task && (
+      <button
+        type="button"
+        className="node-edit-toggle"
+        onClick={() => setEditing(!editing)}
+      >
+        {editing ? "收起任务编辑" : "编辑所选任务"}
+      </button>
+      {task && editing && (
         <fieldset className="design-node-form" disabled={disabled}>
           <legend>编辑任务：{task.title}</legend>
           <label>
@@ -338,62 +339,34 @@ function GraphEditor({
           </button>
         </fieldset>
       )}
-      <fieldset disabled={disabled}>
-        <legend>最终交付清单</legend>
-        <p className="hint">
-          修改输出名称后，可移除旧项，再在对应任务中勾选新的输出。
-        </p>
-        {value.deliverables.map((item: Row, index: number) => (
-          <div className="design-toolbar" key={`${item.taskKey}-${index}`}>
-            <span>
-              {item.name} ·{" "}
-              {value.tasks.find((node: Row) => node.key === item.taskKey)
-                ?.title || item.taskKey}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                change({
-                  ...value,
-                  deliverables: value.deliverables.filter(
-                    (_: Row, i: number) => i !== index,
-                  ),
-                })
+      {dirty && (
+        <div className="design-edit-footer">
+          <p className="hint">
+            修改尚未保存。
+          </p>
+          <button
+            type="button"
+            disabled={disabled || !dirty}
+            onClick={async () => {
+              const cleaned = {
+                ...value,
+                tasks: value.tasks.map((node: Row) => ({
+                  ...node,
+                  inputs: lines(node.inputs.join("\n")),
+                  outputs: lines(node.outputs.join("\n")),
+                  acceptance: lines(node.acceptance.join("\n")),
+                })),
+              };
+              if (await onSave(cleaned)) {
+                setDirty(false);
+                onDirty(false);
               }
-            >
-              移除交付项
-            </button>
-          </div>
-        ))}
-      </fieldset>
-      <div className="design-edit-footer">
-        <p className="hint">
-          {dirty
-            ? "修改尚未保存。保存时检查依赖、循环和需求覆盖。"
-            : "点击节点可改工作内容、输入输出、验收条件和依赖，也可以直接向 AI 提修改意见。"}
-        </p>
-        <button
-          type="button"
-          disabled={disabled || !dirty}
-          onClick={async () => {
-            const cleaned = {
-              ...value,
-              tasks: value.tasks.map((node: Row) => ({
-                ...node,
-                inputs: lines(node.inputs.join("\n")),
-                outputs: lines(node.outputs.join("\n")),
-                acceptance: lines(node.acceptance.join("\n")),
-              })),
-            };
-            if (await onSave(cleaned)) {
-              setDirty(false);
-              onDirty(false);
-            }
-          }}
-        >
-          保存任务图修改
-        </button>
-      </div>
+            }}
+          >
+            保存任务图修改
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -503,15 +476,21 @@ function TemplateLibrary({
 export default function DesignWorkspace({
   api,
   mode,
+  jobs,
   onOpenChat,
+  onOpenHome,
   onOpenTemplates,
   onJob,
+  onResults,
 }: {
   api: Api;
-  mode: "chat" | "templates";
+  jobs: Row[];
+  mode: "home" | "chat" | "templates";
   onOpenChat: () => void;
+  onOpenHome: () => void;
   onOpenTemplates: () => void;
   onJob: (id: string) => void;
+  onResults: (id: string) => void;
 }) {
   const [session, setSession] = useState<Row | null>(null);
   const [sessions, setSessions] = useState<Row[]>([]);
@@ -544,7 +523,7 @@ export default function DesignWorkspace({
   }, [api]);
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
-  }, [refresh]);
+  }, [refresh, mode]);
   useEffect(() => {
     const log = tail.current?.parentElement;
     log?.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
@@ -642,10 +621,19 @@ export default function DesignWorkspace({
       );
       await adopt(result);
       onOpenChat();
-      setNotice(
-        "已按模板生成独立任务图，原模板会保留。可以直接编辑，或向 AI 描述调整要求。",
-      );
+      setNotice("模板已载入，可修改需求和任务图。");
     });
+  const newTask = () => {
+    setSession(null);
+    setVersion(null);
+    setText("");
+    setError("");
+    setNotice("");
+    onOpenChat();
+  };
+  const drafts = sessions.filter(
+    (item) => !jobs.some((job) => job.designId === item.id),
+  );
   return (
     <section
       className="open-design-workspace"
@@ -673,6 +661,65 @@ export default function DesignWorkspace({
           当前有未保存的任务图修改，请返回“项目与成果”保存后再使用其他模板。
         </p>
       )}
+      {mode === "home" && (
+        <section aria-label="项目任务列表">
+          <header className="design-header">
+            <div>
+              <h1>项目与成果</h1>
+            </div>
+            <button
+              className="primary"
+              disabled={!!busy || dirty}
+              onClick={newTask}
+            >
+              <Plus size={17} />
+              新建任务
+            </button>
+          </header>
+          {session && dirty && (
+            <button className="continue-design" onClick={onOpenChat}>
+              继续编辑：{session.title}
+              {dirty ? "（有未保存修改）" : ""}
+            </button>
+          )}
+          <TaskList
+            jobs={jobs}
+            onOpen={onJob}
+            onResults={onResults}
+            empty="还没有发起任务。点击“新建任务”，描述你想完成的目标。"
+          />
+          {!!drafts.length && (
+            <details className="draft-collection" open={!jobs.length}>
+              <summary>未发起的方案 · {drafts.length}</summary>
+              <ul className="task-list">
+                {drafts.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      className="task-list-main"
+                      disabled={!!busy || dirty}
+                      onClick={() =>
+                        void run("open", async () => {
+                          setSession(await api(`${prefix}/designs/${item.id}`));
+                          setVersion(null);
+                          setText("");
+                          setDirty(false);
+                          onOpenChat();
+                        })
+                      }
+                    >
+                      <span>
+                        <strong>{item.title}</strong>
+                        <small>{phases[item.phase]}</small>
+                      </span>
+                      <span>继续方案 →</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+      )}
       <div hidden={mode !== "templates"}>
         <TemplateLibrary
           templates={templates}
@@ -683,60 +730,17 @@ export default function DesignWorkspace({
       <div hidden={mode !== "chat"}>
         <header className="design-header">
           <div>
-            <span className="eyebrow">项目与成果 · 开放式方案规划</span>
-            <h1>与 AI 一起，把想法变成任务图</h1>
-            <p>先给一份粗略 DAG，不必一次说清所有要求；边看、边聊、边修改。</p>
-          </div>
-          <div className="workspace-actions">
-            <button
-              type="button"
-              disabled={!!busy || dirty}
-              onClick={() => {
-                setSession(null);
-                setVersion(null);
-                setText("");
-                setError("");
-                setNotice("");
-              }}
-            >
-              <Plus size={17} />
-              新方案
+            <button className="back-link" onClick={onOpenHome}>
+              ← 项目与成果
             </button>
-            <button type="button" disabled={!!busy} onClick={onOpenTemplates}>
-              <LayoutTemplate size={17} />
-              浏览模板库
-            </button>
+            <h1>{session ? "任务方案" : "新建任务"}</h1>
           </div>
+          <button disabled={!!busy || dirty} onClick={onOpenTemplates}>
+            <LayoutTemplate size={17} />
+            使用模板
+          </button>
         </header>
-        <div className="design-layout">
-          <aside className="design-history">
-            <h2>我的方案</h2>
-            {!sessions.length && (
-              <p className="hint">对话与任务图会自动保存，之后可以继续修改。</p>
-            )}
-            {sessions.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                aria-pressed={session?.id === item.id}
-                disabled={!!busy || dirty}
-                onClick={() =>
-                  void run("open", async () => {
-                    const result = await api(`${prefix}/designs/${item.id}`);
-                    setSession(result);
-                    setVersion(null);
-                    setText("");
-                    setDirty(false);
-                  })
-                }
-              >
-                <strong>{item.title}</strong>
-                <small>
-                  {phases[item.phase]} · 第 {item.revision} 稿
-                </small>
-              </button>
-            ))}
-          </aside>
+        <div className={`design-layout${session ? "" : " is-empty"}`}>
           <section className="design-conversation" aria-label="与 AI 讨论方案">
             <div className="design-conversation-heading">
               <MessageSquare size={18} />
@@ -753,13 +757,12 @@ export default function DesignWorkspace({
                   <Sparkles size={30} />
                   <h2>你希望完成什么？</h2>
                   <p>
-                    可以是产品设计、活动策划、学习路线、调研写作，或你自己的工作。先说目标，不必先选业务类型。
+                    描述目标、时间、预算和期望的成果。缺少的信息会在对话中补充。
                   </p>
                   <div className="design-starters">
                     {[
-                      "为校园读书节设计一套活动方案",
-                      "我想做一个宠物用品小程序",
-                      "帮我规划学习机器学习的路线",
+                      "帮我安排三天杭州旅行",
+                      "分析这批销售数据，找出销售趋势",
                     ].map((example) => (
                       <button
                         type="button"
@@ -851,9 +854,6 @@ export default function DesignWorkspace({
                 }
               />
               <div>
-                <small>
-                  当前先形成方案与任务图，节点功能接入后再安排执行。
-                </small>
                 <button
                   type="submit"
                   className="primary"
@@ -871,7 +871,11 @@ export default function DesignWorkspace({
               </div>
             </form>
           </section>
-          <section className="design-canvas" aria-label="当前方案与任务图">
+          <section
+            hidden={!session}
+            className="design-canvas"
+            aria-label="当前方案与任务图"
+          >
             {!session ? (
               <div className="design-canvas-empty">
                 <GitBranch size={42} />
@@ -962,25 +966,36 @@ export default function DesignWorkspace({
                 </details>
                 {session.graph && (
                   <>
-                    <div ref={graphAnchor}>
-                      <GraphEditor
-                        api={api}
-                        key={`${session.id}:${session.revision}`}
-                        graph={session.graph}
-                        brief={session.brief}
-                        outline={session.outline}
-                        disabled={!!busy}
-                        onDirty={setDirty}
-                        onSave={async (graph) => {
-                          let saved = false;
-                          await run("edit", async () => {
-                            await mutate("edit", { graph });
-                            saved = true;
-                          });
-                          return saved;
-                        }}
-                      />
-                    </div>
+                    <details
+                      className="design-graph-section"
+                      open={session.phase !== "confirmed"}
+                    >
+                      <summary>
+                        {session.phase === "confirmed"
+                          ? "已确认的任务图"
+                          : "任务安排"}{" "}
+                        · {session.graph.tasks.length} 项工作
+                      </summary>
+                      <div ref={graphAnchor}>
+                        <GraphEditor
+                          api={api}
+                          key={`${session.id}:${session.revision}`}
+                          graph={session.graph}
+                          brief={session.brief}
+                          outline={session.outline}
+                          disabled={!!busy}
+                          onDirty={setDirty}
+                          onSave={async (graph) => {
+                            let saved = false;
+                            await run("edit", async () => {
+                              await mutate("edit", { graph });
+                              saved = true;
+                            });
+                            return saved;
+                          }}
+                        />
+                      </div>
+                    </details>
                     {!!(
                       session.warnings?.length || session.questions?.length
                     ) && (
@@ -1015,10 +1030,7 @@ export default function DesignWorkspace({
                     )}
                     <section className="design-finalize">
                       <h3>最终交付</h3>
-                      <p className="hint">
-                        确认会保存你认可的当前版本，尚未明确的条件可以继续保留。AI
-                        查漏仅供参考。
-                      </p>
+
                       <ul>
                         {session.graph.deliverables.map(
                           (item: Row, index: number) => (
@@ -1042,44 +1054,55 @@ export default function DesignWorkspace({
                             ? "此版已确认"
                             : "确认这版任务图"}
                         </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !!busy || dirty || !planner?.configured || outdated
-                          }
-                          onClick={() =>
-                            void run("review", () => mutate("review"))
-                          }
-                        >
-                          AI 查漏（可选）
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !!busy || dirty || !planner?.configured || outdated
-                          }
-                          onClick={() =>
-                            void run("expand", () => mutate("regenerate"))
-                          }
-                        >
-                          按已有需求重新生成任务图
-                        </button>
-                        <button
-                          type="button"
-                          disabled={dirty}
-                          onClick={() =>
-                            download({
-                              title: session.title,
-                              brief: session.brief,
-                              outline: session.outline,
-                              graph: session.graph,
-                            })
-                          }
-                        >
-                          <ArrowDownToLine size={16} />
-                          导出 DAG
-                        </button>
                       </div>
+                      <details className="design-extra">
+                        <summary>更多方案操作</summary>
+                        <div className="workspace-actions">
+                          <button
+                            type="button"
+                            disabled={
+                              !!busy ||
+                              dirty ||
+                              !planner?.configured ||
+                              outdated
+                            }
+                            onClick={() =>
+                              void run("review", () => mutate("review"))
+                            }
+                          >
+                            AI 查漏（可选）
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              !!busy ||
+                              dirty ||
+                              !planner?.configured ||
+                              outdated
+                            }
+                            onClick={() =>
+                              void run("expand", () => mutate("regenerate"))
+                            }
+                          >
+                            按已有需求重新生成任务图
+                          </button>
+                          <button
+                            type="button"
+                            disabled={dirty}
+                            onClick={() =>
+                              download({
+                                title: session.title,
+                                brief: session.brief,
+                                outline: session.outline,
+                                graph: session.graph,
+                              })
+                            }
+                          >
+                            <ArrowDownToLine size={16} />
+                            导出 DAG
+                          </button>
+                        </div>
+                      </details>
                       {session.review?.source === "model_suggestions" && (
                         <div className="design-suggestions" role="status">
                           <strong>AI 查漏建议</strong>
@@ -1145,8 +1168,8 @@ export default function DesignWorkspace({
                   </>
                 )}
                 {!!session.versions.length && (
-                  <section className="design-versions">
-                    <h3>已确认版本</h3>
+                  <details className="design-versions">
+                    <summary>历史确认版本 · {session.versions.length}</summary>
                     <div className="workspace-actions">
                       {session.versions.map((item: Row) => (
                         <button
@@ -1181,7 +1204,7 @@ export default function DesignWorkspace({
                         />
                       </div>
                     )}
-                  </section>
+                  </details>
                 )}
               </>
             )}

@@ -18,36 +18,30 @@ import {
 } from "@xyflow/react";
 import {
   Activity,
-  ArrowDownToLine,
   ArrowRight,
   Check,
   ChevronRight,
-  CircleHelp,
   Coins,
   Copy,
-  Database,
   FileCheck2,
   GitBranch,
   Layers3,
   LayoutTemplate,
-  Loader2,
-  LockKeyhole,
   Network,
-  Plus,
   RefreshCw,
   ShieldCheck,
   Square,
   Wallet,
-  X,
 } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import "./style.css";
-import Workspace from "./Workspace";
+import { TaskList, TaskResults, taskTitle } from "./TaskCollection";
 import DesignWorkspace from "./DesignWorkspace";
+import ServiceGraph from "./ServiceGraph";
 import { ReviewInbox } from "./Deliverables";
 import RefundClaim from "./RefundClaim";
 import { Collaboration } from "./ExecutionCheck";
-import { amount, price, tokenUnits } from "./amount";
+import { amount } from "./amount";
 
 type AnyRecord = Record<string, any>;
 type Task = {
@@ -170,28 +164,34 @@ function App() {
     [ledger, setLedger] = useState<AnyRecord[]>([]);
   const [error, setError] = useState("");
   const [connectionErrors, setConnectionErrors] = useState<string[]>([]);
-  const [createError, setCreateError] = useState("");
-  const [scenario, setScenario] = useState("cross_org_analysis"),
-    [preview, setPreview] = useState<AnyRecord | null>(null),
-    [previewError, setPreviewError] = useState("");
   const [busy, setBusy] = useState(""),
     [tab, setTab] = useState(
-      new URLSearchParams(location.search).get("view") === "funds"
-        ? "funds"
-        : "workspace",
+      (() => {
+        const params = new URLSearchParams(location.search);
+        const view = params.get("view");
+        return [
+          "funds",
+          "results",
+          "evidence",
+          "templates",
+          "market",
+          "design",
+        ].includes(view || "")
+          ? view!
+          : params.has("job")
+            ? "overview"
+            : "workspace";
+      })(),
     ),
     [selected, setSelected] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false),
-    [budget, setBudget] = useState("100"),
-    [sla, setSla] = useState(3600);
   const [copied, setCopied] = useState(""),
     [stopOpen, setStopOpen] = useState(false);
   const [streamStatus, setStreamStatus] = useState("连接中"),
-    modalRef = useRef<HTMLDialogElement>(null),
     stopRef = useRef<HTMLDialogElement>(null);
   const selectedJobRef = useRef(jobId);
   const flowRef = useRef<ReactFlowInstance | null>(null);
   const dagRef = useRef<HTMLDivElement>(null);
+  const executionRecords = useRef<HTMLDetailsElement>(null);
   const settlementHeading = useRef<HTMLHeadingElement>(null);
   const selectJob = useCallback((id: string) => {
     selectedJobRef.current = id;
@@ -299,7 +299,7 @@ function App() {
       );
     }
     setConnectionErrors(failures);
-    if (jobId) {
+    if (jobId && ["overview", "results", "funds"].includes(tab)) {
       const [j, q, e, a, l] = await Promise.all([
         api("/api/jobs/" + jobId),
         api(`/api/jobs/${jobId}/quotes`),
@@ -315,7 +315,7 @@ function App() {
       setArtifacts(a);
       setLedger(l.events);
     }
-  }, [api, jobId, selectJob]);
+  }, [api, jobId, selectJob, tab]);
   useEffect(() => {
     if (!token) return;
     let cancelled = false,
@@ -336,16 +336,18 @@ function App() {
     };
   }, [refresh, token]);
   useEffect(() => {
-    if (jobId) {
-      const url = new URL(location.href);
+    const url = new URL(location.href);
+    if (jobId && ["overview", "funds", "results"].includes(tab))
       url.searchParams.set("job", jobId);
-      if (tab === "funds") url.searchParams.set("view", "funds");
-      else url.searchParams.delete("view");
-      history.replaceState(null, "", url.pathname + url.search + url.hash);
-    }
+    else url.searchParams.delete("job");
+    if (tab === "workspace" || tab === "overview")
+      url.searchParams.delete("view");
+    else url.searchParams.set("view", tab);
+    history.replaceState(null, "", url.pathname + url.search + url.hash);
   }, [jobId, tab]);
   useEffect(() => {
-    if (!jobId || !token) return;
+    if (!jobId || !token || !["overview", "results", "funds"].includes(tab))
+      return;
     const controller = new AbortController();
     let last = 0;
     const listen = async () => {
@@ -392,49 +394,7 @@ function App() {
     };
     void listen();
     return () => controller.abort();
-  }, [jobId, token]);
-  useEffect(() => {
-    if (createOpen) {
-      setCreateError("");
-      modalRef.current?.showModal();
-    } else modalRef.current?.close();
-  }, [createOpen]);
-  useEffect(() => {
-    if (!createOpen) return;
-    let cancelled = false;
-    setPreview(null);
-    setPreviewError("");
-    if (!/^\d+(\.\d{1,6})?$/.test(budget) || Number(budget) < 90) {
-      setPreviewError(
-        "Agent 服务托管预算至少为 90 代币，金额最多保留六位小数。",
-      );
-      return;
-    }
-    if (!Number.isInteger(sla) || sla < 10 || sla > 3600) {
-      setPreviewError("执行等待时间请填写 10 至 3600 秒的整数。");
-      return;
-    }
-    const timer = setTimeout(() => {
-      void api("/api/plans/preview", {
-        scenario,
-        deposit: budget,
-        slaSeconds: sla,
-      })
-        .then((value) => {
-          if (!cancelled) setPreview(value);
-        })
-        .catch((reason) => {
-          if (!cancelled)
-            setPreviewError(
-              reason instanceof Error ? reason.message : String(reason),
-            );
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [api, createOpen, scenario, budget, sla]);
+  }, [jobId, token, tab]);
   useEffect(() => {
     if (stopOpen) stopRef.current?.showModal();
     else stopRef.current?.close();
@@ -456,46 +416,15 @@ function App() {
   }, [jobId]);
   async function action(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
-    if (name === "create") setCreateError("");
-    else setError("");
+    setError("");
     try {
       await fn();
-      if (name !== "create") await refresh();
+      await refresh();
     } catch (e) {
-      if (name === "create") setCreateError(String(e));
-      else setError(String(e));
+      setError(String(e));
     } finally {
       setBusy("");
     }
-  }
-  async function createJob() {
-    if (!preview) return;
-    await action("create", async () => {
-      const r = await api("/api/jobs", {
-        scenario,
-        deposit: budget,
-        slaSeconds: sla,
-        expectedPlanHash: preview.planHash,
-        requestId: crypto.randomUUID(),
-      });
-      selectJob(r.jobId);
-      setTab("overview");
-      setCreateOpen(false);
-    });
-  }
-  async function download(ref: AnyRecord) {
-    await action("download", async () => {
-      const r = await fetch(`/api/jobs/${jobId}/artifacts/${ref.sha256}`, {
-        headers: { Authorization: "Bearer " + token },
-      });
-      if (!r.ok) throw new Error("下载失败");
-      const url = URL.createObjectURL(await r.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = ref.name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
   }
   async function copy(value: string) {
     await navigator.clipboard.writeText(value);
@@ -571,12 +500,20 @@ function App() {
   const nav = [
     ["workspace", "项目与成果", Layers3],
     ["templates", "模板库", LayoutTemplate],
-    ["execution", "执行与验收", FileCheck2],
-    ["overview", "协作任务", GitBranch],
     ["market", "服务市场", Network],
     ["funds", "资金账本", Wallet],
-    ["evidence", "成果与证据", FileCheck2],
+    ["evidence", "任务成果", FileCheck2],
   ] as const;
+  const activeNav = ["design", "overview"].includes(tab)
+    ? "workspace"
+    : tab === "results"
+      ? "evidence"
+      : tab;
+  const selectedSummary = jobs.find((j) => j.jobId === jobId);
+  const openJob = (id: string, view = "overview") => {
+    if (selectedJobRef.current !== id) selectJob(id);
+    setTab(view);
+  };
   if (!token || !connected)
     return (
       <div className="login">
@@ -643,28 +580,22 @@ function App() {
           {nav.map(([id, title, Icon]) => (
             <button
               key={id}
-              className={tab === id ? "active" : ""}
+              className={activeNav === id ? "active" : ""}
               onClick={() => setTab(id)}
-              aria-current={tab === id ? "page" : undefined}
+              aria-current={activeNav === id ? "page" : undefined}
             >
               <Icon size={19} />
               {title}
-              {tab === id && <ChevronRight size={16} />}
+              {activeNav === id && <ChevronRight size={16} />}
             </button>
           ))}
         </nav>
-        <div className="sidebar-foot">
-          <ShieldCheck size={20} />
-          <strong>DASC · 依赖感知结算</strong>
-          <p>报酬由任务状态和有效凭证共同约束。</p>
-          <small>EVM · Chain {config.chainId}</small>
-        </div>
       </aside>
       <div className="workspace-main">
         <header className="topbar">
           <span>
             工作区 <ChevronRight size={14} />{" "}
-            {nav.find((n) => n[0] === tab)?.[1]}
+            {nav.find((n) => n[0] === activeNav)?.[1]}
           </span>
           <div>
             <span className="local-pill">
@@ -702,53 +633,79 @@ function App() {
               </button>
             </div>
           )}
-          <div hidden={tab !== "workspace" && tab !== "templates"}>
+          <div hidden={!["workspace", "design", "templates"].includes(tab)}>
             <DesignWorkspace
               api={api}
-              mode={tab === "templates" ? "templates" : "chat"}
-              onOpenChat={() => setTab("workspace")}
+              jobs={jobs}
+              mode={
+                tab === "templates"
+                  ? "templates"
+                  : tab === "design"
+                    ? "chat"
+                    : "home"
+              }
+              onOpenChat={() => setTab("design")}
+              onOpenHome={() => setTab("workspace")}
               onOpenTemplates={() => setTab("templates")}
-              onJob={(id) => {
-                selectJob(id);
-                setTab("overview");
-              }}
+              onJob={(id) => openJob(id)}
+              onResults={(id) => openJob(id, "results")}
             />
           </div>
-          <div hidden={tab !== "execution"}>
-            <Workspace
-              api={api}
-              token={token}
-              currentJob={jobId}
-              onJob={selectJob}
-              onSettlement={openSettlement}
-            />
-          </div>
-          {!["workspace", "templates", "execution"].includes(tab) && (
+          {tab === "evidence" && (
+            <section aria-label="任务成果列表">
+              <div className="page-heading">
+                <div>
+                  <h1>任务成果</h1>
+                  <p>选择一次任务，查看最终交付和中间成果。</p>
+                </div>
+              </div>
+              <TaskList
+                jobs={jobs}
+                onOpen={(id) => openJob(id, "results")}
+                empty="任务发起后，会在这里按任务保存成果。"
+              />
+            </section>
+          )}
+          {!["workspace", "design", "templates", "evidence"].includes(tab) && (
             <>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">任务执行与交付</div>
+                  <button
+                    className="back-link"
+                    onClick={() =>
+                      setTab(tab === "results" ? "evidence" : "workspace")
+                    }
+                  >
+                    ← {tab === "results" ? "全部任务成果" : "项目与成果"}
+                  </button>
                   <h1 ref={settlementHeading} tabIndex={-1}>
                     {tab === "funds"
                       ? "任务结算"
-                      : nav.find((n) => n[0] === tab)?.[1]}
+                      : tab === "market"
+                        ? "服务市场"
+                        : taskTitle(selectedSummary || job || {})}
                   </h1>
-                  <p>
-                    {tab === "funds"
-                      ? "查看本次任务的服务费用、付款进度与剩余预算退款。"
-                      : "从服务发现到成果交付，追踪每个节点和每笔报酬。"}
-                  </p>
+                  {tab === "funds" && job && (
+                    <p>{taskTitle(selectedSummary || job)}</p>
+                  )}
                 </div>
-                <button className="primary" onClick={() => setTab("workspace")}>
-                  <Plus size={18} />
-                  创建协作任务
-                </button>
-              </div>
-              <div className="mode-note">
-                <LockKeyhole size={16} />
-                <span>
-                  任务依赖调度 · 独立成果验证 · 智能体协作 · 合约托管结算
-                </span>
+                {job && ["overview", "results"].includes(tab) && (
+                  <div className="workspace-actions">
+                    <Badge
+                      value={selectedSummary?.reviewStatus || job.status}
+                    />
+                    <button
+                      onClick={() =>
+                        setTab(tab === "results" ? "overview" : "results")
+                      }
+                    >
+                      {tab === "results" ? "查看执行进度" : "查看任务成果"}
+                    </button>
+                    <button onClick={() => openSettlement(job.jobId)}>
+                      查看结算
+                    </button>
+                  </div>
+                )}
               </div>
               {error && (
                 <div className="error" role="alert">
@@ -758,33 +715,40 @@ function App() {
                   </button>
                 </div>
               )}
-              <div className="job-picker">
-                <label htmlFor="job">当前任务</label>
-                <select
-                  id="job"
-                  value={jobId}
-                  onChange={(e) => {
-                    selectJob(e.target.value);
-                  }}
-                >
-                  <option value="" disabled>
-                    尚未创建任务
-                  </option>
-                  {jobs.map((j) => (
-                    <option key={j.jobId} value={j.jobId}>
-                      {short(j.jobId)} · {states[j.status] || j.status}
+              {tab === "funds" && (
+                <div className="job-picker">
+                  <label htmlFor="job">当前任务</label>
+                  <select
+                    id="job"
+                    value={jobId}
+                    onChange={(e) => {
+                      selectJob(e.target.value);
+                    }}
+                  >
+                    <option value="" disabled>
+                      尚未创建任务
                     </option>
-                  ))}
-                </select>
-                {job && <Badge value={job.status} />}
-                <span className="stream">
-                  <Activity size={14} />
-                  {jobId ? streamStatus : "等待任务"}
-                </span>
-              </div>
+                    {jobs.map((j) => (
+                      <option key={j.jobId} value={j.jobId}>
+                        {taskTitle(j)} · {states[j.status] || j.status}
+                      </option>
+                    ))}
+                  </select>
+                  {job && <Badge value={job.status} />}
+                  <span className="stream">
+                    <Activity size={14} />
+                    {jobId ? streamStatus : "等待任务"}
+                  </span>
+                </div>
+              )}
               {tab === "market" ? (
                 <>
-                  <section className="panel">
+                  <ServiceGraph api={api} onChange={() => void refresh()} />
+                  <details className="panel execution-records">
+                    <summary>
+                      在线服务实例 ·{" "}
+                      {agents.filter((a) => a.status === "ONLINE").length}
+                    </summary>
                     <div className="panel-heading">
                       <div>
                         <h2>可发现的服务 Agent</h2>
@@ -818,50 +782,45 @@ function App() {
                         </div>
                       ))}
                     </div>
-                  </section>
+                  </details>
                 </>
               ) : !job ? (
                 <section className="panel empty">
                   <GitBranch size={36} />
-                  <h2>{jobId ? "正在读取任务…" : "创建你的第一个协作任务"}</h2>
-                  <p>
-                    选择销售分析或旅游规划，由服务 Agent 协作执行并按履约结算。
-                  </p>
-                  {!jobId && (
-                    <button
-                      className="primary"
-                      onClick={() => setCreateOpen(true)}
-                    >
-                      查看计划并开始 <ArrowRight size={16} />
-                    </button>
-                  )}
+                  <h2>{jobId ? "正在读取任务…" : "还没有任务"}</h2>
+                  <button onClick={() => setTab("workspace")}>
+                    返回项目与成果
+                  </button>
                 </section>
               ) : (
                 <>
-                  <div className="stats-grid">
-                    {[
-                      ["托管预算", job.chain.deposit, Coins],
-                      [
-                        tab === "funds" ? "实际服务费" : "本任务已结算报酬",
-                        BigInt(job.chain.agentCredits) +
-                          BigInt(job.chain.withdrawn),
-                        ShieldCheck,
-                      ],
-                      ["已退还用户", job.chain.refunded, Wallet],
-                    ].map(([title, value, Icon]: any) => (
-                      <div className="metric" key={title}>
-                        <div>
-                          <span>{title}</span>
-                          <Icon size={18} />
+                  {tab === "funds" && (
+                    <div className="stats-grid">
+                      {[
+                        ["托管预算", job.chain.deposit, Coins],
+                        [
+                          tab === "funds" ? "实际服务费" : "本任务已结算报酬",
+                          BigInt(job.chain.agentCredits) +
+                            BigInt(job.chain.withdrawn),
+                          ShieldCheck,
+                        ],
+                        ["已退还用户", job.chain.refunded, Wallet],
+                      ].map(([title, value, Icon]: any) => (
+                        <div className="metric" key={title}>
+                          <div>
+                            <span>{title}</span>
+                            <Icon size={18} />
+                          </div>
+                          <strong>
+                            {amount(String(value))}
+                            <small>代币</small>
+                          </strong>
                         </div>
-                        <strong>
-                          {amount(String(value))}
-                          <small>代币</small>
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                  {(tab === "overview" || tab === "funds") && (
+                      ))}
+                    </div>
+                  )}
+                  {(tab === "funds" ||
+                    (tab === "overview" && job.chain.finalized)) && (
                     <RefundClaim
                       key={job.jobId}
                       jobId={job.jobId}
@@ -879,20 +838,23 @@ function App() {
                         onChange={refresh}
                         onSettlement={openSettlement}
                       />
-                      <section className="panel">
+                      <details
+                        className="panel execution-graph"
+                        open={!job.chain.finalized}
+                      >
+                        <summary>
+                          任务进度 ·{" "}
+                          {
+                            job.tasks.filter((t) => t.onchain.state === 2)
+                              .length
+                          }
+                          /{job.tasks.length} 项已完成
+                        </summary>
                         <div className="panel-heading">
-                          <div>
-                            <h2>
-                              {config.scenarios?.find(
-                                (s: AnyRecord) => s.id === job.scenario,
-                              )?.title || job.scenario}
-                            </h2>
-                            <p>
-                              {config.scenarios?.find(
-                                (s: AnyRecord) => s.id === job.scenario,
-                              )?.description || job.goal}
-                            </p>
-                          </div>
+                          <span className="stream">
+                            <Activity size={14} />
+                            {streamStatus}
+                          </span>
                           <div className="job-actions">
                             <span className="mono">{short(job.jobId)}</span>
                             <button
@@ -934,11 +896,18 @@ function App() {
                             fitViewOptions={{ padding: 0.2 }}
                             nodesDraggable={false}
                             nodesConnectable={false}
-                            onNodeClick={(_, n) =>
+                            onNodeClick={(_, n) => {
                               setSelected(
                                 job.tasks.findIndex((t) => t.key === n.id),
-                              )
-                            }
+                              );
+                              if (executionRecords.current) {
+                                executionRecords.current.open = true;
+                                executionRecords.current.scrollIntoView({
+                                  block: "start",
+                                  behavior: "smooth",
+                                });
+                              }
+                            }}
                             colorMode="dark"
                             minZoom={0.3}
                             maxZoom={1.5}
@@ -962,181 +931,186 @@ function App() {
                           </span>
                           <span>点击任务查看费用与执行状态</span>
                         </div>
-                      </section>
+                      </details>
                       <Collaboration
                         key={`collaboration-${job.jobId}`}
                         api={api}
                         jobId={job.jobId}
                         tasks={job.tasks}
                       />
-                      <div className="detail-grid">
-                        <section className="panel">
-                          <div className="panel-heading">
-                            <div>
-                              <h2>节点详情</h2>
-                              <p>
-                                {currentTask?.title} · 第{" "}
-                                {(currentTask?.onchain.attempt || 0) + 1} 轮
-                              </p>
-                            </div>
-                            <span className="tag">
-                              {currentTask ? taskStatus(currentTask) : "—"}
-                            </span>
-                          </div>
-                          {currentTask && (
-                            <>
-                              <div className="detail-fields">
-                                <div>
-                                  <span>预算上限</span>
-                                  <strong>
-                                    {amount(
-                                      currentTask.onchain.config.budgetCap,
-                                    )}{" "}
-                                    代币
-                                  </strong>
-                                </div>
-                                <div>
-                                  <span>成交金额</span>
-                                  <strong>
-                                    {currentTask.onchain.state === 0
-                                      ? "—"
-                                      : amount(
-                                          currentTask.onchain.acceptedPrice,
-                                        ) + " 代币"}
-                                  </strong>
-                                </div>
-                                <div>
-                                  <span>当前执行者</span>
-                                  <strong>
-                                    {currentTask.checkpoint.selected?.agentId ||
-                                      "尚未选择"}
-                                  </strong>
-                                </div>
-                                <div>
-                                  <span>验收结果</span>
-                                  <strong>
-                                    {currentTask.checkpoint.status ===
-                                    "AWAITING_REVIEW"
-                                      ? "报告已生成，等待您验收"
-                                      : currentTask.onchain.state === 2
-                                        ? "验证通过并已结算"
-                                        : currentTask.checkpoint.verification
-                                              ?.passed
-                                          ? "系统检查通过"
-                                          : "尚未完成检查"}
-                                  </strong>
-                                </div>
+                      <details
+                        className="execution-records"
+                        ref={executionRecords}
+                      >
+                        <summary>报价与执行记录</summary>
+                        <div className="detail-grid">
+                          <section className="panel">
+                            <div className="panel-heading">
+                              <div>
+                                <h2>节点详情</h2>
+                                <p>
+                                  {currentTask?.title} · 第{" "}
+                                  {(currentTask?.onchain.attempt || 0) + 1} 轮
+                                </p>
                               </div>
-                              <p className="hint">
-                                {currentTask.checkpoint.reason ||
-                                  "报价、结果和验证证明均绑定此任务及执行轮次。"}
-                              </p>
-                            </>
-                          )}
-                          <div className="table-wrap">
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>候选服务</th>
-                                  <th>报价</th>
-                                  <th>选择结果</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {visibleQuotes.length ? (
-                                  visibleQuotes.map((q, i) => (
-                                    <tr key={i}>
-                                      <td>
-                                        {q.agentId}
-                                        <small>轮次 {q.attempt + 1}</small>
-                                      </td>
-                                      <td>
-                                        {q.valid
-                                          ? amount(q.quote.price) + " 代币"
-                                          : "—"}
-                                      </td>
-                                      <td>
-                                        {q.valid ? (
-                                          q.chosen ? (
-                                            <span className="text-good">
-                                              已选择
-                                            </span>
-                                          ) : (
-                                            "合格候选"
-                                          )
-                                        ) : (
-                                          <span title={q.reason}>已拒绝</span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))
-                                ) : (
-                                  <tr>
-                                    <td colSpan={3}>节点就绪后开始询价</td>
-                                  </tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                        </section>
-                        <section className="panel timeline-panel">
-                          <div className="panel-heading">
-                            <div>
-                              <h2>执行时间线</h2>
-                              <p>来自服务事件与交易确认</p>
+                              <span className="tag">
+                                {currentTask ? taskStatus(currentTask) : "—"}
+                              </span>
                             </div>
-                            <Activity size={18} />
-                          </div>
-                          <div className="timeline">
-                            {events
-                              .slice(-10)
-                              .reverse()
-                              .map((e) => (
-                                <div className="timeline-item" key={e.seq}>
-                                  <span className="timeline-dot" />
+                            {currentTask && (
+                              <>
+                                <div className="detail-fields">
                                   <div>
+                                    <span>预算上限</span>
                                     <strong>
-                                      {states[e.kind] ||
-                                        (
-                                          {
-                                            JOB_FUNDED: "托管已确认",
-                                            TX_CONFIRMED: "链上交易确认",
-                                            QUOTES_RECEIVED: "收到候选报价",
-                                            WORKER_INTERRUPTED: "执行已中断",
-                                          } as Record<string, string>
-                                        )[e.kind] ||
-                                        "任务状态更新"}
+                                      {amount(
+                                        currentTask.onchain.config.budgetCap,
+                                      )}{" "}
+                                      代币
                                     </strong>
-                                    <p>
-                                      {(
-                                        {
-                                          create: "托管预算",
-                                          assign: "委派服务",
-                                          settle: "结算报酬",
-                                          finalize: "结束订单",
-                                          withdraw: "领取报酬",
-                                          refund: "退回余额",
-                                        } as AnyRecord
-                                      )[
-                                        String(e.payload.operation || "").split(
-                                          ":",
-                                        )[0]
-                                      ] ||
-                                        ("taskId" in e.payload
-                                          ? "任务 T" + (e.payload.taskId + 1)
-                                          : "任务状态更新")}
-                                    </p>
-                                    <time>
-                                      {new Date(
-                                        e.created * 1000,
-                                      ).toLocaleTimeString("zh-CN")}
-                                    </time>
+                                  </div>
+                                  <div>
+                                    <span>成交金额</span>
+                                    <strong>
+                                      {currentTask.onchain.state === 0
+                                        ? "—"
+                                        : amount(
+                                            currentTask.onchain.acceptedPrice,
+                                          ) + " 代币"}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>当前执行者</span>
+                                    <strong>
+                                      {currentTask.checkpoint.selected
+                                        ?.agentId || "尚未选择"}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>验收结果</span>
+                                    <strong>
+                                      {currentTask.checkpoint.status ===
+                                      "AWAITING_REVIEW"
+                                        ? "报告已生成，等待您验收"
+                                        : currentTask.onchain.state === 2
+                                          ? "验证通过并已结算"
+                                          : currentTask.checkpoint.verification
+                                                ?.passed
+                                            ? "系统检查通过"
+                                            : "尚未完成检查"}
+                                    </strong>
                                   </div>
                                 </div>
-                              ))}
-                          </div>
-                        </section>
-                      </div>
+                                <p className="hint">
+                                  {currentTask.checkpoint.reason || ""}
+                                </p>
+                              </>
+                            )}
+                            <div className="table-wrap">
+                              <table>
+                                <thead>
+                                  <tr>
+                                    <th>候选服务</th>
+                                    <th>报价</th>
+                                    <th>选择结果</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {visibleQuotes.length ? (
+                                    visibleQuotes.map((q, i) => (
+                                      <tr key={i}>
+                                        <td>
+                                          {q.agentId}
+                                          <small>轮次 {q.attempt + 1}</small>
+                                        </td>
+                                        <td>
+                                          {q.valid
+                                            ? amount(q.quote.price) + " 代币"
+                                            : "—"}
+                                        </td>
+                                        <td>
+                                          {q.valid ? (
+                                            q.chosen ? (
+                                              <span className="text-good">
+                                                已选择
+                                              </span>
+                                            ) : (
+                                              "合格候选"
+                                            )
+                                          ) : (
+                                            <span title={q.reason}>已拒绝</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))
+                                  ) : (
+                                    <tr>
+                                      <td colSpan={3}>节点就绪后开始询价</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </section>
+                          <section className="panel timeline-panel">
+                            <div className="panel-heading">
+                              <div>
+                                <h2>执行时间线</h2>
+                                <p>来自服务事件与交易确认</p>
+                              </div>
+                              <Activity size={18} />
+                            </div>
+                            <div className="timeline">
+                              {events
+                                .slice(-10)
+                                .reverse()
+                                .map((e) => (
+                                  <div className="timeline-item" key={e.seq}>
+                                    <span className="timeline-dot" />
+                                    <div>
+                                      <strong>
+                                        {states[e.kind] ||
+                                          (
+                                            {
+                                              JOB_FUNDED: "托管已确认",
+                                              TX_CONFIRMED: "链上交易确认",
+                                              QUOTES_RECEIVED: "收到候选报价",
+                                              WORKER_INTERRUPTED: "执行已中断",
+                                            } as Record<string, string>
+                                          )[e.kind] ||
+                                          "任务状态更新"}
+                                      </strong>
+                                      <p>
+                                        {(
+                                          {
+                                            create: "托管预算",
+                                            assign: "委派服务",
+                                            settle: "结算报酬",
+                                            finalize: "结束订单",
+                                            withdraw: "领取报酬",
+                                            refund: "退回余额",
+                                          } as AnyRecord
+                                        )[
+                                          String(
+                                            e.payload.operation || "",
+                                          ).split(":")[0]
+                                        ] ||
+                                          ("taskId" in e.payload
+                                            ? "任务 T" + (e.payload.taskId + 1)
+                                            : "任务状态更新")}
+                                      </p>
+                                      <time>
+                                        {new Date(
+                                          e.created * 1000,
+                                        ).toLocaleTimeString("zh-CN")}
+                                      </time>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          </section>
+                        </div>
+                      </details>
                     </>
                   )}
                   {tab === "funds" && (
@@ -1166,11 +1140,8 @@ function App() {
                         </p>
                       )}
                       <div className="settlement-links">
-                        <button onClick={() => setTab("overview")}>
-                          查看报告与验收记录
-                        </button>
-                        <button onClick={() => setTab("evidence")}>
-                          下载成果文件
+                        <button onClick={() => setTab("results")}>
+                          查看任务成果
                         </button>
                         <button
                           disabled={!!busy}
@@ -1281,230 +1252,23 @@ function App() {
                       </p>
                     </section>
                   )}
-                  {tab === "evidence" && (
-                    <>
-                      <section className="panel">
-                        <div className="panel-heading">
-                          <div>
-                            <h2>成果文件</h2>
-                            <p>
-                              查看各项任务的交付文件和结算状态，下载所需成果。
-                            </p>
-                          </div>
-                          <FileCheck2 />
-                        </div>
-                        {artifacts.length ? (
-                          artifacts.map((d) => (
-                            <div className="artifact-group" key={d.resultHash}>
-                              <div>
-                                <span className="tag">
-                                  T{d.manifest.taskId + 1} · 轮次{" "}
-                                  {d.manifest.attempt + 1}
-                                </span>
-                                <Badge
-                                  value={
-                                    job.tasks[d.manifest.taskId].onchain
-                                      .resultHash === d.resultHash
-                                      ? "SETTLED"
-                                      : "未结算成果"
-                                  }
-                                />
-                              </div>
-                              {d.manifest.artifacts.map((a: AnyRecord) => (
-                                <div className="artifact" key={a.sha256}>
-                                  <FileCheck2 size={20} />
-                                  <div>
-                                    <strong>{a.name}</strong>
-                                    <small>
-                                      {(a.size / 1024).toFixed(1)} KB ·{" "}
-                                      {a.media_type}
-                                    </small>
-                                  </div>
-                                  <button
-                                    aria-label={"下载 " + a.name}
-                                    onClick={() => void download(a)}
-                                  >
-                                    <ArrowDownToLine size={16} />
-                                    下载
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          ))
-                        ) : (
-                          <div className="empty">
-                            <p>Agent 交付后会在这里显示实际成果。</p>
-                          </div>
-                        )}
-                      </section>
-                      <div className="trust-note">
-                        <CircleHelp size={20} />
-                        <p>
-                          系统按约定规则检查成果，检查通过不代表原始资料一定真实。请结合材料来源核对报告。
-                        </p>
-                      </div>
-                    </>
+                  {tab === "results" && (
+                    <TaskResults
+                      key={job.jobId}
+                      api={api}
+                      job={job}
+                      artifacts={artifacts}
+                      finalTaskKeys={selectedSummary?.finalTaskKeys}
+                      onChange={refresh}
+                      onSettlement={openSettlement}
+                    />
                   )}
                 </>
               )}
             </>
           )}
-          <footer>
-            <span>AgentFlow Pay · DASC v1</span>
-            <span>独立履约 · 依赖约束 · 可核验结算</span>
-          </footer>
         </main>
       </div>
-      <dialog
-        ref={modalRef}
-        onCancel={() => setCreateOpen(false)}
-        onKeyDown={trapDialogTab}
-        aria-labelledby="create-title"
-      >
-        <div className="modal-heading">
-          <div>
-            <span className="eyebrow">NEW COLLABORATION</span>
-            <h2 id="create-title">确认任务计划</h2>
-          </div>
-          <button
-            aria-label="关闭创建窗口"
-            className="icon-button"
-            onClick={() => setCreateOpen(false)}
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <label htmlFor="scenario">业务场景</label>
-        <select
-          id="scenario"
-          value={scenario}
-          disabled={!!busy}
-          onChange={(e) => {
-            setScenario(e.target.value);
-            setPreview(null);
-            setCreateError("");
-          }}
-        >
-          {(config.scenarios || []).map((s: AnyRecord) => (
-            <option key={s.id} value={s.id}>
-              {s.title}
-            </option>
-          ))}
-        </select>
-        <p>
-          {
-            config.scenarios?.find((s: AnyRecord) => s.id === scenario)
-              ?.description
-          }
-        </p>
-        {(previewError || createError) && (
-          <p className="error" role="alert">
-            {previewError || createError}
-          </p>
-        )}
-        <div className="input-list">
-          <Database size={20} />
-          <div>
-            <strong>
-              {preview
-                ? `${preview.inputs.files.length} 份输入文件`
-                : previewError
-                  ? "请先修正计划或输入资料"
-                  : "正在校验计划与输入资料"}
-            </strong>
-            <small>
-              {preview?.inputs.request
-                ? `${preview.inputs.request.destination} · ${preview.inputs.request.start_date} 出发 · ${preview.inputs.request.days} 天 · ${preview.inputs.request.travelers} 人`
-                : preview
-                  ? `${preview.inputs.files.reduce((s: number, f: AnyRecord) => s + (f.rows || 0), 0).toLocaleString()} 行输入数据`
-                  : ""}
-            </small>
-          </div>
-        </div>
-        {preview?.inputs.request && (
-          <p className="hint">
-            行程费用上限 ¥
-            {(preview.inputs.request.budget_cents / 100).toFixed(2)}
-            （住宿、门票、所列交通）；
-            {preview.inputs.attractions} 个景点、{preview.inputs.hotels}{" "}
-            家酒店。 资料：{preview.inputs.source}，截至 {preview.inputs.as_of}
-            。提供行程方案，不进行预订。
-          </p>
-        )}
-        <div className="plan-steps">
-          {preview?.plan.tasks.map((task: AnyRecord, index: number) => (
-            <div key={task.key}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <strong>{task.title}</strong>
-              <small>上限 {price(task.budget_cap)} 代币</small>
-            </div>
-          ))}
-        </div>
-        <div className="form-row">
-          <div>
-            <label htmlFor="budget">Agent 服务托管预算（代币）</label>
-            <input
-              id="budget"
-              value={budget}
-              disabled={!!busy}
-              onChange={(e) => {
-                setBudget(e.target.value);
-                setPreview(null);
-              }}
-              inputMode="decimal"
-            />
-          </div>
-          <div>
-            <label htmlFor="sla">每次执行最长等待（秒）</label>
-            <input
-              id="sla"
-              type="number"
-              min={10}
-              max={3600}
-              value={sla}
-              disabled={!!busy}
-              onChange={(e) => {
-                setSla(Number(e.target.value));
-                setPreview(null);
-              }}
-            />
-          </div>
-        </div>
-        <p className="hint">
-          节点预算合计{" "}
-          {preview
-            ? amount(
-                preview.plan.tasks.reduce(
-                  (sum: bigint, t: AnyRecord) => sum + tokenUnits(t.budget_cap),
-                  0n,
-                ),
-              )
-            : "—"}{" "}
-          代币。 此预算支付 Agent
-          规划服务；行程费用单独计算。成功节点按成交价结算，未使用部分终态后可退。
-        </p>
-        <div className="modal-actions">
-          <button onClick={() => setCreateOpen(false)}>返回</button>
-          <button
-            className="primary"
-            disabled={
-              !!busy ||
-              !preview ||
-              !/^\d+(\.\d{1,6})?$/.test(budget) ||
-              Number(budget) < 90 ||
-              sla < 10
-            }
-            onClick={() => void createJob()}
-          >
-            {busy === "create" ? (
-              <Loader2 className="spin" size={17} />
-            ) : (
-              <LockKeyhole size={17} />
-            )}
-            托管预算并开始
-          </button>
-        </div>
-      </dialog>
       <dialog
         ref={stopRef}
         onCancel={() => setStopOpen(false)}

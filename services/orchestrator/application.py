@@ -4124,7 +4124,8 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
 
     @app.get("/api/jobs")
     def jobs():
-        return [{k: v for k, v in j.items() if k not in {"inputs", "createArgs"}} for j in engine.db.values("jobs")]
+        from .workspace import task_summaries
+        return task_summaries(engine)
 
     def require_job(job_id):
         if not engine.db.get("jobs", job_id):

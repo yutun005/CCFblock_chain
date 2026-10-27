@@ -153,13 +153,13 @@ export default function ExecutionCheck({
         ? "cross_org_analysis"
         : "");
   const confirmed = session.phase === "confirmed" && !dirty;
+  if (!confirmed && !check) return null;
   return (
     <section className="execution-check panel" aria-label="服务报价与预算">
-      <h3>下一步：选择服务方案</h3>
+      <h3>服务报价与预算</h3>
       {!confirmed && <p>确认上方任务图后，设置服务费上限并获取报价。</p>}
       {(confirmed || check) && (
         <>
-          <p>按已确认的任务图获取报价，选择后再确认托管预算。</p>
           <fieldset
             disabled={busy || !confirmed}
             className="execution-settings"

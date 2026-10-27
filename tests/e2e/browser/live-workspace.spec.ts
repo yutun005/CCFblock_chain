@@ -17,23 +17,34 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   await page.goto(api! + (existingJob ? `/?job=${existingJob}` : ""));
   await page.getByLabel("访问令牌").fill(token!);
   await page.getByRole("button", { name: /连接工作区/ }).click();
-  await page.getByRole("button", { name: "执行与验收", exact: true }).click();
-  await page.getByRole("button", { name: "协作任务", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "协作任务", exact: true })).toBeVisible();
   let jobId = existingJob;
-  if (!existingJob) {
-  await page.getByRole("button", { name: /查看计划并开始/ }).click();
-  await page.getByRole("combobox", { name: "业务场景" }).selectOption(scenario);
-  await expect(page.getByRole("heading", { name: "确认任务计划" })).toBeVisible();
-  await expect(page.getByText(/\d+ 份输入文件/)).toBeVisible();
-  const createdResponse = page.waitForResponse(
-    (response) => response.url().endsWith("/api/jobs") && response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "托管预算并开始" }).click();
-  const response = await createdResponse;
-  expect(response.ok()).toBeTruthy();
-  jobId = (await response.json()).jobId;
-  expect(jobId).toEqual(expect.any(String));
+  if (!jobId) {
+    const headers = { Authorization: `Bearer ${token}` };
+    const templates = await (await request.get(`${api}/api/workspace/design-templates`, {headers})).json();
+    const capability = scenario === "travel_planning" ? "travel_report" : "report_generation";
+    const template = templates.find((t:any)=>t.graph.tasks.some((n:any)=>n.capability===capability));
+    expect(template).toBeTruthy();
+    await page.getByRole("button",{name:"模板库",exact:true}).click();
+    await page.locator('.design-template-grid article').filter({has:page.getByRole('heading',{name:template.name,exact:true})})
+      .getByRole('button',{name:'按此模板生成 DAG'}).click();
+    await page.getByRole('button',{name:'确认这版任务图',exact:true}).click();
+    if (scenario === 'travel_planning') {
+      await page.getByText('出游条件',{exact:true}).click();
+      for (const [label,value] of [['目的地','杭州'],['出发日期','2026-11-01'],['天数','3'],['人数','2'],['旅行预算（元）','2000']]) {
+        await page.getByLabel(label,{exact:true}).fill(value);
+      }
+    } else {
+      const materials=await (await request.get(`${api}/api/workspace/materials`,{headers})).json();
+      const material=materials.find((m:any)=>m.scenario==='cross_org_analysis');
+      await page.getByText('销售数据',{exact:true}).click();
+      await page.getByLabel(material.name,{exact:true}).check();
+    }
+    await page.getByRole('button',{name:'获取服务报价',exact:true}).click();
+    await page.getByRole('button',{name:'选择此方案',exact:true}).first().click();
+    const creating=page.waitForResponse(r=>r.url().endsWith('/api/workspace/confirm') && r.request().method()==='POST');
+    await page.getByRole('button',{name:'确认并托管服务预算',exact:true}).click();
+    const created=await creating;expect(created.ok()).toBeTruthy();
+    jobId=(await created.json()).jobId;
 
   }
   // Keyboard activation also verifies accessible controls on a long report page.
@@ -51,11 +62,11 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   const download = page.waitForEvent("download");
   await inbox.getByRole("button", { name: scenario === "travel_planning" ? "下载旅行方案" : "下载销售分析报告", exact: true }).click();
   expect((await download).suggestedFilename()).toMatch(/report\.md$/);
-  const outputs = page.locator(".task-record").first();
-  await outputs.locator("summary").filter({hasText: "查看本步骤成果"}).focus();
-  await outputs.locator("summary").filter({hasText: "查看本步骤成果"}).press("Enter");
-  await expect(outputs.locator(".task-output")).toBeVisible();
-  await expect(outputs.locator(".task-output pre")).toHaveCount(0);
+  await page.getByRole("button",{name:"查看任务成果",exact:true}).click();
+  const intermediate=page.getByRole("region",{name:"中间成果",exact:true});
+  await intermediate.locator("summary").first().click();
+  await expect(intermediate.locator(".task-output")).toBeVisible();
+  await expect(intermediate.locator(".task-output pre")).toHaveCount(0);
   await page.screenshot({ path: output!.replace(/\.json$/, "-pending.png"), fullPage: true });
   if (decision === "revise") {
     await activate("退回修改");
@@ -90,7 +101,7 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   await page.setViewportSize({width:1280,height:720});
   await page.getByRole("button", { name: "刷新数据" }).focus();
   await page.getByRole("button", { name: "刷新数据" }).press("Enter");
-  await expect(page.getByText(decision === "reject" ? "部分失败" : "已完成", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(decision === "reject" ? "部分失败" : "已完成", { exact: true }).filter({visible:true}).first()).toBeVisible();
   const settlements = await request.get(`${api}/api/jobs/${jobId}/settlements`, { headers });
   expect(settlements.ok()).toBeTruthy();
   const events = (await settlements.json()).events as Array<{ event: string; transactionHash: string }>;
@@ -103,9 +114,14 @@ test("live workspace creates a settled job and shows its chain evidence", async 
   await expect(page.getByRole("columnheader", { name: "交易哈希" })).toBeVisible();
   await expect(page.locator("table tbody tr").filter({ hasText: "TaskSettled" })).toHaveCount(settled.length);
   await expect(page.locator(`button.hash-button[title="${settled[0].transactionHash}"]`)).toBeVisible();
-  await page.getByRole("button", { name: "成果与证据" }).click();
-  await expect(page.getByRole("heading", { name: "成果文件", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "下载" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "任务成果",exact:true }).click();
+  await expect(page.getByRole("heading", { name: "任务成果", exact: true })).toBeVisible();
+  await page.locator('.task-list-main:visible').first().click();
+  await expect(page.locator('.report-body')).toBeVisible();
+  await page.getByRole('button',{name:'服务市场',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'服务业务图与商家',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'新增商家',exact:true})).toBeEnabled();
+  await expect.poll(()=>page.locator('.planning-graph:visible .react-flow__node').count()).toBeGreaterThan(0);
   expect(pageErrors).toEqual([]);
 
   writeFileSync(output!, JSON.stringify({ jobId, scenario, status: decision === "reject" ? "PARTIAL_FAILED" : "SUCCEEDED",

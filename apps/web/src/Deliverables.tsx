@@ -596,9 +596,6 @@ export function ReviewCard({
           {notice}
         </p>
       )}
-      {(accepted || review.status === "ACCEPTED") && onSettlement && (
-        <button onClick={() => onSettlement(review.jobId)}>查看结算</button>
-      )}
       {review.status === "AWAITING_REVIEW" && (
         <p className="review-instruction">
           请阅读下方报告或下载文件。符合要求请点“验收通过”；有问题可退回修改或选择“不通过”。
@@ -785,11 +782,13 @@ export function ReviewInbox({
   jobId,
   onChange,
   onSettlement,
+  onLoaded,
 }: {
   api: Api;
   jobId: string;
   onChange: () => Promise<unknown>;
   onSettlement: (jobId: string) => void;
+  onLoaded?: (reviews: Row[]) => void;
 }) {
   const [reviews, setReviews] = useState<Row[]>([]),
     [drafts, setDrafts] = useState<Record<string, Row>>({});
@@ -814,6 +813,7 @@ export function ReviewInbox({
           cache.current = { ...cache.current, ...Object.fromEntries(loaded) };
           setDrafts(cache.current);
           setReviews(rows);
+          onLoaded?.(rows);
           setError("");
         }
       } catch (e) {
@@ -830,7 +830,7 @@ export function ReviewInbox({
       alive = false;
       clearTimeout(timer);
     };
-  }, [api, jobId]);
+  }, [api, jobId, onLoaded]);
   if (!reviews.length && !error) return null;
   return (
     <section className="panel review-inbox" aria-label="成果与验收">

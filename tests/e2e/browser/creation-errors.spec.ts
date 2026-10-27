@@ -26,13 +26,13 @@ test('historical task polling errors do not contaminate the new project form', a
   await page.goto('/?ui=current-build');
   await page.getByLabel('访问令牌').fill('test-token');
   await page.getByRole('button', { name: /连接工作区/ }).click();
-  await page.getByRole('button', { name: '协作任务', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '协作任务', exact: true })).toBeVisible();
+  await page.locator('.task-list-main').first().click();
   await expect(page.getByRole('alert')).toContainText('任务数据暂时不可用');
   expect(new URL(page.url()).searchParams.get('ui')).toBe('current-build');
   expect(new URL(page.url()).searchParams.get('job')).toBe(jobId);
-  await page.getByRole('button', { name: /创建协作任务/ }).click();
-  await expect(page.getByRole('heading', { name: '与 AI 一起，把想法变成任务图' })).toBeVisible();
+  await page.getByRole('button', { name: '项目与成果',exact:true }).click();
+  await page.getByRole('button', { name: '新建任务',exact:true }).click();
+  await expect(page.getByRole('heading', { name: '你希望完成什么？' })).toBeVisible();
   await expect(page.getByRole('region', { name: '项目与成果规划工作区' }).getByText(/Internal Server Error/)).toHaveCount(0);
 });
 
@@ -53,7 +53,7 @@ for (const failingPath of ['/api/agents', '/api/jobs']) {
     await page.goto('/');
     await page.getByLabel('访问令牌').fill('test-token');
     await page.getByRole('button', { name: /连接工作区/ }).click();
-    await expect(page.getByRole('heading', { name: '与 AI 一起，把想法变成任务图' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '项目与成果',exact:true })).toBeVisible();
     await expect(page.getByRole('alert')).toContainText(
       failingPath === '/api/agents' ? '服务列表暂时不可用' : '任务列表暂时不可用',
     );
@@ -71,22 +71,4 @@ test('invalid tokens still cannot enter the workspace', async ({ page }) => {
   await expect(page.getByRole('alert')).toContainText('访问令牌无效');
   await expect(page.getByRole('heading', { name: '连接协作控制台' })).toBeVisible();
   await expect(page.getByRole('region', { name: '项目与成果规划工作区' })).toHaveCount(0);
-});
-
-test('an old backend gives a restart instruction for the new travel endpoint', async ({ page }) => {
-  await page.route('**/api/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path === '/api/config') return route.fulfill({ json: {
-      scenarios: [{ id: 'cross_org_analysis', title: '销售分析' }], tokenSymbol: 'TEST',
-    } });
-    if (path.endsWith('/travel/source')) return route.fulfill({ status: 404, json: { detail: 'Not Found' } });
-    if (path.endsWith('/planner')) return route.fulfill({ json: { configured: false } });
-    return route.fulfill({ json: [] });
-  });
-  await page.goto('/');
-  await page.getByLabel('访问令牌').fill('test-token');
-  await page.getByRole('button', { name: /连接工作区/ }).click();
-  await page.getByRole('button', { name: '执行与验收', exact: true }).click();
-  await expect(page.getByRole('region', { name: '项目与成果工作区' })).toContainText('旅游资料接口不存在');
-  await expect(page.getByRole('region', { name: '项目与成果工作区' })).toContainText('重新启动');
 });

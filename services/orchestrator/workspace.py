@@ -18,6 +18,32 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .products import Terms, needs_review, normalize_change
 
 
+def task_summaries(engine):
+    """Read existing records as whole user requests, without changing funded plans."""
+    versions = {v["jobId"]: v for v in engine.db.values("versions") if v.get("jobId")}
+    reviews = {}
+    for review in engine.db.values("reviews"):
+        if review.get("status") in {"AWAITING_REVIEW", "REWORKING"}:
+            reviews[review["jobId"]] = review["status"]
+    result = []
+    for job in engine.db.values("jobs"):
+        version = versions.get(job["jobId"], {})
+        proposal = engine.db.get("proposals", version.get("proposalId", ""), {}) or {}
+        source = (proposal.get("planning") or {}).get("source") or {}
+        design_id = source.get("designId")
+        design = engine.db.get("design_sessions", design_id, {}) if design_id else {}
+        recipe = version.get("recipe") or {}
+        goal = job.get("plan", {}).get("goal", "")
+        title = recipe.get("title")
+        if not title or title == "我的项目":
+            title = (design or {}).get("title") or goal or "未命名任务"
+        result.append({**{k: v for k, v in job.items() if k not in {"inputs", "createArgs"}},
+            "title": title, "goal": recipe.get("requirement") or goal,
+            "designId": design_id, "finalTaskKeys": recipe.get("outputs"),
+            "reviewStatus": reviews.get(job["jobId"])})
+    return result
+
+
 def execution_allowance(review_seconds=0):
     # Use the existing protocol's full per-task window. Estimate seconds describe
     # merchant performance, not a deadline that should cancel otherwise useful work.
