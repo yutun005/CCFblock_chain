@@ -18,6 +18,50 @@ const rate = (h: Row) =>
   h?.window
     ? `${((100 * h.settled) / h.window).toFixed(2)}%（${h.settled}/${h.window}）`
     : "未知";
+
+function ServiceMetrics({
+  cost,
+  seconds,
+  history,
+}: {
+  cost: string;
+  seconds?: number;
+  history?: Row;
+}) {
+  return (
+    <dl className="service-metrics">
+      <div>
+        <dt>参考费用</dt>
+        <dd>{cost}</dd>
+      </div>
+      <div>
+        <dt>预计耗时</dt>
+        <dd>{seconds == null ? "待提供" : `${seconds} 秒`}</dd>
+      </div>
+      <div>
+        <dt>近期成功率</dt>
+        <dd>{history ? rate(history) : "暂无记录"}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function HistorySources({ providers }: { providers: Row[] }) {
+  const labels: Record<string, string> = {
+    demo: "平台内置演示履约记录",
+    operator: "人工录入记录（未独立核验）",
+    chain: "链上已核验记录",
+    registry: "服务注册资料",
+  };
+  const sources = [
+    ...new Set(providers.map((p) => labels[p.history?.source]).filter(Boolean)),
+  ];
+  return sources.length ? (
+    <p className="service-source-note">
+      成功率统计来源：{sources.join("、")}。
+    </p>
+  ) : null;
+}
 const cleanMerchant = (m: Row) => ({
   id: m.id,
   name: m.name,
@@ -535,19 +579,23 @@ export default function ServiceGraph({
                   return (
                     <article className="service-offer" key={o.serviceId}>
                       <h4>{serviceName(o.serviceId)}</h4>
-                      <p>
-                        参考费用：{o.price ? `${o.price} USDC` : "待报价"} ·
-                        预计耗时：{o.seconds ? `${o.seconds} 秒` : "待提供"}
-                      </p>
-                      {provider?.history && (
-                        <p>
-                          近期成功率：{rate(provider.history)} ·{" "}
-                          {evidenceLabels[provider.history.source]}
-                        </p>
-                      )}
+                      <ServiceMetrics
+                        cost={
+                          o.price != null && o.price !== ""
+                            ? `${o.price} USDC`
+                            : "待报价"
+                        }
+                        seconds={o.seconds}
+                        history={provider?.history}
+                      />
                     </article>
                   );
                 })}
+              <HistorySources
+                providers={nodes.flatMap((n: Row) =>
+                  n.providers.filter((p: Row) => p.id === detail.id),
+                )}
+              />
               <div className="modal-actions">
                 <button
                   className="danger-outline"
@@ -615,15 +663,15 @@ export default function ServiceGraph({
                       · {p.id}
                       {p.executionMessages && <span> · 支持执行信息查询</span>}
                     </p>
-                    <p>
-                      基础费用 {p.price ? `${price(p.price)} USDC` : "待报价"} ·{" "}
-                      {p.seconds ? `${p.seconds} 秒` : "耗时待提供"}
-                    </p>
-                    <p>近期成功率：{rate(p.history)}</p>
-                    <p className="hint">
-                      {evidenceLabels[p.history.source]}
-                      。基础费用来自资料，实际方案使用商家签名估价。
-                    </p>
+                    <ServiceMetrics
+                      cost={
+                        p.price != null && p.price !== ""
+                          ? `${price(p.price)} USDC`
+                          : "待报价"
+                      }
+                      seconds={p.seconds}
+                      history={p.history}
+                    />
                     <button disabled={busy} onClick={() => editMerchant(p)}>
                       修改商家和服务
                     </button>
@@ -642,6 +690,7 @@ export default function ServiceGraph({
                   </article>
                 ))}
               </div>
+              <HistorySources providers={node.providers || []} />
             </section>
           )}
           {pendingDelete && (

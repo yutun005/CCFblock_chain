@@ -50,6 +50,10 @@ test('service instances stay visible; detail dialog edits and deletes the select
   let dialog=page.getByRole('dialog');
   await expect(dialog).toContainText('18 USDC');await expect(dialog).toContainText('http://127.0.0.1:6766');
   await page.screenshot({path:testInfo.outputPath('service-details-desktop.png')});
+  await page.setViewportSize({width:390,height:844});
+  expect(await dialog.evaluate((d:any)=>d.scrollWidth<=d.clientWidth+1)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath('merchant-details-mobile.png')});
+  await page.setViewportSize({width:1440,height:1000});
   await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(trigger).toBeFocused();
   await trigger.click();await dialog.getByRole('button',{name:'修改商家和服务',exact:true}).click();
   await dialog.getByLabel('显示名称').fill('更新后的景点服务');
