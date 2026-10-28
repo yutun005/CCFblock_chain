@@ -85,6 +85,7 @@ class DesignGraph(Strict):
     deliverables: list[Deliverable] = Field(default_factory=list, max_length=24)
     limitations: list[Text] = Field(default_factory=list, max_length=12)
     execution: ExecutionDetails | None = Field(default=None, exclude_if=lambda v: v is None)
+    collaboration: dict | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class Proposal(Strict):
@@ -307,6 +308,12 @@ async def model_json(schema, instruction, context, validate=None):
     config, secret, ready = configuration()
     if not ready:
         raise ValueError("请先配置 planner.local.json 的接口地址、模型和 API Key；模板可直接使用，不需要模型")
+    if schema is not ReviewResult and context.get("serviceCatalog"):
+        from services.agents.cooperative_planning import design
+        result = await design(schema, context, config, secret)
+        if validate:
+            validate(result)
+        return result, config.model
     payload = {**context, "today": date.today().isoformat(), "outputSchema": schema.model_json_schema() if schema is ReviewResult else contract(schema.__name__)}
     system_prompt = REVIEW_PROMPT if schema is ReviewResult else BASE_PROMPT
     if schema is not ReviewResult:

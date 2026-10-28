@@ -1562,8 +1562,12 @@ def travel_candidates(inputs: list[dict]) -> tuple[dict, list[dict], list[dict]]
     return attractions["context"], attractions["attractions"], hotels["hotels"]
 
 
-def route_planning(inputs: list[dict]) -> list[dict]:
+def route_planning(inputs: list[dict], choices=None) -> list[dict]:
     context, attractions, hotels = travel_candidates(inputs)
+    # Execution choices may select/reorder genuine candidates, never alter facts,
+    # the user's request, prices, or the funded plan.
+    from services.agents.execution_tools import route_choices
+    attractions, hotels = route_choices(choices or {}, attractions, hotels)
     req = TravelRequest.model_validate(context["request"])
     links = {(x["from_id"], x["to_id"]): x for x in context["transfers"]}
     # Bounded deterministic heuristic: try hotels by total price, then visit cheap
@@ -2254,12 +2258,15 @@ class ServiceExecutor(AgentExecutor):
         record_execution(self, request, delivery, spec)
         return delivery
 
-    async def produce_delivery(self, request, spec, state, artifacts=None):
+    async def produce_delivery(self, request, spec, state, artifacts=None, parameters=None):
         """Run this provider's business tool; no platform-side fabricated output."""
         from services.agents.business import BusinessAgent
         from services.marketplace.models import TaskRequest as BRequest
+        from services.orchestrator.products import execute_product
+        product_tool = ((lambda *_: artifacts) if artifacts is not None else
+                        (lambda task, inputs, revision: execute_product(task, inputs, revision, parameters=parameters)))
         service = BusinessAgent(self.config["id"], self.config["id"], list(self.config["prices"]),
-                               product_tool=(lambda *_: artifacts) if artifacts is not None else None,
+                                product_tool=product_tool,
                                private_key=int.from_bytes(Account.from_key(self.config["key"]).key, "big"),
                                domain={"name":"DASC", "version":"1", "chain_id":self.chain.chain_id,
                                        "verifying_contract":self.chain.escrow.address}, clock=lambda:self.chain.now)

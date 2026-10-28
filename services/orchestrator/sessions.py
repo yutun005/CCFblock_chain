@@ -109,7 +109,7 @@ async def service_turn(executor, request, spec):
         worker = executor.worker or SharedWorker()
         context = Context(copy.deepcopy(request), spec, copy.deepcopy(interaction["feedback"]),
                           copy.deepcopy(interaction["messages"]), copy.deepcopy(record["state"]),
-                          lambda: executor.produce_delivery(request, spec, state),
+                          lambda parameters=None: executor.produce_delivery(request, spec, state, parameters=parameters),
                           lambda artifacts: executor.produce_delivery(request, spec, state, artifacts=artifacts))
         try:
             action, worker_state = await asyncio.wait_for(worker.advance(context),
@@ -210,6 +210,13 @@ def route_request(engine, plan, frame, action, payload):
         key = action.data.get("key")
         if action.intent != "information":
             resolve(engine, row, "requires_authorization", "改变交付范围或增加付费工作须重新确认，当前委托未改变")
+        elif key == "evidence":
+            from .execution_context import retrieve
+            try:
+                data = retrieve(engine, plan, payload, action.data)
+                resolve(engine, row, "answered", "已取得所需前置成果及来源", data)
+            except ValueError as exc:
+                resolve(engine, row, "unavailable", str(exc))
         elif key in available:
             resolve(engine, row, "answered", "平台直接提供已确认的信息", {key: available[key]})
         else:
@@ -236,7 +243,8 @@ def route_request(engine, plan, frame, action, payload):
             else:
                 target_session = engine.db.get("active_sessions", identity(frame["jobId"], target, state["attempt"]))
                 draft = target_session and engine.db.get("execution_sessions", target_session)
-                if action.intent == "information" and draft and draft.get("candidate"):
+                if (action.intent == "information" and draft and draft.get("candidate")
+                        and action.data.get("responseMode") != "explain"):
                     resolve(engine, row, "answered", "平台转交对方当前候选；这是中间成果，尚未验收", {"candidate": draft["candidate"]})
                 elif draft and draft.get("finished"):
                     resolve(engine, row, "unavailable", "对方已提交正式成果，当前会话不再接收调整")
@@ -326,6 +334,8 @@ async def _execute(engine, endpoint, payload, state):
         seq = record["sequence"]
         # Persist the exact request before I/O. Reconnect resends the same message ID.
         if not record.get("wire"):
+            from .execution_context import index
+            record["feedback"] = {**record["feedback"], **index(engine, plan, payload)}
             inbox = record.get("messages", []) + live_inbox(engine, payload)
             inbox = list({m["id"]: m for m in inbox}.values())
             record["wire"] = {**payload, "idempotencyKey": f"session:{sid}:{seq}",

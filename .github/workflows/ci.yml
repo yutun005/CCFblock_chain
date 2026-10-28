@@ -50,6 +50,8 @@ jobs:
         run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --repeat 10 --dynamic-dispatch
       - name: Run travel planning REST, A2A, ABI and recovery scenarios
         run: .cache/venv/bin/python tests/e2e/run_main_scenario.py --scenario travel_planning --browser --repeat 1 --dynamic-dispatch
+      - name: Run cooperative planning, context retrieval and settlement
+        run: .cache/venv/bin/python tests/e2e/run_cooperative_workflow.py
       - name: Run original B HTTP compatibility end to end
         run: |
           .cache/venv/bin/python tests/e2e/run_main_scenario.py --transport b-http-v1 --dynamic-dispatch
@@ -71,6 +73,7 @@ jobs:
             experiments/raw/forge/**
             experiments/raw/security/**
             experiments/raw/platform/**
+            experiments/raw/cooperative/**
             experiments/raw/persistence/**
             experiments/results/**
             .cache/delivery/**

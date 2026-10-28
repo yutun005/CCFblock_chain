@@ -146,7 +146,11 @@ test('travel graph has visible directed arrows and goes straight from confirmati
     {key:'report',title:'生成行程报告',capability:'travel_report',dependencies:['route']},
   ].map(t=>({...t,description:t.title,stageId:'design',inputs:[],outputs:[t.title],acceptance:[],requirementIds:['R1']}));
   const execution = {scenario:'travel_planning',travelRequest:{destination:'杭州',start_date:'2026-11-01',days:3,travelers:2,budget_cents:200000,interests:['culture']},outputs:['report']};
-  await setup(page,true,2,false,{title:'杭州三日旅行',tasks,deliverables:[{name:'生成行程报告',taskKey:'report'}],execution});
+  const collaboration = {mode:'service_owned',participants:[
+    {taskKey:'route',title:'行程服务',requests:[{taskKey:'hotels',reason:'需要住宿候选的价格与入住条件'}]},
+    {taskKey:'hotels',title:'住宿服务',requests:[]},
+  ]};
+  await setup(page,true,2,false,{title:'杭州三日旅行',tasks,deliverables:[{name:'生成行程报告',taskKey:'report'}],execution,collaboration});
   let checks=0, confirmations=0, comparisons=0;
   await page.route('**/api/workspace/designs/design1/execution-check',route=>{
     checks++;
@@ -172,6 +176,8 @@ test('travel graph has visible directed arrows and goes straight from confirmati
   await page.getByRole('button',{name:'按此模板生成 DAG'}).click();
   const graph = page.getByRole('region',{name:'开放任务图编辑器'}).getByLabel('子任务依赖图');
   await expect(graph.locator('.dag-arrowhead')).toHaveCount(3);
+  await expect(page.getByLabel('服务协作规划')).toContainText('需要住宿候选的价格与入住条件');
+  await expect(page.getByLabel('服务协作规划')).toContainText('可独立开始');
   const root=await graph.locator('[data-id="attractions"]').boundingBox();
   const parallel=await graph.locator('[data-id="hotels"]').boundingBox();
   const downstream=await graph.locator('[data-id="route"]').boundingBox();

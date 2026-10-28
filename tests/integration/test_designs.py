@@ -68,52 +68,13 @@ def travel_service(tmp_path, monkeypatch):
     return service, {"graph": copy.deepcopy(template["graph"]), "reply": "景点与住宿并行，之后安排行程并出报告。"}
 
 
-@pytest.mark.parametrize("problem", ["all_unbound", "internal", "serial", "missing_dependency"])
-def test_first_turn_checks_service_graph_even_when_every_binding_is_missing(tmp_path, monkeypatch, problem):
-    service, good = travel_service(tmp_path, monkeypatch)
-    bad = copy.deepcopy(good)
-    tasks = bad["graph"]["tasks"]
-    if problem == "all_unbound":
-        for task in tasks: task.pop("capability", None)
-    elif problem == "internal":
-        tasks[0]["title"] = "整理并确认需求与约束"
-    elif problem == "serial":
-        tasks[1]["dependencies"] = [tasks[0]["key"]]
-    else:
-        tasks[-1]["dependencies"] = []
-    model = mock_model(monkeypatch, bad, good)
-    record = asyncio.run(service.message("两个人去杭州玩三天，帮我安排一下"))
-    tasks = record["graph"]["tasks"]
-    assert model.await_count == 2
-    assert all(t.get("capability") for t in tasks)
-    assert len([t for t in tasks if not t["dependencies"]]) == 2
-    assert not service.db.values("jobs")
-
-
-def test_redundant_intermediate_output_names_do_not_trigger_model_retry(tmp_path, monkeypatch):
-    service, good = travel_service(tmp_path, monkeypatch)
-    good["graph"]["execution"] = {"scenario":"travel_planning", "outputs":["attractions","hotels","route","report"]}
-    model = mock_model(monkeypatch, good)
-    record = asyncio.run(service.message("杭州三日旅游方案"))
-    assert record["graph"]["execution"]["outputs"] == ["report"]
-    assert model.await_count == 1
-
-
-def test_truncated_response_is_retried_internally_without_blame_on_configuration(tmp_path, monkeypatch):
-    service, good = travel_service(tmp_path, monkeypatch)
-    model = AsyncMock(side_effect=[planning.ModelResponseError("模型输出达到长度上限"), json.dumps(good,ensure_ascii=False)])
-    monkeypatch.setattr(planning,"completion",model)
+def test_cooperative_planning_truncated_response_is_repaired(tmp_path, monkeypatch):
+    from tests.integration.test_cooperative_planning import model_fixture
+    service, _ = travel_service(tmp_path, monkeypatch)
+    calls = model_fixture(monkeypatch, fault=True)
     result = asyncio.run(service.message("杭州三日旅游方案"))
-    assert result["graph"] and model.await_count == 2
-
-
-def test_bad_service_graph_is_never_saved_as_a_valid_plan(tmp_path, monkeypatch):
-    service, good = travel_service(tmp_path, monkeypatch)
-    for task in good["graph"]["tasks"]: task.pop("capability",None)
-    mock_model(monkeypatch, good, good)
-    with pytest.raises(ValueError,match="任务图"):
-        asyncio.run(service.message("杭州三日旅游方案"))
-    assert not service.db.values("design_sessions")
+    assert result["graph"] and len(calls) == 6
+    assert calls[0][0] == calls[1][0] == "planning:intake"
 
 
 @pytest.mark.parametrize("finish, refusal, retryable", [("length",None,True),("content_filter",None,False),("stop","refused",False),(None,None,None)])

@@ -979,6 +979,27 @@ export default function DesignWorkspace({
                           }}
                         />
                       </div>
+                      {session.graph.collaboration?.mode ===
+                        "service_owned" && (
+                        <div
+                          className="content-section"
+                          aria-label="服务协作规划"
+                        >
+                          <h3 className="section-title">
+                            生成草稿时各服务的提案
+                          </h3>
+                          {session.graph.collaboration.participants.map(
+                            (participant: Row) => (
+                              <p key={participant.taskKey}>
+                                <strong>{participant.title}</strong>
+                                {participant.requests.length
+                                  ? `：${participant.requests.map((request: Row) => request.reason).join("；")}`
+                                  : "：直接使用用户需求和已接入资料，可独立开始。"}
+                              </p>
+                            ),
+                          )}
+                        </div>
+                      )}
                     </section>
                     {!!(
                       session.warnings?.length || session.questions?.length

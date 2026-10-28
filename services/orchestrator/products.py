@@ -303,9 +303,13 @@ def render_report(spec, inputs, revision=None):
     return [packet(key, value, media[key.rsplit(".", 1)[-1]]) for key, value in files.items()]
 
 
-def execute_product(spec, inputs, revision=None):
+def execute_product(spec, inputs, revision=None, *, parameters=None):
     from services.orchestrator.application import EXECUTORS, canonical, packet
 
+    if parameters:
+        if spec.skill != "route_planning":
+            raise ValueError("当前服务不支持这些调整参数；可读取资料或向对应服务提出请求")
+        return EXECUTORS[spec.skill](inputs, choices=parameters)
     if spec.skill in {"attraction_search", "hotel_search"}:
         from .travel import search_inputs, require_candidates
 

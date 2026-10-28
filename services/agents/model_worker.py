@@ -25,9 +25,13 @@ class Decision(BaseModel):
     data: dict = Field(default_factory=dict)
     artifactNames: list[str] = Field(default_factory=list, max_length=16)
     memory: str = Field(default="", max_length=2000)
+    parameters: dict = Field(default_factory=dict)
+    useMessages: list[str] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def valid_operation(self):
+        if (self.parameters or self.useMessages) and self.tool != "execute_task":
+            raise ValueError("执行参数和采用消息只能交给 execute_task")
         if (self.kind == "tool") != (self.tool is not None):
             raise ValueError("Only a tool decision specifies tool")
         if self.tool == "read_artifact":
@@ -45,14 +49,20 @@ class Decision(BaseModel):
 
 
 INSTRUCTION = """你是正在履约的服务智能体。根据本次分给你的任务、真实工具结果和收到的消息，决定下一步行动。
-主智能体已拆好任务；你只执行自己的工作。只返回符合 outputSchema 的 JSON，一次一个行动，不返回代码或原生 tool_calls。
+任务由相关服务共同规划并已获用户授权；你负责自己的交付，可以自行寻找协作者。只返回符合 outputSchema 的 JSON，一次一个行动，不返回代码或原生 tool_calls。
 message 是用户直接阅读的进度说明：用简短自然的中文，说明做了什么、得到什么、下一步需要什么，最多三句话。
 不要在 message 中堆文件名、字段名、内部编号、哈希或英文操作名；景点类别写“历史文化”等中文名称，人民币费用用元并保留两位小数。文件引用仍放在专门字段中。
 可以 kind=tool, tool=execute_task 调用当前职责的业务工具，使用已确认输入和参数计算真实成果。
 可以 kind=tool, tool=read_artifact，指定 source(inputs/results/messages)、name、offset 阅读文件，每次最多4000字符。
-execute_task 目前使用冻结参数，没有任意代码、网页搜索、预订或改价接口。旅游使用演示资料库，不能称实时查询。
+execute_task 的可调参数见 tools：路线可选择真实候选酒店、景点顺序和排除景点；不能更改日期、人数、预算或资料价格。
+采用回复或调整请求时，把其消息 id 放入 useMessages；消息 data.parameters 和本次 parameters 会传进真实工具，而不只是写进聊天。
+同伴意见不是自动执行命令，由你判断是否采纳。请先用工具实际处理调整，再答复 accepted；无法调整说明原因。
+没有任意代码、网页搜索、预订或改价接口。旅游使用演示资料库，不能称实时查询。
 run工具后查看实际结果；已有成功结果通常不必再运行。工具出错时根据具体错误决定补问、向其他任务求助或明确失败。
 需要补充信息用 request，to 为其他节点的 key、platform 或 user。平台已有资料直接读取，确有需要才提问，不为演示制造对话。
+otherTasks 显示可询问的任务和状态；contextIndex 列出多层前置成果，不局限于直接前一步。
+读更早的原文件可 request to=platform,data={key:evidence,taskKey:任务key,names:[文件名]}，随后 read_artifact source=messages；文件来源与数值不因摘要而改变。
+发给任务的信息问题若需要对方解释，data.responseMode=explain；只需要成果时可直接读取。不应向尚未接单的任务等待答复。
 收到请求时可先用工具核实，再 reply，用 replyTo 指向原消息ID，status 为 answered/accepted/declined。
 reply 可用 artifactNames 附上自己的真实成果文件；不要编造文件内容、结果或声称做了没有工具支持的调整。
 收到答复后结合内容继续自己的工作。对方不可用、拒绝或要求重新授权时，应明确处理，不能当作成功。
@@ -70,7 +80,7 @@ memory 可保存简短工作要点；各任务的记录相互独立。不要输�
 def decision_contract(state, pending):
     """Describe each action separately instead of an ambiguous bag of optional fields."""
     properties = Decision.model_json_schema()["properties"]
-    actions = [("tool", ["tool", "source", "name", "offset"], ["tool"]),
+    actions = [("tool", ["tool", "source", "name", "offset", "parameters", "useMessages"], ["tool"]),
                ("progress", [], []), ("request", ["to", "intent", "data"], ["to"]),
                ("failure", [], [])]
     if pending:
@@ -147,17 +157,23 @@ def artifact_view(packet, offset=0, limit=1200):
             "hasMore": offset + limit < len(text)}
 
 
-def public_data(value, depth=0):
+def public_data(value, depth=0, seen=None):
     """Send business content, not signed envelopes, credentials or base64 dumps."""
+    if seen is None:
+        seen = set()
     if depth > 8:
         return "[内容过深，已省略]"
     if isinstance(value, dict):
         if {"name", "data", "sha256"} <= value.keys():
-            return artifact_view(value)
+            identity = (value["name"], value["sha256"])
+            if identity in seen:
+                return {"name": value["name"], "sha256": value["sha256"], "sameFile": True}
+            seen.add(identity)
+            return {**artifact_view(value), "sha256": value["sha256"]}
         blocked = {"signature", "manifest", "key", "apikey", "privatekey", "private_key", "token", "authorization"}
-        return {k: public_data(v, depth + 1) for k, v in list(value.items())[:48] if k.lower() not in blocked}
+        return {k: public_data(v, depth + 1, seen) for k, v in list(value.items())[:48] if k.lower() not in blocked}
     if isinstance(value, list):
-        return [public_data(v, depth + 1) for v in value[:32]]
+        return [public_data(v, depth + 1, seen) for v in value[:32]]
     if isinstance(value, str):
         return value[:5000]
     return value
@@ -175,7 +191,7 @@ def message_artifacts(state):
         if isinstance(candidate, dict) and isinstance(candidate.get("delivery"), dict):
             found.extend(candidate["delivery"].get("artifacts", []))
         found.extend(data.get("inputs", []))
-    return found
+    return list({(p["name"], p["sha256"]): p for p in found}.values())
 
 
 class SharedWorker:
@@ -217,8 +233,14 @@ class ModelWorker:
             identity = (item.get("id"), item.get("kind"))
             if not any((m.get("id"), m.get("kind")) == identity for m in state["messages"]):
                 state["messages"].append(copy.deepcopy(item))
+                if item.get("kind") == "reply":
+                    state["needsDecision"] = True
             if item.get("kind") == "reply":
                 state["waiting"] = False
+        if context.feedback.get("contextIndex") is not None:
+            state["contextIndex"] = context.feedback["contextIndex"]
+        if context.feedback.get("taskDirectory") is not None:
+            state["taskDirectory"] = context.feedback["taskDirectory"]
         if context.feedback.get("kind") == "candidate_accepted":
             state["accepted"] = True
         elif context.feedback.get("kind") == "candidate_rejected":
@@ -228,20 +250,25 @@ class ModelWorker:
         pending = [m for m in state["messages"] if m["kind"] == "request" and m["id"] not in state.get("answered", [])]
         # Delivery is protocol bookkeeping, not another language-model decision.
         # Keep outstanding business questions and rejected outputs on the worker path.
-        if state.get("delivery") and not pending and not state.get("waiting"):
+        if state.get("delivery") and not pending and not state.get("waiting") and not state.get("needsDecision"):
             if state.get("accepted"):
                 return Action(kind="final", message="成果检查通过，已提交正式成果。", delivery=state["delivery"]), state
             if context.feedback.get("kind") != "candidate_rejected":
                 return Action(kind="candidate", message="本步骤已完成，提交成果检查。", delivery=state["delivery"]), state
         output_schema, next_step = decision_contract(state, pending)
+        from .execution_tools import tool_contract
+        seen = set()
         payload = {
             "goal": plan.goal,
             "task": {k: getattr(context.task, k) for k in ("key", "title", "skill", "dependencies", "input_type", "output_type")},
             "parameters": {k: v for k, v in (context.task.options or {}).items() if k not in {"reused", "communication"}},
-            "otherTasks": [{"key": t.key, "title": t.title, "skill": t.skill, "dependencies": t.dependencies} for t in plan.tasks],
-            "inputs": [artifact_view(p) for p in context.request["inputs"]],
-            "results": [artifact_view(p) for p in state.get("delivery", {}).get("artifacts", [])],
-            "feedback": public_data(context.feedback), "messages": public_data(state["messages"]),
+            "otherTasks": state.get("taskDirectory") or [{"key": t.key, "title": t.title, "skill": t.skill,
+                                                          "dependencies": t.dependencies} for t in plan.tasks],
+            "contextIndex": state.get("contextIndex", []), "tools": tool_contract(context.task.skill),
+            "inputs": public_data(context.request["inputs"], seen=seen),
+            "results": public_data(state.get("delivery", {}).get("artifacts", []), seen=seen),
+            "messages": public_data(state["messages"], seen=seen),
+            "feedback": public_data(context.feedback, seen=seen),
             "pendingRequestIds": [m["id"] for m in pending], "waitingForReply": state.get("waiting", False),
             "candidateAccepted": state.get("accepted", False), "memory": state.get("memory", ""),
             "revision": public_data(context.request.get("revision")),
@@ -277,11 +304,18 @@ class ModelWorker:
         if decision.kind == "tool":
             try:
                 if decision.tool == "execute_task":
+                    from .execution_tools import selected_parameters
+                    parameters = selected_parameters(decision, state["messages"])
                     state.pop("delivery", None)
                     state["accepted"] = False
-                    state["delivery"] = await context.produce()
+                    state["delivery"] = await context.produce(parameters=parameters) if parameters else await context.produce()
+                    state["needsDecision"] = False
+                    state["appliedMessages"] = list(dict.fromkeys([*state.get("appliedMessages", []), *decision.useMessages]))
+                    state["parameters"] = parameters
                     event["observation"] = {"ok": True, "artifacts": [artifact_view(p) for p in state["delivery"]["artifacts"]]}
-                    action = Action(kind="candidate", message="本步骤已完成，提交成果检查。", delivery=state["delivery"])
+                    action = Action(kind="candidate", message="已按协作意见更新成果，提交检查。" if decision.useMessages else
+                                    "本步骤已完成，提交成果检查。", delivery=state["delivery"],
+                                    data={"appliedMessages": decision.useMessages, "parameters": parameters})
                 else:
                     pools = {"inputs": context.request["inputs"], "results": state.get("delivery", {}).get("artifacts", []),
                              "messages": message_artifacts(state)}
@@ -295,6 +329,8 @@ class ModelWorker:
                 action = Action(kind="progress", message="业务工具未完成：" + str(exc)[:1500])
         else:
             data = dict(decision.data)
+            if decision.kind in {"candidate", "final"}:
+                state["needsDecision"] = False
             if decision.kind == "reply":
                 if decision.artifactNames:
                     files = {p["name"]: p for p in state.get("delivery", {}).get("artifacts", [])}
@@ -323,6 +359,9 @@ class ModelWorker:
         if d.kind == "reply":
             if d.replyTo not in {m["id"] for m in pending}:
                 raise ValueError("replyTo必须指向尚未回答的请求")
+            request = next(m for m in pending if m["id"] == d.replyTo)
+            if request.get("intent") == "adjustment" and d.status == "accepted" and d.replyTo not in state.get("appliedMessages", []):
+                raise ValueError("先用 execute_task 的 useMessages 采用这项请求并生成实际成果，再确认已调整")
             files = {p["name"] for p in state.get("delivery", {}).get("artifacts", [])}
             if not set(d.artifactNames) <= files:
                 raise ValueError("只能附上自己已实际生成的成果文件")
