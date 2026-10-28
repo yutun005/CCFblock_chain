@@ -2143,7 +2143,40 @@ dialog > p {
 .task-list-results { font-size: 12px; white-space: nowrap; }
 .task-list-main .tag { white-space: nowrap; }
 .collection-empty { padding: 50px 24px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; color: var(--muted); }
-.back-link { border: 0; background: transparent; padding: 8px 0; color: var(--muted); font-size: 13px; }
+.back-button {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #b5c7d8;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-align: left;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color .15s, background-color .15s, border-color .15s;
+}
+.back-button:hover:not(:disabled) {
+  background: #172635;
+  border-color: #304557;
+  color: #edf3f8;
+}
+.back-button:active:not(:disabled) { background: #203447; }
+.back-button:disabled { background: transparent; border-color: transparent; }
+.back-button > span { min-width: 0; }
+.back-button + h1 { margin-top: 12px; }
+.page-title-block { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.page-title-block > .back-button { margin-left: -12px; }
+.page-title-block > h1 { margin: 0; overflow-wrap: anywhere; }
+.page-title-block > p { margin: 0; }
+.plan-options > .back-button,
+.plan-workbench > .back-button { margin-bottom: 12px; }
 .continue-design { margin-top: 20px; }
 .draft-collection { margin-top: 30px; }
 .draft-collection > .section-title, .design-graph-section > .section-title {  padding: 16px 0; font-weight: 600; }
@@ -2161,6 +2194,8 @@ dialog > p {
 .result-task-group > .content-section > .section-title > span { margin-left: 20px; font-size: 12px; color: var(--muted); }
 .result-task-group .task-output { padding: 0 0 20px; }
 @media(max-width: 760px) {
+  .page-heading { flex-direction: column; align-items: stretch; gap: 16px; }
+  .page-heading > .workspace-actions { justify-content: flex-start; flex-wrap: wrap; }
   .task-list > li { flex-wrap: wrap; gap: 0; padding: 8px 14px; }
   .task-list-main { flex-basis: 100%; gap: 10px; }
   .task-list-main > svg:first-child { display: none; }

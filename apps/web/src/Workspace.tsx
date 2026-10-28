@@ -10,8 +10,8 @@ import { Draft, ReviewCard } from "./Deliverables";
 import { ProposalMetrics } from "./ExecutionCheck";
 import RefundClaim from "./RefundClaim";
 import ServiceGraph, { evidenceLabels } from "./ServiceGraph";
+import BackButton from "./BackButton";
 import {
-  ArrowLeft,
   ArrowRight,
   FileUp,
   FolderOpen,
@@ -1202,13 +1202,9 @@ export default function Workspace({
                   </p>
                 )}
                 {goalPlan && (
-                  <button
-                    type="button"
-                    className="text-action"
-                    onClick={() => setEditorView("plan")}
-                  >
+                  <BackButton onClick={() => setEditorView("plan")}>
                     返回当前方案
-                  </button>
+                  </BackButton>
                 )}
               </div>
               <div className="template-shortcuts">
@@ -1255,14 +1251,9 @@ export default function Workspace({
       )}
       {page === "editor" && editorView === "choose" && (
         <section className="plan-options">
-          <button
-            type="button"
-            className="text-action"
-            onClick={() => setEditorView("request")}
-          >
-            <ArrowLeft size={17} />
+          <BackButton onClick={() => setEditorView("request")}>
             修改任务需求
-          </button>
+          </BackButton>
           <header className="request-heading">
             <div>
               <h1 ref={heading} tabIndex={-1}>
@@ -1342,23 +1333,16 @@ export default function Workspace({
       )}
       {page === "editor" && editorView === "plan" && (
         <section className="plan-workbench">
-          <button
-            type="button"
-            className="text-action"
-            onClick={() => setEditorView("request")}
-          >
-            <ArrowLeft size={17} />
+          <BackButton onClick={() => setEditorView("request")}>
             编辑目标与材料
-          </button>
+          </BackButton>
           {intake && (
-            <button
-              type="button"
-              className="text-action"
+            <BackButton
               disabled={!!busy}
               onClick={() => setEditorView("intake")}
             >
               返回需求澄清与调整
-            </button>
+            </BackButton>
           )}
           <header className="request-heading">
             <div>
@@ -1424,23 +1408,21 @@ export default function Workspace({
                   {q}
                 </p>
               ))}
-              <button type="button" onClick={() => setEditorView("request")}>
+              <BackButton onClick={() => setEditorView("request")}>
                 返回补充
-              </button>
+              </BackButton>
             </div>
           )}
         </section>
       )}
       {page === "editor" && editorView === "intake" && intake && (
         <section className="plan-workbench">
-          <button
-            type="button"
-            className="text-action"
+          <BackButton
             disabled={!!busy}
             onClick={() => setEditorView("request")}
           >
             编辑目标与材料
-          </button>
+          </BackButton>
           <header className="request-heading">
             <div>
               <h1 ref={heading} tabIndex={-1}>
@@ -1462,29 +1444,25 @@ export default function Workspace({
             onConfirm={() => run("generate-dag", confirmIntake)}
           />
           {goalPlan?.status === "ready" && (
-            <button
-              type="button"
+            <BackButton
               disabled={!!busy}
               onClick={() => setEditorView("plan")}
             >
               返回已生成的任务图
-            </button>
+            </BackButton>
           )}
         </section>
       )}
       {page === "compare" && (
         <section>
-          <button
-            type="button"
-            className="text-action"
+          <BackButton
             onClick={() => {
               setPage("editor");
               setEditorView("plan");
             }}
           >
-            <ArrowLeft size={17} />
             返回任务方案
-          </button>
+          </BackButton>
           <h1 ref={heading} tabIndex={-1}>
             选择执行方案
           </h1>
@@ -1666,9 +1644,9 @@ export default function Workspace({
                   ? "查看已有成果（不收费）"
                   : "确认方案并托管预算"}
               </button>
-              <button disabled={!!busy} onClick={() => setPage("editor")}>
+              <BackButton disabled={!!busy} onClick={() => setPage("editor")}>
                 返回修改
-              </button>
+              </BackButton>
             </section>
           )}
         </section>

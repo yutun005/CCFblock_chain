@@ -59,9 +59,12 @@ test('task list opens one whole request; final reports and intermediate files st
   await page.getByRole('button',{name:'下载旅行方案',exact:true}).click();
   expect((await download).suggestedFilename()).toBe('travel-report.md');
   await page.screenshot({path:testInfo.outputPath('whole-task-results-desktop.png'),fullPage:true});
+  await page.getByRole('button',{name:'返回全部任务成果',exact:true}).hover();
+  await page.locator('.page-heading').screenshot({path:testInfo.outputPath('back-navigation-hover.png')});
   await page.reload();
   await expect(page.locator('.review-inbox .report-body')).toContainText('杭州三日旅行');
-  await page.getByRole('button',{name:'← 全部任务成果',exact:true}).click();
+  await page.getByRole('button',{name:'返回全部任务成果',exact:true}).focus();
+  await page.keyboard.press('Enter');
   await page.locator('.task-list-main:visible').filter({hasText:'苏州两日旅行'}).click();
   await expect(page.locator('.review-inbox .report-body')).toContainText('苏州两日旅行');
   await expect(page.locator('.review-inbox .report-body')).not.toContainText('杭州');
@@ -70,7 +73,7 @@ test('task list opens one whole request; final reports and intermediate files st
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('whole-task-results-mobile.png'),fullPage:true});
-  await page.getByRole('button',{name:'← 全部任务成果',exact:true}).click();
+  await page.getByRole('button',{name:'返回全部任务成果',exact:true}).click();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('task-results-list-mobile.png'),fullPage:true});
   expect(errors).toEqual([]);

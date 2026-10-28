@@ -42,6 +42,7 @@ import { ReviewInbox } from "./Deliverables";
 import RefundClaim from "./RefundClaim";
 import { Collaboration } from "./ExecutionCheck";
 import { amount } from "./amount";
+import BackButton from "./BackButton";
 
 type AnyRecord = Record<string, any>;
 type Task = {
@@ -669,15 +670,14 @@ function App() {
           {!["workspace", "design", "templates", "evidence"].includes(tab) && (
             <>
               <div className="page-heading">
-                <div>
-                  <button
-                    className="back-link"
+                <div className="page-title-block">
+                  <BackButton
                     onClick={() =>
                       setTab(tab === "results" ? "evidence" : "workspace")
                     }
                   >
-                    ← {tab === "results" ? "全部任务成果" : "项目与成果"}
-                  </button>
+                    返回{tab === "results" ? "全部任务成果" : "项目与成果"}
+                  </BackButton>
                   <h1 ref={settlementHeading} tabIndex={-1}>
                     {tab === "funds"
                       ? "任务结算"
@@ -751,9 +751,9 @@ function App() {
                 <section className="panel empty">
                   <GitBranch size={36} />
                   <h2>{jobId ? "正在读取任务…" : "还没有任务"}</h2>
-                  <button onClick={() => setTab("workspace")}>
+                  <BackButton onClick={() => setTab("workspace")}>
                     返回项目与成果
-                  </button>
+                  </BackButton>
                 </section>
               ) : (
                 <>

@@ -13,6 +13,7 @@ import {
 import { PlanningGraph } from "./TaskPlanning";
 import ExecutionCheck from "./ExecutionCheck";
 import { TaskList } from "./TaskCollection";
+import BackButton from "./BackButton";
 
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
@@ -717,10 +718,8 @@ export default function DesignWorkspace({
       </div>
       <div hidden={mode !== "chat"}>
         <header className="design-header">
-          <div>
-            <button className="back-link" onClick={onOpenHome}>
-              ← 项目与成果
-            </button>
+          <div className="page-title-block">
+            <BackButton onClick={onOpenHome}>返回项目与成果</BackButton>
             <h1>{session ? "任务方案" : "新建任务"}</h1>
           </div>
           <button disabled={!!busy || dirty} onClick={onOpenTemplates}>

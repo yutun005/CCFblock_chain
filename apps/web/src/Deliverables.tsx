@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { amount } from "./amount";
+import BackButton from "./BackButton";
 type Row = Record<string, any>;
 type Api = (path: string, body?: unknown) => Promise<any>;
 // Keep content fingerprints in the original files and API, out of user previews.
@@ -698,9 +699,9 @@ export function ReviewCard({
               >
                 确认不通过并结束
               </button>
-              <button disabled={busy} onClick={() => setMode("")}>
+              <BackButton disabled={busy} onClick={() => setMode("")}>
                 返回查看
-              </button>
+              </BackButton>
             </div>
           )}
           {mode === "revise" && (
