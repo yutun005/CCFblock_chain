@@ -264,7 +264,8 @@ def show_demo(api, existing=False):
         print("Project is already running; reusing existing services.", flush=True)
     url = browser_url(api)
     print("Project: " + str(ROOT), flush=True)
-    print("Open " + url + " ; token is in .cache/local-access.txt", flush=True)
+    print("Open " + url, flush=True)
+    print("登录令牌：********（按 C 复制当前令牌，再粘贴到登录页面）", flush=True)
     if os.environ.get("AGENTFLOW_OPEN_BROWSER") == "1":
         try:
             webbrowser.open(url)
@@ -369,7 +370,7 @@ def console_action():
     if os.name == "nt" and sys.stdin.isatty():
         import msvcrt
         if msvcrt.kbhit():
-            return {"r": "restart", "q": "stop"}.get(msvcrt.getwch().lower())
+            return {"r": "restart", "q": "stop", "c": "copy"}.get(msvcrt.getwch().lower())
     return None
 
 
@@ -397,6 +398,9 @@ def run_demo_once():
                 if not ENV.is_file() or not CONFIG.is_file():
                     deploy()
                 load_environment()
+                login_path = CACHE / "local-access.txt"
+                login_path.write_text(os.urandom(32).hex() + "\n", encoding="utf-8")
+                os.environ["AGENTFLOW_LOCAL_LOGIN_FILE"] = str(login_path.resolve())
                 settings = settings_file(CONFIG)
                 validate_saved_deployment(settings, rpc=rpc)
                 env = json.loads(ENV.read_text(encoding="utf-8"))
@@ -418,9 +422,17 @@ def run_demo_once():
                     response.raise_for_status()
                 print("服务已就绪，正在打开页面。", flush=True)
             show_demo(cluster.config["api"])
-            print("此窗口负责运行项目。按 R 重启；按 Q 或 Ctrl+C 停止。", flush=True)
+            print("此窗口负责运行项目。按 C 复制登录令牌；按 R 重启；按 Q 或 Ctrl+C 停止。", flush=True)
             while True:
                 command = console_action()
+                if command == "copy":
+                    try:
+                        token = (CACHE / "local-access.txt").read_text(encoding="utf-8").strip()
+                        subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "$input | Set-Clipboard"],
+                                       input=token, text=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                        print("当前登录令牌已复制，请粘贴到登录页面。", flush=True)
+                    except (OSError, subprocess.CalledProcessError):
+                        print("复制失败，请检查剪贴板后重试。", flush=True)
                 if command in {"restart", "stop"}:
                     restart = command == "restart"
                     print("正在重启…" if restart else "正在停止并保存状态…", flush=True)

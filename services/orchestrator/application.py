@@ -2080,14 +2080,15 @@ class ProtocolJSONResponse(JSONResponse):
 # ============================================================================
 # a2a_service
 # ============================================================================
-def protect(app: FastAPI, token: str):
+def protect(app: FastAPI, token: str, sessions=None):
     @app.middleware("http")
     async def authenticate(request: Request, call_next):
         if (request.url.path in {"/", "/health", "/.well-known/agent-card.json", "/.well-known/agent.json"}
+                or (sessions is not None and request.url.path == "/api/login" and request.method == "POST")
                 or request.url.path.startswith("/assets/")):
             return await call_next(request)
         provided = request.headers.get("authorization", "")
-        if not secrets.compare_digest(provided, "Bearer " + token):
+        if not secrets.compare_digest(provided, "Bearer " + token) and not (sessions is not None and provided.startswith("Bearer ") and provided[7:] in sessions):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         if int(request.headers.get("content-length", 0)) > 20_000_000:
             return JSONResponse({"error": "request_too_large"}, status_code=413)
@@ -4010,7 +4011,40 @@ def api_app(config: dict, runtime: Path) -> FastAPI:
             await asyncio.gather(*list(active.values()), return_exceptions=True)
 
     app = FastAPI(title="AgentFlow Pay API", lifespan=lifespan, default_response_class=ProtocolJSONResponse)
-    protect(app, config["token"])
+    sessions = set()
+    login_lock = threading.Lock()
+    login_file = os.environ.get("AGENTFLOW_LOCAL_LOGIN_FILE")
+    protect(app, config["token"], sessions)
+
+    @app.post("/api/login")
+    async def login(request: Request):
+        try:
+            body = await request.json()
+            submitted = body.get("token", "") if isinstance(body, dict) else ""
+            if not isinstance(submitted, str):
+                submitted = ""
+        except ValueError:
+            submitted = ""
+        with login_lock:
+            path = Path(login_file) if login_file else None
+            try:
+                expected = path.read_text(encoding="utf-8").strip() if path else config["token"]
+            except OSError:
+                return JSONResponse({"error": "登录令牌不可用，请重启启动窗口。"}, status_code=503)
+            if not submitted or not secrets.compare_digest(submitted.encode("utf-8"), expected.encode("utf-8")):
+                return JSONResponse({"error": "访问令牌无效，请从启动窗口复制最新令牌。"}, status_code=401)
+            if path:
+                temporary = path.with_name(path.name + "." + secrets.token_hex(8) + ".tmp")
+                try:
+                    temporary.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
+                    os.replace(temporary, path)
+                except OSError:
+                    temporary.unlink(missing_ok=True)
+                    return JSONResponse({"error": "无法更新登录令牌，请重启启动窗口。"}, status_code=503)
+            session = secrets.token_urlsafe(32)
+            sessions.add(session)
+        return {"session": session}
+
     from services.orchestrator.workspace import install
     workspace = install(app, engine, config, start)
     from .communication import install as install_communication

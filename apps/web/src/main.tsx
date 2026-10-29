@@ -524,12 +524,25 @@ function App() {
           </div>
           <span className="eyebrow">LOCAL WORKSPACE</span>
           <h1>连接协作控制台</h1>
-          <p>使用服务管理员配置的访问令牌连接协作工作区。</p>
+          <p>在启动窗口按 C 复制登录令牌，然后粘贴到此处。</p>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              sessionStorage.setItem("agentflow-token", draftToken);
-              setToken(draftToken);
+              try {
+                const response = await fetch("/api/login", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ token: draftToken }),
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || "登录失败，请重试。");
+                sessionStorage.setItem("agentflow-token", result.session);
+                setDraftToken("");
+                setError("");
+                setToken(result.session);
+              } catch (err) {
+                setError(String(err));
+              }
             }}
           >
             <label htmlFor="token">访问令牌</label>
@@ -542,7 +555,7 @@ function App() {
               required
             />
             <p className="hint">
-              令牌由服务管理员通过 AGENTFLOW_API_TOKEN 配置。
+              令牌登录成功后会自动更新；下次登录请重新复制。
             </p>
             <button className="primary" type="submit">
               连接工作区 <ArrowRight size={18} />
